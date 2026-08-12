@@ -26,6 +26,12 @@ def build_parser() -> argparse.ArgumentParser:
         default="lab",
         choices=("public", "lab", "project", "restricted", "pending"),
     )
+    inventory.add_argument(
+        "--profile",
+        default="auto",
+        choices=("auto", "generic", "mfsim-ng-pilot"),
+        help="Política de seleção; 'auto' reconhece o MFSim-NG.",
+    )
     inventory.add_argument("--output", required=True, type=Path)
     return parser
 
@@ -39,6 +45,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 source=args.source,
                 project=args.project,
                 access_class=args.access_class,
+                profile=args.profile,
             )
             write_yaml(inventory, args.output)
         except (OSError, ValueError) as exc:
@@ -49,7 +56,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             json.dumps(
                 {
                     "output": str(args.output.resolve()),
-                    "included": summary["included_files"],
+                    "discovered": summary["discovered_files"],
+                    "indexable": summary["indexable_files"],
                     "excluded": summary["excluded_files"],
                     "errors": summary["errors"],
                 },
@@ -59,4 +67,3 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     return 2
-

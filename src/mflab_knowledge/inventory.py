@@ -8,8 +8,10 @@ from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import urlsplit, urlunsplit
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
+MAX_INDEXABLE_SIZE_BYTES = 2 * 1024 * 1024
 
 EXCLUDED_DIRECTORY_NAMES = {
     ".git",
@@ -38,14 +40,16 @@ EXCLUDED_FILE_SUFFIXES = {
     ".so",
 }
 
-SECRET_NAME_MARKERS = {
-    ".env",
-    "credential",
+SECRET_FILE_NAMES = {
     "credentials",
+    "credentials.json",
+    "credentials.yaml",
+    "credentials.yml",
     "private_key",
-    "secret",
-    "secrets",
-    "token",
+    "secrets.json",
+    "secrets.yaml",
+    "secrets.yml",
+    "token.txt",
 }
 
 SECRET_FILE_SUFFIXES = {".key", ".pem", ".p12", ".pfx"}
@@ -78,9 +82,29 @@ FORMAT_BY_SUFFIX = {
 }
 
 SPECIAL_FORMAT_BY_NAME = {
+    ".clang-tidy": "config",
+    ".clangd": "config",
+    ".gitattributes": "config",
+    ".gitignore": "config",
     "cmakelists.txt": "cmake",
     "dockerfile": "dockerfile",
     "makefile": "make",
+}
+
+INDEXABLE_FORMATS = set(FORMAT_BY_SUFFIX.values()) | set(
+    SPECIAL_FORMAT_BY_NAME.values()
+)
+
+MFSIM_NG_ROOT_FILES = {
+    ".clang-tidy",
+    ".clangd",
+    ".gitattributes",
+    ".gitignore",
+    "agents.md",
+    "changelog.md",
+    "cmakelists.txt",
+    "doxyfile",
+    "readme.md",
 }
 
 
@@ -106,6 +130,20 @@ def _run_git(source: Path, *arguments: str) -> str | None:
     return value or None
 
 
+def _sanitize_remote_url(remote_url: str | None) -> str | None:
+    if remote_url is None:
+        return None
+    if "://" not in remote_url:
+        return remote_url
+    parsed = urlsplit(remote_url)
+    hostname = parsed.hostname
+    if hostname is None:
+        return None
+    if parsed.port is not None:
+        hostname = f"{hostname}:{parsed.port}"
+    return urlunsplit((parsed.scheme, hostname, parsed.path, parsed.query, ""))
+
+
 def detect_git_metadata(source: Path) -> dict[str, Any]:
     top_level = _run_git(source, "rev-parse", "--show-toplevel")
     if top_level is None:
@@ -122,7 +160,9 @@ def detect_git_metadata(source: Path) -> dict[str, Any]:
         "versioned": True,
         "branch": _run_git(source, "branch", "--show-current"),
         "commit_sha": _run_git(source, "rev-parse", "HEAD"),
-        "remote_url": _run_git(source, "remote", "get-url", "origin"),
+        "remote_url": _sanitize_remote_url(
+            _run_git(source, "remote", "get-url", "origin")
+        ),
         "evidence_limit": None,
     }
 
@@ -138,12 +178,11 @@ def _is_generated_docs(relative_path: str) -> bool:
 
 def _looks_secret(path: Path) -> bool:
     name = path.name.casefold()
-    stem = path.stem.casefold()
     return (
         name == ".env"
         or name.startswith(".env.")
         or path.suffix.casefold() in SECRET_FILE_SUFFIXES
-        or any(marker in stem for marker in SECRET_NAME_MARKERS)
+        or name in SECRET_FILE_NAMES
     )
 
 
@@ -187,10 +226,50 @@ def _walk_files(root: Path) -> Iterator[tuple[Path, str | None]]:
             yield current_path / filename, None
 
 
+def _git_tracked_files(root: Path) -> list[Path] | None:
+    tracked = _run_git(root, "ls-files", "-z", "--cached")
+    if tracked is None:
+        return None
+    return [root / item for item in tracked.split("\0") if item]
+
+
+def _resolve_profile(project: str, profile: str) -> str:
+    if profile != "auto":
+        return profile
+    normalized = project.casefold().replace("_", "-").replace(" ", "-")
+    return "mfsim-ng-pilot" if normalized == "mfsim-ng" else "generic"
+
+
+def _profile_exclusion(relative_path: str, profile: str) -> str | None:
+    if profile == "generic":
+        return None
+    if profile != "mfsim-ng-pilot":
+        raise ValueError(f"perfil desconhecido: {profile}")
+
+    parts = relative_path.casefold().split("/")
+    if len(parts) == 1:
+        return None if parts[0] in MFSIM_NG_ROOT_FILES else "outside_pilot_scope"
+
+    if parts[0] in {"src", "cmake", "etc", "scripts"}:
+        return None
+    if parts[:2] == ["docs", "md"]:
+        return None
+    if parts[:2] == ["mfsim-ng-guide", "analysis"]:
+        return None
+    if parts[0] == "tests" and any(part.startswith("dpm_ram") for part in parts[1:]):
+        return None
+    return "outside_pilot_scope"
+
+
+def _top_level(relative_path: str) -> str:
+    return relative_path.split("/", 1)[0]
+
+
 def build_inventory(
     source: Path,
     project: str,
     access_class: str = "lab",
+    profile: str = "auto",
 ) -> dict[str, Any]:
     root = source.expanduser().resolve()
     if not root.exists():
@@ -199,42 +278,97 @@ def build_inventory(
         raise ValueError(f"a fonte não é um diretório: {root}")
 
     git_metadata = detect_git_metadata(root)
-    included: list[dict[str, Any]] = []
+    selected_profile = _resolve_profile(project, profile)
+    indexable: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
     formats: Counter[str] = Counter()
-    included_bytes = 0
+    exclusion_reasons: Counter[str] = Counter()
+    top_level_files: Counter[str] = Counter()
+    top_level_bytes: Counter[str] = Counter()
+    indexable_bytes = 0
+    discovered_bytes = 0
+    discovered_files = 0
+    excluded_files = 0
+    excluded_directories = 0
 
-    for path, walk_reason in _walk_files(root):
+    tracked_files = _git_tracked_files(root) if git_metadata["versioned"] else None
+    if tracked_files is None:
+        candidates = _walk_files(root)
+        enumeration = "filesystem_walk"
+    else:
+        candidates = ((path, None) for path in tracked_files)
+        enumeration = "git_tracked_files"
+
+    for path, walk_reason in candidates:
         relative_path = _normalized_relative(path, root)
 
         if walk_reason is not None:
             excluded.append({"path": relative_path, "reason": walk_reason})
+            exclusion_reasons[walk_reason] += 1
+            excluded_directories += 1
             continue
+        discovered_files += 1
         if path.is_symlink():
             excluded.append({"path": relative_path, "reason": "symlink_file"})
-            continue
-        if _is_generated_docs(relative_path):
-            excluded.append({"path": relative_path, "reason": "generated_documentation"})
-            continue
-        if _looks_secret(path):
-            excluded.append({"path": relative_path, "reason": "possible_secret"})
-            continue
-        if path.suffix.casefold() in EXCLUDED_FILE_SUFFIXES:
-            excluded.append({"path": relative_path, "reason": "binary_or_large_result"})
+            exclusion_reasons["symlink_file"] += 1
+            excluded_files += 1
             continue
 
         try:
             size = path.stat().st_size
+        except OSError as exc:
+            errors.append({"path": relative_path, "error": str(exc)})
+            continue
+
+        discovered_bytes += size
+        top_level = _top_level(relative_path)
+        top_level_files[top_level] += 1
+        top_level_bytes[top_level] += size
+
+        if _is_generated_docs(relative_path):
+            excluded.append({"path": relative_path, "reason": "generated_documentation"})
+            exclusion_reasons["generated_documentation"] += 1
+            excluded_files += 1
+            continue
+        if _looks_secret(path):
+            excluded.append({"path": relative_path, "reason": "possible_secret"})
+            exclusion_reasons["possible_secret"] += 1
+            excluded_files += 1
+            continue
+        if path.suffix.casefold() in EXCLUDED_FILE_SUFFIXES:
+            excluded.append({"path": relative_path, "reason": "binary_or_large_result"})
+            exclusion_reasons["binary_or_large_result"] += 1
+            excluded_files += 1
+            continue
+        file_format = _classify_format(path)
+        reason = _profile_exclusion(relative_path, selected_profile)
+        if reason is None and file_format not in INDEXABLE_FORMATS:
+            reason = "unsupported_format"
+        if reason is None and size > MAX_INDEXABLE_SIZE_BYTES:
+            reason = "file_too_large"
+        if reason is not None:
+            excluded.append(
+                {
+                    "path": relative_path,
+                    "reason": reason,
+                    "format": file_format,
+                    "size_bytes": size,
+                }
+            )
+            exclusion_reasons[reason] += 1
+            excluded_files += 1
+            continue
+
+        try:
             content_hash = _sha256(path)
         except OSError as exc:
             errors.append({"path": relative_path, "error": str(exc)})
             continue
 
-        file_format = _classify_format(path)
         formats[file_format] += 1
-        included_bytes += size
-        included.append(
+        indexable_bytes += size
+        indexable.append(
             {
                 "document_id": _stable_document_id(project, relative_path),
                 "path": relative_path,
@@ -247,7 +381,7 @@ def build_inventory(
         )
 
     snapshot_digest = hashlib.sha256()
-    for item in included:
+    for item in indexable:
         snapshot_digest.update(item["path"].encode("utf-8"))
         snapshot_digest.update(b"\0")
         snapshot_digest.update(item["content_hash"].encode("ascii"))
@@ -261,16 +395,29 @@ def build_inventory(
             "root": str(root),
             "access_class": access_class,
             **git_metadata,
+            "enumeration": enumeration,
+            "profile": selected_profile,
             "snapshot_hash": f"sha256:{snapshot_digest.hexdigest()}",
         },
         "summary": {
-            "included_files": len(included),
-            "excluded_files": len(excluded),
-            "included_bytes": included_bytes,
-            "formats": dict(sorted(formats.items())),
+            "discovered_files": discovered_files,
+            "discovered_bytes": discovered_bytes,
+            "indexable_files": len(indexable),
+            "indexable_bytes": indexable_bytes,
+            "excluded_files": excluded_files,
+            "excluded_directories": excluded_directories,
+            "indexable_formats": dict(sorted(formats.items())),
+            "exclusion_reasons": dict(sorted(exclusion_reasons.items())),
+            "top_level": {
+                name: {
+                    "files": top_level_files[name],
+                    "bytes": top_level_bytes[name],
+                }
+                for name in sorted(top_level_files)
+            },
             "errors": len(errors),
         },
-        "included": included,
+        "indexable": indexable,
         "excluded": sorted(excluded, key=lambda item: item["path"]),
         "errors": errors,
     }
@@ -339,4 +486,3 @@ def write_yaml(inventory: dict[str, Any], output: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     content = "\n".join(_yaml_lines(inventory)) + "\n"
     destination.write_text(content, encoding="utf-8", newline="\n")
-

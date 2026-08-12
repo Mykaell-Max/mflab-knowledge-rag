@@ -9,6 +9,7 @@ O projeto é separado do MFSim-NG: ele lê um clone ou snapshot fornecido por ca
 A primeira entrega é o inventário piloto somente leitura. Ela:
 
 - descobre arquivos automaticamente;
+- em clones Git, considera apenas arquivos versionados no commit atual;
 - detecta branch e commit quando a fonte é um clone Git;
 - calcula hashes para futuras atualizações incrementais;
 - classifica formatos;
@@ -41,6 +42,7 @@ mflab-knowledge inventory \
   --source /caminho/para/mfsim-ng \
   --project MFSim-NG \
   --access-class lab \
+  --profile auto \
   --output inventory/mfsim-ng.generated.yaml
 ```
 
@@ -51,8 +53,14 @@ PYTHONPATH=src python -m mflab_knowledge inventory \
   --source /caminho/para/mfsim-ng \
   --project MFSim-NG \
   --access-class lab \
+  --profile auto \
   --output inventory/mfsim-ng.generated.yaml
 ```
+
+Para `MFSim-NG`, o perfil `auto` seleciona o piloto: código primário, CMake,
+configurações, scripts, documentação Markdown original, análises derivadas e os
+casos `dpm_ram*`. O restante continua visível como exclusão do catálogo, mas não
+é preparado para embeddings.
 
 O relatório gerado fica ignorado pelo Git porque pode conter caminhos e metadados internos.
 
@@ -80,4 +88,3 @@ As regras serão transformadas em política configurável depois que o inventár
 7. Receber webhooks e manter reconciliação agendada.
 
 As decisões gerais e os limites de segurança estão documentados no `HANDOFF.md` do projeto de continuidade que originou este repositório.
-
