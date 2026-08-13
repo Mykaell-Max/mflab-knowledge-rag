@@ -14,7 +14,7 @@ LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, int, str], None]
 
 NORMALIZATION_SCHEMA_VERSION = "0.1"
-PARSER_VERSION = "baseline-structural-1"
+PARSER_VERSION = "baseline-structural-2"
 MAX_CHUNK_CHARS = 3_500
 OVERLAP_LINES = 5
 
@@ -24,6 +24,10 @@ CPP_FUNCTION = re.compile(
     r"^\s*(?:template\s*<.*>\s*)?"
     r"(?:[A-Za-z_]\w*(?:::\w+)*(?:\s*[*&]+)?\s+)+"
     r"(?P<name>[~A-Za-z_]\w*(?:::\w+)*)\s*\([^;]*\)\s*"
+    r"(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?(?:\{|$)"
+)
+CPP_SCOPED_FUNCTION = re.compile(
+    r"^\s*(?P<name>[~A-Za-z_]\w*(?:::\w+)+)\s*\([^;]*\)\s*"
     r"(?:const\s*)?(?:noexcept\s*)?(?:override\s*)?(?:final\s*)?(?:\{|$)"
 )
 FORTRAN_UNIT = re.compile(
@@ -41,6 +45,7 @@ SHELL_FUNCTION = re.compile(
 TOKEN = re.compile(r"[\wÀ-ÖØ-öø-ÿ:.+/-]+", re.UNICODE)
 ACCESS_CLASSES = {"public", "lab", "project", "restricted", "pending"}
 RETRIEVABLE_ACCESS_CLASSES = ACCESS_CLASSES - {"pending"}
+CPP_CONTROL_WORDS = {"if", "for", "while", "switch", "catch"}
 STRUCTURED_FORMATS = {
     "markdown",
     "c",
@@ -138,9 +143,11 @@ def _anchors(lines: list[str], file_format: str) -> list[tuple[int, str, str]]:
             if type_match is not None:
                 anchors.append((index, type_match.group(1), "type"))
                 continue
-            function_match = CPP_FUNCTION.match(line)
+            function_match = CPP_SCOPED_FUNCTION.match(line) or CPP_FUNCTION.match(line)
             if function_match is not None:
-                anchors.append((index, function_match.group("name"), "function"))
+                function_name = function_match.group("name")
+                if function_name.casefold() not in CPP_CONTROL_WORDS:
+                    anchors.append((index, function_name, "function"))
     elif file_format == "fortran":
         for index, line in enumerate(lines):
             match = FORTRAN_UNIT.match(line)
@@ -521,10 +528,14 @@ def search_chunks(
     project: str | None = None,
     path_prefix: str | None = None,
     allowed_access: set[str] | None = None,
+    max_per_path: int = 2,
+    include_duplicate_content: bool = False,
 ) -> list[dict[str, object]]:
     query_text = query.strip()
     if not query_text:
         raise ValueError("consulta vazia")
+    if max_per_path < 1 or max_per_path > 100:
+        raise ValueError("max_per_path deve estar entre 1 e 100")
     query_folded = query_text.casefold()
     query_tokens = [token.casefold() for token in TOKEN.findall(query_text)]
     effective_access = allowed_access if allowed_access is not None else {"public"}
@@ -562,7 +573,7 @@ def search_chunks(
         token_counts = [searchable.count(token) for token in query_tokens]
         if phrase_count == 0 and not any(token_counts):
             continue
-        score = phrase_count * 8.0
+        score = 8.0 * (1.0 + math.log(phrase_count)) if phrase_count else 0.0
         score += sum(1.0 + math.log(count) for count in token_counts if count)
         score += sum(2.0 for token in query_tokens if token in value_path.casefold())
         if any(
@@ -593,6 +604,7 @@ def search_chunks(
         result = {
             "score": round(score, 4),
             "chunk_id": value.get("chunk_id"),
+            "chunk_hash": value.get("chunk_hash"),
             "project": value.get("project"),
             "path": value_path,
             "title": value.get("title"),
@@ -605,4 +617,24 @@ def search_chunks(
         }
         candidates.append((score, result))
     candidates.sort(key=lambda item: (-item[0], str(item[1]["path"])))
-    return [result for _, result in candidates[:limit]]
+    results: list[dict[str, object]] = []
+    paths: Counter[str] = Counter()
+    seen_content: set[str] = set()
+    for _, result in candidates:
+        result_path = str(result["path"])
+        content_hash = str(result.get("chunk_hash") or "")
+        if paths[result_path] >= max_per_path:
+            continue
+        if (
+            not include_duplicate_content
+            and content_hash
+            and content_hash in seen_content
+        ):
+            continue
+        results.append(result)
+        paths[result_path] += 1
+        if content_hash:
+            seen_content.add(content_hash)
+        if len(results) >= limit:
+            break
+    return results

@@ -209,6 +209,13 @@ Por padrão, a busca libera somente `public` e `lab`. Classes adicionais exigem
 `--allow-access` explícito; `project` também exige `--project`. Conteúdo `pending`
 nunca é recuperável. Esse filtro acontece antes de o texto ser retornado.
 
+O ranking limita por padrão cada arquivo a dois chunks e elimina textos
+idênticos, evitando que um caso ou lista repetitiva ocupe todos os resultados.
+Use `--max-per-path 20` para investigar profundamente um arquivo e
+`--include-duplicate-content` quando a auditoria exigir ocorrências textualmente
+iguais. A frequência lexical usa crescimento logarítmico para que repetição
+excessiva não domine sozinha o ranking.
+
 ## Configuração multi-repositório
 
 O contrato inicial está em `repositories.example.toml`. Ele já descreve o

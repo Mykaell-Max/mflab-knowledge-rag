@@ -65,6 +65,12 @@ retornar texto. Ela serve para avaliar corpus, metadados e perguntas reais; não
 o mecanismo de ranking definitivo. PostgreSQL FTS, pgvector e RRF entrarão após
 essa validação.
 
+Para aumentar diversidade, o ranking piloto limita chunks por caminho, colapsa
+conteúdos idênticos e comprime o ganho de frequência lexical. Esses limites são
+configuráveis para auditorias. Palavras de controle não são aceitas como símbolos
+pelas âncoras heurísticas C++, mas um parser sintático ainda será necessário para
+relações e assinaturas exatas.
+
 O catálogo futuro de fontes é multi-repositório. Identificadores estáveis de
 repositório impedem colisões entre MFSim-NG, MFSim legado, MFGUI e outros
 projetos, mesmo quando possuem caminhos ou símbolos iguais. Novas entradas ficam

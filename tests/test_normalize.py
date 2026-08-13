@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mflab_knowledge.normalize import normalize_manifest, search_chunks
+from mflab_knowledge.normalize import _parse_text, normalize_manifest, search_chunks
 
 
 def _hash(content: str) -> str:
@@ -22,6 +22,105 @@ def _write_json(path: Path, value: object) -> None:
 
 
 class NormalizeTests(unittest.TestCase):
+    def test_cpp_parser_rejects_control_words_and_names_scoped_methods(self) -> None:
+        chunks = _parse_text(
+            "DPMManager::DPMManager() {\n}\n\n"
+            "void DPMManager::countParticles() {\n"
+            "  if (enabled) {\n"
+            "  } else if (inactive) {\n"
+            "  }\n"
+            "}\n",
+            "cpp",
+        )
+        titles = [str(chunk["title"]) for chunk in chunks]
+        self.assertEqual(
+            titles,
+            ["DPMManager::DPMManager", "DPMManager::countParticles"],
+        )
+        self.assertNotIn("if", titles)
+
+    def test_search_diversifies_paths_and_deduplicates_equal_text(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            chunks_path = Path(temporary_directory) / "chunks.jsonl"
+            values = [
+                {
+                    "chunk_id": "a1",
+                    "chunk_hash": "sha256:a",
+                    "project": "MFSim-NG",
+                    "path": "tests/dpm_ram_1b/a.cpp",
+                    "title": "a1",
+                    "line_start": 1,
+                    "line_end": 2,
+                    "access_class": "lab",
+                    "occurrences": [{"branch": "diagnostic/dpm", "commit_sha": "a" * 40}],
+                    "text": "primeiro",
+                },
+                {
+                    "chunk_id": "a2",
+                    "chunk_hash": "sha256:b",
+                    "project": "MFSim-NG",
+                    "path": "tests/dpm_ram_1b/a.cpp",
+                    "title": "a2",
+                    "line_start": 3,
+                    "line_end": 4,
+                    "access_class": "lab",
+                    "occurrences": [{"branch": "diagnostic/dpm", "commit_sha": "a" * 40}],
+                    "text": "segundo",
+                },
+                {
+                    "chunk_id": "a3",
+                    "chunk_hash": "sha256:c",
+                    "project": "MFSim-NG",
+                    "path": "tests/dpm_ram_1b/a.cpp",
+                    "title": "a3",
+                    "line_start": 5,
+                    "line_end": 6,
+                    "access_class": "lab",
+                    "occurrences": [{"branch": "diagnostic/dpm", "commit_sha": "a" * 40}],
+                    "text": "terceiro",
+                },
+                {
+                    "chunk_id": "b1",
+                    "chunk_hash": "sha256:a",
+                    "project": "MFSim-NG",
+                    "path": "tests/dpm_ram_1b/b.cpp",
+                    "title": "b1",
+                    "line_start": 1,
+                    "line_end": 2,
+                    "access_class": "lab",
+                    "occurrences": [{"branch": "diagnostic/dpm", "commit_sha": "a" * 40}],
+                    "text": "primeiro",
+                },
+                {
+                    "chunk_id": "c1",
+                    "chunk_hash": "sha256:d",
+                    "project": "MFSim-NG",
+                    "path": "tests/dpm_ram_1b/c.cpp",
+                    "title": "c1",
+                    "line_start": 1,
+                    "line_end": 2,
+                    "access_class": "lab",
+                    "occurrences": [{"branch": "diagnostic/dpm", "commit_sha": "a" * 40}],
+                    "text": "quarto",
+                },
+            ]
+            chunks_path.write_text(
+                "".join(json.dumps(value) + "\n" for value in values),
+                encoding="utf-8",
+            )
+            results = search_chunks(
+                chunks_path=chunks_path,
+                query="dpm_ram_1b",
+                limit=10,
+                branch="diagnostic/dpm",
+                allowed_access={"lab"},
+                max_per_path=2,
+            )
+            self.assertEqual(
+                [result["chunk_id"] for result in results],
+                ["a1", "a2", "c1"],
+            )
+
     def test_deduplicates_branches_reuses_parsing_and_searches_with_acl(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

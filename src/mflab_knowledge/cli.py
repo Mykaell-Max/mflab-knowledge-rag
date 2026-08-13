@@ -222,6 +222,17 @@ def build_parser() -> argparse.ArgumentParser:
     search.add_argument("--project")
     search.add_argument("--path-prefix")
     search.add_argument(
+        "--max-per-path",
+        type=int,
+        default=2,
+        help="Máximo de chunks por arquivo (padrão: 2).",
+    )
+    search.add_argument(
+        "--include-duplicate-content",
+        action="store_true",
+        help="Inclui chunks textualmente idênticos no resultado.",
+    )
+    search.add_argument(
         "--allow-access",
         action="append",
         choices=("public", "lab", "project", "restricted"),
@@ -388,6 +399,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 project=args.project,
                 path_prefix=args.path_prefix,
                 allowed_access=allowed_access,
+                max_per_path=args.max_per_path,
+                include_duplicate_content=args.include_duplicate_content,
             )
         except (OSError, ValueError, json.JSONDecodeError) as exc:
             reporter.error(str(exc))
