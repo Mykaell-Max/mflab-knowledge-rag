@@ -123,6 +123,14 @@ inventory/mfsim-ng/
 mas separadas. Branches no mesmo commit reutilizam o inventário já calculado.
 Para operar temporariamente sem consultar o GitLab, acrescente `--offline`.
 
+Além dos snapshots Git, o comando mantém em `cache/inventories/` um cache
+persistente do inventário de cada commit. A chave inclui repositório, projeto,
+commit, perfil, classe de acesso e versões da política/schema. Assim, uma nova
+execução sem mudanças não percorre novamente milhares de arquivos. O resumo
+informa separadamente `inventories_built` e `inventories_reused`. Um commit novo
+ou uma mudança de política causa somente os recálculos necessários; cache
+ausente, incompatível ou corrompido é reconstruído automaticamente.
+
 O acesso HTTPS ao remote usa credenciais locais protegidas. Tokens não devem ser
 colocados na linha de comando, URL do repositório ou arquivos versionados deste
 projeto.

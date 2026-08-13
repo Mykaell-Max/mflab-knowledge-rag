@@ -45,6 +45,12 @@ marcada explicitamente; branches de trabalho não competem com ela por padrão n
 recuperação. Duas branches no mesmo commit compartilham o processamento do
 inventário.
 
+O cache incremental possui duas camadas independentes: o snapshot imutável do
+commit e o inventário derivado. O inventário só é reutilizado quando repositório,
+projeto, commit, perfil, classe de acesso, schema e versão da política coincidem.
+Essa chave impede que uma mudança de regras reutilize resultados semanticamente
+obsoletos. Escritas são atômicas e entradas ausentes ou inválidas são refeitas.
+
 Para remotes HTTPS privados, as credenciais são lidas de variáveis de ambiente
 ou de `.env` local ignorado pelo Git. O token é limitado a `read_repository` e
 entregue ao Git por `askpass` temporário, nunca pela URL ou argumentos. Prompts

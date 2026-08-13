@@ -290,7 +290,10 @@ def main(argv: Sequence[str] | None = None) -> int:
         result_level = "warning" if int(result["errors"]) else "result"
         reporter.log(
             f"Sincronização concluída: {result['branches']} branches, "
-            f"{result['unique_commits']} commits, {result['errors']} erros",
+            f"{result['unique_commits']} commits, "
+            f"{result['inventories_built']} inventários calculados, "
+            f"{result['inventories_reused']} reutilizados, "
+            f"{result['errors']} erros",
             result_level,
         )
         print(json.dumps(result, ensure_ascii=False))

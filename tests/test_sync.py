@@ -70,6 +70,7 @@ class SyncTests(unittest.TestCase):
 
             before_head = _git(source, "rev-parse", "HEAD")
             before_status = _git(source, "status", "--short")
+            first_progress: list[tuple[int, int, str]] = []
             result = sync_repository_branches(
                 source=source,
                 project="MFSim-NG",
@@ -79,11 +80,17 @@ class SyncTests(unittest.TestCase):
                 profile="generic",
                 cache_dir=cache,
                 output_dir=output,
+                progress=lambda current, total, path: first_progress.append(
+                    (current, total, path)
+                ),
             )
 
             self.assertEqual(result["branches"], 3)
             self.assertEqual(result["unique_commits"], 2)
+            self.assertEqual(result["inventories_built"], 2)
+            self.assertEqual(result["inventories_reused"], 0)
             self.assertEqual(result["errors"], 0)
+            self.assertTrue(first_progress)
             self.assertEqual(_git(source, "rev-parse", "HEAD"), before_head)
             self.assertEqual(_git(source, "status", "--short"), before_status)
             self.assertFalse(stale_catalog.exists())
@@ -117,6 +124,67 @@ class SyncTests(unittest.TestCase):
             self.assertIn("unique_commits: 2", manifest)
             self.assertIn('relation: "ahead"', manifest)
             self.assertIn("ahead: 1", manifest)
+
+            second_progress: list[tuple[int, int, str]] = []
+            messages: list[tuple[str, str]] = []
+            second = sync_repository_branches(
+                source=source,
+                project="MFSim-NG",
+                canonical_ref="origin/master",
+                branch_scope="remote",
+                access_class="lab",
+                profile="generic",
+                cache_dir=cache,
+                output_dir=output,
+                log=lambda message, level="info": messages.append((message, level)),
+                progress=lambda current, total, path: second_progress.append(
+                    (current, total, path)
+                ),
+            )
+
+            self.assertEqual(second["inventories_built"], 0)
+            self.assertEqual(second["inventories_reused"], 2)
+            self.assertEqual(second_progress, [])
+            self.assertEqual(
+                sum("Reutilizando inventário" in message for message, _ in messages),
+                2,
+            )
+            second_manifest = (output / "manifest.generated.yaml").read_text(
+                encoding="utf-8"
+            )
+            self.assertIn("inventories_built: 0", second_manifest)
+            self.assertIn("inventories_reused: 2", second_manifest)
+            self.assertIn('inventory_cache: "persistent"', second_manifest)
+
+            master_cache = next(
+                (cache / "inventories" / master_commit).glob("*.json")
+            )
+            master_cache.write_text("{cache inválido\n", encoding="utf-8")
+            repaired = sync_repository_branches(
+                source=source,
+                project="MFSim-NG",
+                canonical_ref="origin/master",
+                branch_scope="remote",
+                access_class="lab",
+                profile="generic",
+                cache_dir=cache,
+                output_dir=output,
+            )
+            self.assertEqual(repaired["inventories_built"], 1)
+            self.assertEqual(repaired["inventories_reused"], 1)
+
+            changed_policy = sync_repository_branches(
+                source=source,
+                project="MFSim-NG",
+                canonical_ref="origin/master",
+                branch_scope="remote",
+                access_class="project",
+                profile="generic",
+                cache_dir=cache,
+                output_dir=output,
+            )
+            self.assertEqual(changed_policy["inventories_built"], 2)
+            self.assertEqual(changed_policy["inventories_reused"], 0)
 
 
 if __name__ == "__main__":

@@ -2,15 +2,17 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 import re
 import shutil
+import tempfile
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
 from mflab_knowledge.credentials import GitCredentials
-from mflab_knowledge.inventory import build_inventory, write_yaml
+from mflab_knowledge.inventory import SCHEMA_VERSION, build_inventory, write_yaml
 from mflab_knowledge.repository import (
     RepositoryBranch,
     compare_branch_to_canonical,
@@ -21,6 +23,8 @@ from mflab_knowledge.repository import (
 
 LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, int, str], None]
+INVENTORY_CACHE_SCHEMA_VERSION = "0.1"
+INVENTORY_POLICY_VERSION = "1"
 
 
 def _utc_now() -> str:
@@ -51,6 +55,104 @@ def _path_component(value: str) -> str:
 def _catalog_path(output_dir: Path, branch_name: str) -> Path:
     components = [_path_component(part) for part in branch_name.split("/")]
     return output_dir / "branches" / Path(*components[:-1]) / f"{components[-1]}.generated.yaml"
+
+
+def _inventory_cache_descriptor(
+    *,
+    repository: str,
+    project: str,
+    commit_sha: str,
+    access_class: str,
+    profile: str,
+) -> dict[str, str]:
+    return {
+        "cache_schema_version": INVENTORY_CACHE_SCHEMA_VERSION,
+        "inventory_schema_version": SCHEMA_VERSION,
+        "policy_version": INVENTORY_POLICY_VERSION,
+        "repository": repository,
+        "project": project,
+        "commit_sha": commit_sha,
+        "access_class": access_class,
+        "profile": profile,
+    }
+
+
+def _inventory_cache_path(
+    cache_dir: Path,
+    descriptor: dict[str, str],
+) -> Path:
+    serialized = json.dumps(
+        descriptor,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    fingerprint = hashlib.sha256(serialized).hexdigest()
+    commit_sha = descriptor["commit_sha"]
+    return (
+        cache_dir.expanduser().resolve()
+        / "inventories"
+        / commit_sha
+        / f"{fingerprint}.json"
+    )
+
+
+def _load_cached_inventory(
+    path: Path,
+    descriptor: dict[str, str],
+) -> dict[str, object] | None:
+    if not path.is_file():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    if not isinstance(payload, dict) or payload.get("descriptor") != descriptor:
+        return None
+    inventory = payload.get("inventory")
+    if not isinstance(inventory, dict):
+        return None
+    source_metadata = inventory.get("source")
+    if not isinstance(source_metadata, dict):
+        return None
+    if source_metadata.get("commit_sha") != descriptor["commit_sha"]:
+        return None
+    return inventory
+
+
+def _write_cached_inventory(
+    path: Path,
+    descriptor: dict[str, str],
+    inventory: dict[str, object],
+) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"descriptor": descriptor, "inventory": inventory}
+    serialized = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    temporary_name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="\n",
+            prefix=f".{path.name}.",
+            suffix=".tmp",
+            dir=path.parent,
+            delete=False,
+        ) as handle:
+            temporary_name = handle.name
+            handle.write(serialized)
+            handle.write("\n")
+        Path(temporary_name).replace(path)
+    finally:
+        if temporary_name is not None:
+            temporary_path = Path(temporary_name)
+            if temporary_path.exists():
+                temporary_path.unlink()
 
 
 def _render_tree(project: str, entries: list[dict[str, object]]) -> str:
@@ -183,31 +285,84 @@ def sync_repository_branches(
     commit_counts = Counter(branch.commit_sha for branch in ordered_branches)
     inventories_by_commit: dict[str, dict[str, object]] = {}
     entries: list[dict[str, object]] = []
+    inventories_built = 0
+    inventories_reused = 0
+    repository_identity = mirror.remote_url or str(mirror.source_path)
 
     for index, branch in enumerate(ordered_branches, start=1):
         logger(
             f"Branch {index}/{len(ordered_branches)}: "
             f"{branch.name} @ {branch.commit_sha[:12]}"
         )
-        reused = branch.commit_sha in inventories_by_commit
-        if reused:
+        if branch.commit_sha in inventories_by_commit:
             inventory = copy.deepcopy(inventories_by_commit[branch.commit_sha])
+            cache_status = "same_run"
         else:
-            snapshot = materialize_repository_snapshot(
-                mirror,
+            descriptor = _inventory_cache_descriptor(
+                repository=repository_identity,
                 project=project,
-                cache_dir=cache_dir,
-                ref=branch.requested_ref,
-                log=logger,
-            )
-            inventory = build_inventory(
-                source=snapshot.path,
-                project=project,
+                commit_sha=branch.commit_sha,
                 access_class=access_class,
                 profile=profile,
-                metadata_override=snapshot.metadata(),
-                progress=progress,
             )
+            inventory_cache = _inventory_cache_path(cache_dir, descriptor)
+            cached_inventory = _load_cached_inventory(inventory_cache, descriptor)
+            if cached_inventory is not None:
+                inventory = copy.deepcopy(cached_inventory)
+                cache_status = "persistent"
+                inventories_reused += 1
+                logger(
+                    f"Reutilizando inventário {branch.commit_sha[:12]} "
+                    f"({profile}, {access_class})",
+                    "success",
+                )
+            else:
+                if inventory_cache.exists():
+                    logger(
+                        f"Cache de inventário inválido para "
+                        f"{branch.commit_sha[:12]}; recalculando",
+                        "warning",
+                    )
+                snapshot = materialize_repository_snapshot(
+                    mirror,
+                    project=project,
+                    cache_dir=cache_dir,
+                    ref=branch.requested_ref,
+                    log=logger,
+                )
+                inventory = build_inventory(
+                    source=snapshot.path,
+                    project=project,
+                    access_class=access_class,
+                    profile=profile,
+                    metadata_override=snapshot.metadata(),
+                    progress=progress,
+                )
+                cache_status = "built"
+                inventories_built += 1
+                summary = inventory.get("summary")
+                inventory_errors = (
+                    int(summary.get("errors", 0))
+                    if isinstance(summary, dict)
+                    else 1
+                )
+                if inventory_errors == 0:
+                    _write_cached_inventory(
+                        inventory_cache,
+                        descriptor,
+                        inventory,
+                    )
+                    logger(
+                        f"Inventário armazenado em cache "
+                        f"{branch.commit_sha[:12]}",
+                        "success",
+                    )
+                else:
+                    logger(
+                        f"Inventário {branch.commit_sha[:12]} contém erros e "
+                        "não será reutilizado",
+                        "warning",
+                    )
             inventories_by_commit[branch.commit_sha] = copy.deepcopy(inventory)
 
         source_metadata = inventory["source"]
@@ -243,7 +398,8 @@ def sync_repository_branches(
             "excluded_files": summary["excluded_files"],
             "errors": summary["errors"],
             "shared_commit": commit_counts[branch.commit_sha] > 1,
-            "reused_inventory": reused,
+            "reused_inventory": cache_status != "built",
+            "inventory_cache": cache_status,
             **relation,
         }
         entries.append(entry)
@@ -254,7 +410,7 @@ def sync_repository_branches(
 
     total_errors = sum(int(entry["errors"]) for entry in entries)
     manifest: dict[str, object] = {
-        "schema_version": "0.1",
+        "schema_version": "0.2",
         "generated_at": _utc_now(),
         "project": project,
         "source": str(mirror.source_path),
@@ -266,6 +422,8 @@ def sync_repository_branches(
             "branches": len(entries),
             "unique_commits": len(inventories_by_commit),
             "catalogs": len(entries),
+            "inventories_built": inventories_built,
+            "inventories_reused": inventories_reused,
             "errors": total_errors,
         },
         "branches": entries,
@@ -279,5 +437,7 @@ def sync_repository_branches(
         "tree": str(tree_path),
         "branches": len(entries),
         "unique_commits": len(inventories_by_commit),
+        "inventories_built": inventories_built,
+        "inventories_reused": inventories_reused,
         "errors": total_errors,
     }
