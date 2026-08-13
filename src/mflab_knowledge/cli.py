@@ -5,7 +5,9 @@ import json
 import sys
 from pathlib import Path
 from typing import Sequence
+from urllib.parse import urlsplit
 
+from mflab_knowledge.credentials import load_git_credentials
 from mflab_knowledge.inventory import build_inventory, detect_git_metadata, write_yaml
 from mflab_knowledge.repository import prepare_repository_snapshot
 from mflab_knowledge.sync import sync_repository_branches
@@ -119,6 +121,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync.add_argument("--cache-dir", default=Path("cache"), type=Path)
     sync.add_argument(
+        "--env-file",
+        default=Path(".env"),
+        type=Path,
+        help="Credenciais HTTPS locais (padrão: ./.env).",
+    )
+    sync.add_argument(
         "--output-dir",
         default=Path("inventory/sync"),
         type=Path,
@@ -188,6 +196,23 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "sync":
         reporter = ConsoleReporter(args.quiet)
         try:
+            source_metadata = detect_git_metadata(args.source.expanduser().resolve())
+            remote_url = source_metadata.get("remote_url")
+            remote_scheme = (
+                urlsplit(remote_url).scheme.casefold()
+                if isinstance(remote_url, str)
+                else ""
+            )
+            needs_https_credentials = (
+                not args.offline and remote_scheme in {"http", "https"}
+            )
+            credentials = (
+                load_git_credentials(args.env_file)
+                if needs_https_credentials
+                else None
+            )
+            if credentials is not None:
+                reporter.log("Credenciais HTTPS não interativas configuradas")
             result = sync_repository_branches(
                 source=args.source,
                 project=args.project,
@@ -198,6 +223,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 cache_dir=args.cache_dir,
                 output_dir=args.output_dir,
                 refresh_remote=not args.offline,
+                credentials=credentials,
                 log=reporter.log,
                 progress=reporter.progress,
             )

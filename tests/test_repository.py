@@ -6,7 +6,10 @@ import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
+from mflab_knowledge.credentials import GitCredentials
+from mflab_knowledge import repository
 from mflab_knowledge.repository import (
     list_repository_branches,
     prepare_repository_mirror,
@@ -26,6 +29,33 @@ def _git(repository: Path, *arguments: str) -> str:
 
 @unittest.skipUnless(shutil.which("git"), "Git não está disponível")
 class RepositorySnapshotTests(unittest.TestCase):
+    def test_remote_credentials_do_not_enter_git_arguments(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            mirror = Path(temporary_directory) / "mirror.git"
+            mirror.mkdir()
+            credentials = GitCredentials("mborges", "secret-token-value")
+            captured: dict[str, object] = {}
+
+            def fake_run(command: list[str], **kwargs: object) -> str:
+                captured["command"] = command
+                captured["env"] = kwargs.get("env")
+                return ""
+
+            with mock.patch.object(repository, "_run", side_effect=fake_run):
+                repository._refresh_mirror_from_remote(
+                    mirror,
+                    "https://gitlab.example.invalid/group/project.git",
+                    credentials,
+                )
+
+            command = captured["command"]
+            environment = captured["env"]
+            self.assertIsInstance(command, list)
+            self.assertIsInstance(environment, dict)
+            self.assertNotIn(credentials.token, " ".join(command))
+            self.assertEqual(environment["MFLAB_ASKPASS_TOKEN"], credentials.token)
+            self.assertFalse(any(mirror.parent.glob(".mflab-askpass-*")))
+
     def test_materializes_requested_branch_without_touching_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

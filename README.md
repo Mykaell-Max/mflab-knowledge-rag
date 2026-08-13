@@ -119,9 +119,29 @@ inventory/mfsim-ng/
 mas separadas. Branches no mesmo commit reutilizam o inventário já calculado.
 Para operar temporariamente sem consultar o GitLab, acrescente `--offline`.
 
-O acesso ao remote usa a configuração segura de credenciais do Git. Tokens não
-devem ser colocados na linha de comando, URL do repositório ou arquivos deste
+O acesso HTTPS ao remote usa credenciais locais protegidas. Tokens não devem ser
+colocados na linha de comando, URL do repositório ou arquivos versionados deste
 projeto.
+
+### Credencial HTTPS somente leitura
+
+Na primeira sincronização HTTPS, o comando cria `.env` vazio e encerra com uma
+mensagem de configuração. Crie no GitLab um token com **somente** o escopo
+`read_repository` e preencha:
+
+```dotenv
+MFLAB_GIT_USERNAME=seu_usuario_ou_usuario_do_deploy_token
+MFLAB_GIT_READ_TOKEN=cole_o_token_aqui
+```
+
+O `.env` é ignorado pelo Git e criado com permissão `0600` no Linux. O token não
+é acrescentado à URL, aos argumentos do processo, logs, manifests ou catálogos.
+O fetch usa um `askpass` temporário, remove-o ao terminar e desativa prompts
+interativos. As mesmas variáveis podem ser fornecidas diretamente pelo ambiente
+de um serviço; elas têm precedência sobre o arquivo.
+
+Para outro caminho, use `--env-file /caminho/protegido/mflab.env`. O modo
+`--offline` não carrega nem exige credenciais.
 
 ## Política inicial de exclusão
 

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
 
+from mflab_knowledge.credentials import GitCredentials
 from mflab_knowledge.inventory import build_inventory, write_yaml
 from mflab_knowledge.repository import (
     RepositoryBranch,
@@ -130,6 +131,7 @@ def sync_repository_branches(
     cache_dir: Path,
     output_dir: Path,
     refresh_remote: bool = True,
+    credentials: GitCredentials | None = None,
     log: LogCallback | None = None,
     progress: ProgressCallback | None = None,
 ) -> dict[str, object]:
@@ -142,6 +144,7 @@ def sync_repository_branches(
         project=project,
         cache_dir=cache_dir,
         refresh_remote=refresh_remote,
+        credentials=credentials,
         log=logger,
     )
     branches = list_repository_branches(mirror, scope=branch_scope)

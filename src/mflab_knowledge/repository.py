@@ -1,14 +1,17 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
 import shutil
 import subprocess
 import tarfile
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
+from mflab_knowledge.credentials import GitCredentials
 from mflab_knowledge.inventory import detect_git_metadata
 
 LogCallback = Callable[[str], None]
@@ -60,6 +63,7 @@ def _run(
     *,
     timeout: int = 120,
     cwd: Path | None = None,
+    env: dict[str, str] | None = None,
 ) -> str:
     try:
         result = subprocess.run(
@@ -71,6 +75,7 @@ def _run(
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            env=env,
         )
     except FileNotFoundError as exc:
         raise ValueError("Git não foi encontrado no PATH") from exc
@@ -192,21 +197,75 @@ def _refresh_mirror_from_local_source(
             bundle.unlink()
 
 
-def _refresh_mirror_from_remote(mirror: Path, remote_url: str) -> None:
-    _run(
-        [
-            "git",
-            "--git-dir",
-            str(mirror),
-            "fetch",
-            "--prune",
-            "--no-tags",
-            remote_url,
-            "+refs/heads/*:refs/remotes/origin/*",
-            "+refs/tags/*:refs/tags/*",
-        ],
-        timeout=300,
+def _askpass_environment(
+    directory: Path,
+    credentials: GitCredentials,
+) -> tuple[dict[str, str], tempfile.TemporaryDirectory[str]]:
+    temporary = tempfile.TemporaryDirectory(prefix=".mflab-askpass-", dir=directory)
+    temporary_path = Path(temporary.name)
+    environment = os.environ.copy()
+    environment.update(
+        {
+            "GIT_TERMINAL_PROMPT": "0",
+            "MFLAB_ASKPASS_USERNAME": credentials.username,
+            "MFLAB_ASKPASS_TOKEN": credentials.token,
+        }
     )
+
+    if os.name == "nt":
+        script = temporary_path / "askpass.cmd"
+        script.write_text(
+            "@echo off\r\n"
+            "echo %~1 | %SystemRoot%\\System32\\findstr.exe /I username >nul\r\n"
+            "if errorlevel 1 (echo %MFLAB_ASKPASS_TOKEN%) else "
+            "(echo %MFLAB_ASKPASS_USERNAME%)\r\n",
+            encoding="utf-8",
+        )
+    else:
+        script = temporary_path / "askpass.sh"
+        script.write_text(
+            "#!/bin/sh\n"
+            "case \"$1\" in\n"
+            "  *sername*) printf '%s\\n' \"$MFLAB_ASKPASS_USERNAME\" ;;\n"
+            "  *) printf '%s\\n' \"$MFLAB_ASKPASS_TOKEN\" ;;\n"
+            "esac\n",
+            encoding="utf-8",
+            newline="\n",
+        )
+        script.chmod(0o700)
+    environment["GIT_ASKPASS"] = str(script)
+    return environment, temporary
+
+
+def _refresh_mirror_from_remote(
+    mirror: Path,
+    remote_url: str,
+    credentials: GitCredentials | None,
+) -> None:
+    command = [
+        "git",
+        "-c",
+        "credential.helper=",
+        "--git-dir",
+        str(mirror),
+        "fetch",
+        "--prune",
+        "--no-tags",
+        remote_url,
+        "+refs/heads/*:refs/remotes/origin/*",
+        "+refs/tags/*:refs/tags/*",
+    ]
+    if credentials is None:
+        environment = os.environ.copy()
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+        _run(command, timeout=300, env=environment)
+        return
+
+    environment, temporary = _askpass_environment(mirror.parent, credentials)
+    try:
+        _run(command, timeout=300, env=environment)
+    finally:
+        temporary.cleanup()
 
 
 def _extract_git_archive(archive: Path, destination: Path) -> None:
@@ -239,6 +298,7 @@ def prepare_repository_mirror(
     project: str,
     cache_dir: Path,
     refresh_remote: bool = False,
+    credentials: GitCredentials | None = None,
     log: LogCallback | None = None,
 ) -> RepositoryMirror:
     logger = log or (lambda _message: None)
@@ -271,7 +331,7 @@ def prepare_repository_mirror(
             logger("Fonte sem remote origin; usando apenas refs locais conhecidas")
         else:
             logger(f"Atualizando branches diretamente do remote: {remote_url}")
-            _refresh_mirror_from_remote(mirror, remote_url)
+            _refresh_mirror_from_remote(mirror, remote_url, credentials)
     return RepositoryMirror(
         source_path=source_root,
         mirror_path=mirror,

@@ -45,6 +45,12 @@ marcada explicitamente; branches de trabalho não competem com ela por padrão n
 recuperação. Duas branches no mesmo commit compartilham o processamento do
 inventário.
 
+Para remotes HTTPS privados, as credenciais são lidas de variáveis de ambiente
+ou de `.env` local ignorado pelo Git. O token é limitado a `read_repository` e
+entregue ao Git por `askpass` temporário, nunca pela URL ou argumentos. Prompts
+interativos são desativados para que falhas de autenticação encerrem a execução
+em vez de bloquear o serviço.
+
 A árvore usa os componentes do nome da branch para organização visual e calcula
 `ahead`, `behind`, `merge_base` e estado de merge contra a canônica. Ela não
 inventa uma relação de filiação entre branches, pois o Git não preserva
