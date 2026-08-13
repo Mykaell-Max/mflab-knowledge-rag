@@ -28,6 +28,17 @@ GitLab / clones / documentos autorizados
        API RAG local com citações
 ```
 
+## Isolamento de repositórios
+
+O indexador não opera sobre o worktree de um pesquisador. Para cada fonte Git,
+mantém um mirror privado no próprio cache. Cada branch ou commit é materializado
+por `git archive` em um snapshot imutável, sem diretório `.git`, arquivos locais,
+builds não versionados ou mudanças ainda não commitadas.
+
+Uma consulta pode, portanto, usar `master` enquanto o clone fornecido está em uma
+branch de trabalho. Conteúdos idênticos entre refs serão deduplicados por hash na
+etapa de normalização e embeddings.
+
 ## Sincronização futura
 
 1. Um webhook recebe eventos de push, issue, merge request e comentário.
@@ -47,4 +58,3 @@ O webhook apenas indica que algo mudou. A fonte canônica continua sendo o GitLa
 - Modificação ou remoção: automática.
 - Branch nova: segue a política de branches do projeto.
 - Projeto ou coleção nova: descoberto como `pending` até existir autorização explícita.
-

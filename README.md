@@ -35,11 +35,14 @@ source .venv/bin/activate
 python -m pip install -e .
 ```
 
-Gere o inventário apontando para o clone atualizado do MFSim-NG:
+Gere o inventário apontando para o clone atualizado do MFSim-NG. Não é
+necessário trocar a branch ativa: `--ref` seleciona a branch no mirror privado
+do indexador.
 
 ```bash
 mflab-knowledge inventory \
   --source /caminho/para/mfsim-ng \
+  --ref master \
   --project MFSim-NG \
   --access-class lab \
   --profile auto \
@@ -51,6 +54,7 @@ Também é possível executar sem instalação:
 ```bash
 PYTHONPATH=src python -m mflab_knowledge inventory \
   --source /caminho/para/mfsim-ng \
+  --ref master \
   --project MFSim-NG \
   --access-class lab \
   --profile auto \
@@ -63,6 +67,23 @@ casos `dpm_ram*`. O restante continua visível como exclusão do catálogo, mas 
 é preparado para embeddings.
 
 O relatório gerado fica ignorado pelo Git porque pode conter caminhos e metadados internos.
+
+## Isolamento da fonte
+
+Para fontes Git, o modo padrão nunca inventaria diretamente o worktree indicado:
+
+1. cria ou atualiza um mirror em `cache/repositories/` por meio de um bundle
+   somente leitura;
+2. resolve a branch, tag ou commit solicitado por `--ref`;
+3. materializa apenas os arquivos versionados daquele commit com `git archive`;
+4. inventaria o snapshot imutável em `cache/snapshots/`.
+
+Arquivos modificados, builds e resultados não commitados na fonte não entram na
+cópia. O comando não executa `checkout`, `fetch` nem qualquer escrita no
+repositório científico. Snapshots iguais são reutilizados por commit.
+
+Durante a execução, etapas e progresso são mostrados no terminal. Para automação
+silenciosa, use `--quiet`; o resumo JSON continua sendo emitido em `stdout`.
 
 ## Política inicial de exclusão
 

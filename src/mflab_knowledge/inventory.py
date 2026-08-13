@@ -7,10 +7,10 @@ import subprocess
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Iterator
+from typing import Any, Callable, Iterator
 from urllib.parse import urlsplit, urlunsplit
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.3"
 MAX_INDEXABLE_SIZE_BYTES = 2 * 1024 * 1024
 
 EXCLUDED_DIRECTORY_NAMES = {
@@ -119,6 +119,8 @@ def _run_git(source: Path, *arguments: str) -> str | None:
             check=False,
             capture_output=True,
             text=True,
+            encoding="utf-8",
+            errors="replace",
             timeout=15,
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
@@ -270,6 +272,8 @@ def build_inventory(
     project: str,
     access_class: str = "lab",
     profile: str = "auto",
+    metadata_override: dict[str, Any] | None = None,
+    progress: Callable[[int, int, str], None] | None = None,
 ) -> dict[str, Any]:
     root = source.expanduser().resolve()
     if not root.exists():
@@ -277,7 +281,7 @@ def build_inventory(
     if not root.is_dir():
         raise ValueError(f"a fonte não é um diretório: {root}")
 
-    git_metadata = detect_git_metadata(root)
+    git_metadata = metadata_override or detect_git_metadata(root)
     selected_profile = _resolve_profile(project, profile)
     indexable: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
@@ -294,14 +298,25 @@ def build_inventory(
 
     tracked_files = _git_tracked_files(root) if git_metadata["versioned"] else None
     if tracked_files is None:
-        candidates = _walk_files(root)
-        enumeration = "filesystem_walk"
+        candidates = list(_walk_files(root))
+        enumeration = (
+            "git_archive_snapshot"
+            if git_metadata.get("kind") == "git_cached_snapshot"
+            else "filesystem_walk"
+        )
     else:
-        candidates = ((path, None) for path in tracked_files)
+        candidates = [(path, None) for path in tracked_files]
         enumeration = "git_tracked_files"
 
-    for path, walk_reason in candidates:
+    total_candidates = len(candidates)
+    if progress is not None:
+        progress(0, total_candidates, "iniciando")
+
+    for position, (path, walk_reason) in enumerate(candidates, start=1):
         relative_path = _normalized_relative(path, root)
+
+        if progress is not None:
+            progress(position, total_candidates, relative_path)
 
         if walk_reason is not None:
             excluded.append({"path": relative_path, "reason": walk_reason})
@@ -392,7 +407,7 @@ def build_inventory(
         "generated_at": _utc_now(),
         "source": {
             "project": project,
-            "root": str(root),
+            "root": str(git_metadata.get("source_root") or root),
             "access_class": access_class,
             **git_metadata,
             "enumeration": enumeration,

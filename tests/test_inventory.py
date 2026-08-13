@@ -90,6 +90,24 @@ class InventoryTests(unittest.TestCase):
             self.assertIn('path: "README.md"', content)
             self.assertIn("snapshot_hash:", content)
 
+    def test_reports_progress_from_start_to_finish(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "README.md").write_text("# Teste\n", encoding="utf-8")
+            events: list[tuple[int, int, str]] = []
+
+            build_inventory(
+                root,
+                "MFSim-NG",
+                "lab",
+                progress=lambda current, total, path: events.append(
+                    (current, total, path)
+                ),
+            )
+
+            self.assertEqual(events[0], (0, 1, "iniciando"))
+            self.assertEqual(events[-1], (1, 1, "README.md"))
+
 
 if __name__ == "__main__":
     unittest.main()
