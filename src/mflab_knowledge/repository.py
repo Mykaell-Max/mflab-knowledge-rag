@@ -14,7 +14,7 @@ from typing import Callable
 from mflab_knowledge.credentials import GitCredentials
 from mflab_knowledge.inventory import detect_git_metadata
 
-LogCallback = Callable[[str], None]
+LogCallback = Callable[[str, str], None]
 
 
 @dataclass(frozen=True)
@@ -301,7 +301,7 @@ def prepare_repository_mirror(
     credentials: GitCredentials | None = None,
     log: LogCallback | None = None,
 ) -> RepositoryMirror:
-    logger = log or (lambda _message: None)
+    logger = log or (lambda _message, _level="info": None)
     source_root = source.expanduser().resolve()
     metadata = detect_git_metadata(source_root)
     if not metadata["versioned"]:
@@ -328,7 +328,10 @@ def prepare_repository_mirror(
     )
     if refresh_remote:
         if remote_url is None:
-            logger("Fonte sem remote origin; usando apenas refs locais conhecidas")
+            logger(
+                "Fonte sem remote origin; usando apenas refs locais conhecidas",
+                "warning",
+            )
         else:
             logger(f"Atualizando branches diretamente do remote: {remote_url}")
             _refresh_mirror_from_remote(mirror, remote_url, credentials)
@@ -474,7 +477,7 @@ def materialize_repository_snapshot(
     ref: str,
     log: LogCallback | None = None,
 ) -> RepositorySnapshot:
-    logger = log or (lambda _message: None)
+    logger = log or (lambda _message, _level="info": None)
     requested_ref = _safe_ref(ref)
     commit_sha, branch = _resolve_ref(mirror.mirror_path, requested_ref)
     snapshots_dir = cache_dir.expanduser().resolve() / "snapshots"
@@ -485,7 +488,7 @@ def materialize_repository_snapshot(
     marker = snapshot_container / ".complete"
 
     if marker.exists() and marker.read_text(encoding="utf-8").strip() == commit_sha:
-        logger(f"Reutilizando snapshot imutável {commit_sha[:12]}")
+        logger(f"Reutilizando snapshot imutável {commit_sha[:12]}", "success")
     else:
         if snapshot_container.exists():
             cache_boundary = snapshots_dir.resolve()

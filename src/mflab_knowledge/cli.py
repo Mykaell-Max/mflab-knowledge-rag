@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Sequence
@@ -14,15 +15,50 @@ from mflab_knowledge.sync import sync_repository_branches
 
 
 class ConsoleReporter:
-    def __init__(self, quiet: bool = False) -> None:
+    _STYLES = {
+        "info": ("INFO", "36"),
+        "success": ("OK", "1;32"),
+        "warning": ("AVISO", "1;33"),
+        "error": ("ERRO", "1;31"),
+        "result": ("RESULTADO", "1;35"),
+    }
+
+    def __init__(self, quiet: bool = False, color: str = "auto") -> None:
         self.quiet = quiet
         self._last_bucket = -1
         self._last_percent = -1
         self._interactive = sys.stderr.isatty()
+        if color == "always":
+            self._color = True
+        elif color == "never":
+            self._color = False
+        else:
+            self._color = (
+                self._interactive
+                and "NO_COLOR" not in os.environ
+                and os.environ.get("TERM", "").casefold() != "dumb"
+            )
 
-    def log(self, message: str) -> None:
-        if not self.quiet:
-            print(f"[mflab] {message}", file=sys.stderr, flush=True)
+    def _styled(self, text: str, code: str) -> str:
+        return f"\033[{code}m{text}\033[0m" if self._color else text
+
+    def log(self, message: str, level: str = "info") -> None:
+        if not self.quiet or level == "error":
+            label, style = self._STYLES.get(level, self._STYLES["info"])
+            prefix = self._styled(f"[mflab:{label}]", style)
+            print(f"{prefix} {message}", file=sys.stderr, flush=True)
+
+    def success(self, message: str) -> None:
+        self.log(message, "success")
+
+    def warning(self, message: str) -> None:
+        self.log(message, "warning")
+
+    def error(self, message: str) -> None:
+        self.log(message, "error")
+
+    def result(self, message: str) -> None:
+        self.log(message, "result")
 
     def progress(self, current: int, total: int, path: str) -> None:
         if self.quiet:
@@ -33,8 +69,10 @@ class ConsoleReporter:
                 return
             self._last_percent = percent
             width = 28
-            filled = int(width * percent / 100)
-            bar = "#" * filled + "-" * (width - filled)
+            filled_width = int(width * percent / 100)
+            filled = self._styled("#" * filled_width, "32")
+            remaining = self._styled("-" * (width - filled_width), "2")
+            bar = filled + remaining
             short_path = path if len(path) <= 48 else f"...{path[-45:]}"
             end = "\n" if current >= total else "\r"
             print(
@@ -52,6 +90,16 @@ class ConsoleReporter:
                     file=sys.stderr,
                     flush=True,
                 )
+
+
+def _add_console_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--color",
+        choices=("auto", "always", "never"),
+        default="auto",
+        help="Cores nos logs: auto, always ou never (padrão: auto).",
+    )
+    parser.add_argument("--quiet", action="store_true")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -93,7 +141,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Lê a fonte diretamente; use apenas para snapshots sem Git.",
     )
-    inventory.add_argument("--quiet", action="store_true")
+    _add_console_options(inventory)
     inventory.add_argument("--output", required=True, type=Path)
 
     sync = subparsers.add_parser(
@@ -136,7 +184,7 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Não consulta o remote; usa apenas refs existentes na fonte.",
     )
-    sync.add_argument("--quiet", action="store_true")
+    _add_console_options(sync)
     return parser
 
 
@@ -144,7 +192,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.command == "inventory":
-        reporter = ConsoleReporter(args.quiet)
+        reporter = ConsoleReporter(args.quiet, args.color)
         try:
             source = args.source
             metadata_override = None
@@ -162,7 +210,9 @@ def main(argv: Sequence[str] | None = None) -> int:
             elif args.ref:
                 raise ValueError("--ref exige uma fonte Git e snapshot isolado")
             else:
-                reporter.log("Fonte sem Git: inventário direto em modo somente leitura")
+                reporter.warning(
+                    "Fonte sem Git: inventário direto em modo somente leitura"
+                )
 
             reporter.log(f"Inventariando {source}")
             inventory = build_inventory(
@@ -173,12 +223,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                 metadata_override=metadata_override,
                 progress=reporter.progress,
             )
-            reporter.log(f"Gravando catálogo em {args.output}")
+            reporter.success(f"Gravando catálogo em {args.output}")
             write_yaml(inventory, args.output)
         except (OSError, ValueError) as exc:
-            raise SystemExit(f"erro: {exc}") from exc
+            reporter.error(str(exc))
+            return 1
 
         summary = inventory["summary"]
+        result_level = "warning" if int(summary["errors"]) else "result"
+        reporter.log(
+            f"Inventário concluído: {summary['indexable_files']} indexáveis, "
+            f"{summary['excluded_files']} excluídos, {summary['errors']} erros",
+            result_level,
+        )
         print(
             json.dumps(
                 {
@@ -194,7 +251,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "sync":
-        reporter = ConsoleReporter(args.quiet)
+        reporter = ConsoleReporter(args.quiet, args.color)
         try:
             source_metadata = detect_git_metadata(args.source.expanduser().resolve())
             remote_url = source_metadata.get("remote_url")
@@ -212,7 +269,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 else None
             )
             if credentials is not None:
-                reporter.log("Credenciais HTTPS não interativas configuradas")
+                reporter.success("Credenciais HTTPS não interativas configuradas")
             result = sync_repository_branches(
                 source=args.source,
                 project=args.project,
@@ -228,7 +285,14 @@ def main(argv: Sequence[str] | None = None) -> int:
                 progress=reporter.progress,
             )
         except (OSError, ValueError) as exc:
-            raise SystemExit(f"erro: {exc}") from exc
+            reporter.error(str(exc))
+            return 1
+        result_level = "warning" if int(result["errors"]) else "result"
+        reporter.log(
+            f"Sincronização concluída: {result['branches']} branches, "
+            f"{result['unique_commits']} commits, {result['errors']} erros",
+            result_level,
+        )
         print(json.dumps(result, ensure_ascii=False))
         return 0
 

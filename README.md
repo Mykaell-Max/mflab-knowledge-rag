@@ -84,6 +84,10 @@ repositório científico. Snapshots iguais são reutilizados por commit.
 
 Durante a execução, etapas e progresso são mostrados no terminal. Para automação
 silenciosa, use `--quiet`; o resumo JSON continua sendo emitido em `stdout`.
+Em um terminal interativo, os níveis `INFO`, `OK`, `AVISO`, `ERRO` e `RESULTADO`
+recebem cores automaticamente. Pipes, redirecionamentos e serviços recebem texto
+sem sequências ANSI. Use `--color always` para forçar, `--color never` para
+desativar, ou a variável padrão `NO_COLOR` para desativação global.
 
 ## Sincronizar todas as branches
 

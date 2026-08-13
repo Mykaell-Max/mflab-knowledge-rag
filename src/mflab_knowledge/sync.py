@@ -19,7 +19,7 @@ from mflab_knowledge.repository import (
     prepare_repository_mirror,
 )
 
-LogCallback = Callable[[str], None]
+LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, int, str], None]
 
 
@@ -135,7 +135,7 @@ def sync_repository_branches(
     log: LogCallback | None = None,
     progress: ProgressCallback | None = None,
 ) -> dict[str, object]:
-    logger = log or (lambda _message: None)
+    logger = log or (lambda _message, _level="info": None)
     destination = output_dir.expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
 
@@ -164,7 +164,8 @@ def sync_repository_branches(
     ]
     logger(
         f"Descobertas {len(ordered_branches)} branches; "
-        f"canônica: {canonical.name}"
+        f"canônica: {canonical.name}",
+        "success",
     )
 
     # This directory is generated exclusively by this command. Rebuilding it
@@ -173,7 +174,10 @@ def sync_repository_branches(
     if branches_directory.parent != destination:
         raise ValueError("diretório de catálogos fora do destino de sincronização")
     if branches_directory.exists():
-        logger("Removendo catálogos obsoletos da sincronização anterior")
+        logger(
+            "Removendo catálogos obsoletos da sincronização anterior",
+            "warning",
+        )
         shutil.rmtree(branches_directory)
 
     commit_counts = Counter(branch.commit_sha for branch in ordered_branches)
@@ -268,7 +272,7 @@ def sync_repository_branches(
     }
     manifest_path = destination / "manifest.generated.yaml"
     write_yaml(manifest, manifest_path)
-    logger("Árvore de branches:\n" + tree.rstrip())
+    logger("Árvore de branches:\n" + tree.rstrip(), "result")
     return {
         "output_dir": str(destination),
         "manifest": str(manifest_path),
