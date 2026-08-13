@@ -85,6 +85,44 @@ repositório científico. Snapshots iguais são reutilizados por commit.
 Durante a execução, etapas e progresso são mostrados no terminal. Para automação
 silenciosa, use `--quiet`; o resumo JSON continua sendo emitido em `stdout`.
 
+## Sincronizar todas as branches
+
+O comando `sync` atualiza o mirror diretamente do `origin`, descobre as branches
+remotas e gera todos os inventários numa única execução. A branch ativa no clone
+fornecido não importa e não é alterada.
+
+```bash
+PYTHONPATH=src python -m mflab_knowledge sync \
+  --source /caminho/para/mfsim-ng \
+  --project MFSim-NG \
+  --canonical-ref origin/master \
+  --branch-scope remote \
+  --access-class lab \
+  --profile auto \
+  --cache-dir cache \
+  --output-dir inventory/mfsim-ng
+```
+
+O resultado é organizado assim:
+
+```text
+inventory/mfsim-ng/
+├── manifest.generated.yaml
+├── branches.generated.txt
+└── branches/
+    ├── master.generated.yaml
+    └── diagnostic/
+        └── dpm.generated.yaml
+```
+
+`master` é marcada como canônica. As demais branches permanecem consultáveis,
+mas separadas. Branches no mesmo commit reutilizam o inventário já calculado.
+Para operar temporariamente sem consultar o GitLab, acrescente `--offline`.
+
+O acesso ao remote usa a configuração segura de credenciais do Git. Tokens não
+devem ser colocados na linha de comando, URL do repositório ou arquivos deste
+projeto.
+
 ## Política inicial de exclusão
 
 São excluídos automaticamente:
@@ -100,7 +138,7 @@ As regras serão transformadas em política configurável depois que o inventár
 
 ## Próximas entregas
 
-1. Revisar o inventário do MFSim-NG atualizado.
+1. Revisar o manifesto e a árvore multi-branch do MFSim-NG atualizado.
 2. Adicionar parsing estrutural de C++, Fortran, CMake, Markdown e casos.
 3. Persistir documentos normalizados no PostgreSQL.
 4. Adicionar busca lexical e pgvector.

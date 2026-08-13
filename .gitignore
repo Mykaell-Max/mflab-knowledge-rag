@@ -13,7 +13,9 @@ htmlcov/
 
 inventory/*.generated.yaml
 inventory/*.generated.json
+inventory/**/*.generated.yaml
+inventory/**/*.generated.json
+inventory/**/*.generated.txt
 data/
 cache/
 logs/
-

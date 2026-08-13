@@ -39,6 +39,17 @@ Uma consulta pode, portanto, usar `master` enquanto o clone fornecido está em u
 branch de trabalho. Conteúdos idênticos entre refs serão deduplicados por hash na
 etapa de normalização e embeddings.
 
+O comando `sync` consulta o remote a partir do mirror privado, descobre as
+branches remotas e produz uma árvore versionada de catálogos. A branch canônica é
+marcada explicitamente; branches de trabalho não competem com ela por padrão na
+recuperação. Duas branches no mesmo commit compartilham o processamento do
+inventário.
+
+A árvore usa os componentes do nome da branch para organização visual e calcula
+`ahead`, `behind`, `merge_base` e estado de merge contra a canônica. Ela não
+inventa uma relação de filiação entre branches, pois o Git não preserva
+formalmente de qual branch outra foi criada.
+
 ## Sincronização futura
 
 1. Um webhook recebe eventos de push, issue, merge request e comentário.

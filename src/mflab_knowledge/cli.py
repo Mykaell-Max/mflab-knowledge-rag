@@ -8,6 +8,7 @@ from typing import Sequence
 
 from mflab_knowledge.inventory import build_inventory, detect_git_metadata, write_yaml
 from mflab_knowledge.repository import prepare_repository_snapshot
+from mflab_knowledge.sync import sync_repository_branches
 
 
 class ConsoleReporter:
@@ -92,6 +93,42 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inventory.add_argument("--quiet", action="store_true")
     inventory.add_argument("--output", required=True, type=Path)
+
+    sync = subparsers.add_parser(
+        "sync",
+        help="Descobre branches e gera inventários isolados em uma execução.",
+    )
+    sync.add_argument("--source", required=True, type=Path)
+    sync.add_argument("--project", required=True)
+    sync.add_argument("--canonical-ref", default="origin/master")
+    sync.add_argument(
+        "--branch-scope",
+        default="remote",
+        choices=("remote", "local", "all"),
+        help="Branches remotas são a fonte padrão do laboratório.",
+    )
+    sync.add_argument(
+        "--access-class",
+        default="lab",
+        choices=("public", "lab", "project", "restricted", "pending"),
+    )
+    sync.add_argument(
+        "--profile",
+        default="auto",
+        choices=("auto", "generic", "mfsim-ng-pilot"),
+    )
+    sync.add_argument("--cache-dir", default=Path("cache"), type=Path)
+    sync.add_argument(
+        "--output-dir",
+        default=Path("inventory/sync"),
+        type=Path,
+    )
+    sync.add_argument(
+        "--offline",
+        action="store_true",
+        help="Não consulta o remote; usa apenas refs existentes na fonte.",
+    )
+    sync.add_argument("--quiet", action="store_true")
     return parser
 
 
@@ -146,6 +183,27 @@ def main(argv: Sequence[str] | None = None) -> int:
                 ensure_ascii=False,
             )
         )
+        return 0
+
+    if args.command == "sync":
+        reporter = ConsoleReporter(args.quiet)
+        try:
+            result = sync_repository_branches(
+                source=args.source,
+                project=args.project,
+                canonical_ref=args.canonical_ref,
+                branch_scope=args.branch_scope,
+                access_class=args.access_class,
+                profile=args.profile,
+                cache_dir=args.cache_dir,
+                output_dir=args.output_dir,
+                refresh_remote=not args.offline,
+                log=reporter.log,
+                progress=reporter.progress,
+            )
+        except (OSError, ValueError) as exc:
+            raise SystemExit(f"erro: {exc}") from exc
+        print(json.dumps(result, ensure_ascii=False))
         return 0
 
     return 2

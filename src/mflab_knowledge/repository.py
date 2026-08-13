@@ -39,6 +39,22 @@ class RepositorySnapshot:
         }
 
 
+@dataclass(frozen=True)
+class RepositoryMirror:
+    source_path: Path
+    mirror_path: Path
+    remote_url: str | None
+
+
+@dataclass(frozen=True)
+class RepositoryBranch:
+    name: str
+    requested_ref: str
+    full_ref: str
+    commit_sha: str
+    scope: str
+
+
 def _run(
     command: list[str],
     *,
@@ -141,6 +157,22 @@ def _refresh_mirror_from_local_source(
         if not mirror.exists():
             mirror.parent.mkdir(parents=True, exist_ok=True)
             _run(["git", "init", "--bare", str(mirror)])
+        else:
+            refs = _run(
+                [
+                    "git",
+                    "--git-dir",
+                    str(mirror),
+                    "for-each-ref",
+                    "--format=%(refname)",
+                    "refs/heads",
+                    "refs/tags",
+                    "refs/remotes",
+                ]
+            )
+            for ref in refs.splitlines():
+                if ref:
+                    _run(["git", "--git-dir", str(mirror), "update-ref", "-d", ref])
         _run(
             [
                 "git",
@@ -158,6 +190,23 @@ def _refresh_mirror_from_local_source(
     finally:
         if bundle.exists():
             bundle.unlink()
+
+
+def _refresh_mirror_from_remote(mirror: Path, remote_url: str) -> None:
+    _run(
+        [
+            "git",
+            "--git-dir",
+            str(mirror),
+            "fetch",
+            "--prune",
+            "--no-tags",
+            remote_url,
+            "+refs/heads/*:refs/remotes/origin/*",
+            "+refs/tags/*:refs/tags/*",
+        ],
+        timeout=300,
+    )
 
 
 def _extract_git_archive(archive: Path, destination: Path) -> None:
@@ -184,26 +233,23 @@ def _extract_git_archive(archive: Path, destination: Path) -> None:
             # Links e tipos especiais são deliberadamente ignorados.
 
 
-def prepare_repository_snapshot(
+def prepare_repository_mirror(
     source: Path,
     *,
     project: str,
     cache_dir: Path,
-    ref: str | None = None,
+    refresh_remote: bool = False,
     log: LogCallback | None = None,
-) -> RepositorySnapshot:
+) -> RepositoryMirror:
     logger = log or (lambda _message: None)
     source_root = source.expanduser().resolve()
     metadata = detect_git_metadata(source_root)
     if not metadata["versioned"]:
         raise ValueError(f"a fonte não é um repositório Git: {source_root}")
 
-    requested_ref = ref or str(metadata.get("branch") or "HEAD")
     cache_root = cache_dir.expanduser().resolve()
     repositories_dir = cache_root / "repositories"
-    snapshots_dir = cache_root / "snapshots"
     repositories_dir.mkdir(parents=True, exist_ok=True)
-    snapshots_dir.mkdir(parents=True, exist_ok=True)
 
     mirror_name = f"{_slug(project)}-{_source_identity(source_root)}.git"
     mirror = repositories_dir / mirror_name
@@ -215,7 +261,165 @@ def prepare_repository_snapshot(
         logger(f"Criando mirror isolado: {mirror}")
     _refresh_mirror_from_local_source(source_root, mirror, bundle)
 
-    commit_sha, branch = _resolve_ref(mirror, requested_ref)
+    remote_url = (
+        metadata.get("remote_url")
+        if isinstance(metadata.get("remote_url"), str)
+        else None
+    )
+    if refresh_remote:
+        if remote_url is None:
+            logger("Fonte sem remote origin; usando apenas refs locais conhecidas")
+        else:
+            logger(f"Atualizando branches diretamente do remote: {remote_url}")
+            _refresh_mirror_from_remote(mirror, remote_url)
+    return RepositoryMirror(
+        source_path=source_root,
+        mirror_path=mirror,
+        remote_url=remote_url,
+    )
+
+
+def list_repository_branches(
+    mirror: RepositoryMirror,
+    *,
+    scope: str = "remote",
+) -> list[RepositoryBranch]:
+    if scope not in {"remote", "local", "all"}:
+        raise ValueError(f"escopo de branches desconhecido: {scope}")
+
+    prefixes: list[tuple[str, str]] = []
+    if scope in {"remote", "all"}:
+        prefixes.append(("refs/remotes/origin", "remote"))
+    if scope in {"local", "all"}:
+        prefixes.append(("refs/heads", "local"))
+
+    discovered: dict[str, RepositoryBranch] = {}
+    for prefix, branch_scope in prefixes:
+        output = _run(
+            [
+                "git",
+                "--git-dir",
+                str(mirror.mirror_path),
+                "for-each-ref",
+                "--format=%(refname)%09%(objectname)",
+                prefix,
+            ]
+        )
+        for line in output.splitlines():
+            if not line.strip():
+                continue
+            full_ref, commit_sha = line.split("\t", 1)
+            if full_ref.endswith("/HEAD"):
+                continue
+            if branch_scope == "remote":
+                name = full_ref.removeprefix("refs/remotes/origin/")
+                requested_ref = f"origin/{name}"
+            else:
+                name = full_ref.removeprefix("refs/heads/")
+                requested_ref = name
+
+            # No modo `all`, a branch remota é a representação preferida.
+            if name in discovered and branch_scope == "local":
+                continue
+            discovered[name] = RepositoryBranch(
+                name=name,
+                requested_ref=requested_ref,
+                full_ref=full_ref,
+                commit_sha=commit_sha,
+                scope=branch_scope,
+            )
+
+    return sorted(discovered.values(), key=lambda branch: branch.name.casefold())
+
+
+def compare_branch_to_canonical(
+    mirror: RepositoryMirror,
+    *,
+    canonical_commit: str,
+    branch_commit: str,
+) -> dict[str, object]:
+    if canonical_commit == branch_commit:
+        return {
+            "relation": "same_commit",
+            "ahead": 0,
+            "behind": 0,
+            "merge_base": canonical_commit,
+            "merged_into_canonical": True,
+        }
+
+    counts = _run(
+        [
+            "git",
+            "--git-dir",
+            str(mirror.mirror_path),
+            "rev-list",
+            "--left-right",
+            "--count",
+            f"{canonical_commit}...{branch_commit}",
+        ]
+    )
+    behind_text, ahead_text = counts.split()
+    behind = int(behind_text)
+    ahead = int(ahead_text)
+    merge_base = _run(
+        [
+            "git",
+            "--git-dir",
+            str(mirror.mirror_path),
+            "merge-base",
+            canonical_commit,
+            branch_commit,
+        ]
+    )
+    ancestor = subprocess.run(
+        [
+            "git",
+            "--git-dir",
+            str(mirror.mirror_path),
+            "merge-base",
+            "--is-ancestor",
+            branch_commit,
+            canonical_commit,
+        ],
+        check=False,
+        capture_output=True,
+        timeout=30,
+    )
+    if ancestor.returncode not in {0, 1}:
+        raise ValueError("Git falhou ao verificar ancestralidade da branch")
+    merged = ancestor.returncode == 0
+
+    if merged:
+        relation = "merged"
+    elif behind == 0:
+        relation = "ahead"
+    elif ahead == 0:
+        relation = "behind"
+    else:
+        relation = "diverged"
+    return {
+        "relation": relation,
+        "ahead": ahead,
+        "behind": behind,
+        "merge_base": merge_base,
+        "merged_into_canonical": merged,
+    }
+
+
+def materialize_repository_snapshot(
+    mirror: RepositoryMirror,
+    *,
+    project: str,
+    cache_dir: Path,
+    ref: str,
+    log: LogCallback | None = None,
+) -> RepositorySnapshot:
+    logger = log or (lambda _message: None)
+    requested_ref = _safe_ref(ref)
+    commit_sha, branch = _resolve_ref(mirror.mirror_path, requested_ref)
+    snapshots_dir = cache_dir.expanduser().resolve() / "snapshots"
+    snapshots_dir.mkdir(parents=True, exist_ok=True)
+
     snapshot_container = snapshots_dir / _slug(project) / commit_sha
     snapshot = snapshot_container / "tree"
     marker = snapshot_container / ".complete"
@@ -236,7 +440,7 @@ def prepare_repository_snapshot(
             [
                 "git",
                 "--git-dir",
-                str(mirror),
+                str(mirror.mirror_path),
                 "archive",
                 "--format=tar",
                 f"--output={archive}",
@@ -253,14 +457,35 @@ def prepare_repository_snapshot(
 
     return RepositorySnapshot(
         path=snapshot,
-        source_path=source_root,
-        mirror_path=mirror,
+        source_path=mirror.source_path,
+        mirror_path=mirror.mirror_path,
         requested_ref=requested_ref,
         commit_sha=commit_sha,
         branch=branch,
-        remote_url=(
-            metadata.get("remote_url")
-            if isinstance(metadata.get("remote_url"), str)
-            else None
-        ),
+        remote_url=mirror.remote_url,
+    )
+
+
+def prepare_repository_snapshot(
+    source: Path,
+    *,
+    project: str,
+    cache_dir: Path,
+    ref: str | None = None,
+    log: LogCallback | None = None,
+) -> RepositorySnapshot:
+    metadata = detect_git_metadata(source.expanduser().resolve())
+    requested_ref = ref or str(metadata.get("branch") or "HEAD")
+    mirror = prepare_repository_mirror(
+        source,
+        project=project,
+        cache_dir=cache_dir,
+        log=log,
+    )
+    return materialize_repository_snapshot(
+        mirror,
+        project=project,
+        cache_dir=cache_dir,
+        ref=requested_ref,
+        log=log,
     )
