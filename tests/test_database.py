@@ -139,6 +139,9 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn(
             "d.access_class = ANY(%(allowed_access)s::text[])", connection.sql
         )
+        self.assertIn("%(branch)s::text IS NULL", connection.sql)
+        self.assertIn("%(project)s::text IS NULL", connection.sql)
+        self.assertIn("%(path_prefix)s::text IS NULL", connection.sql)
         self.assertEqual(connection.parameters["allowed_access"], ["lab"])
         self.assertEqual(results[0]["citation"], (
             "MFSim-NG master@aaaaaaaaaaaa src/dpm.cpp:L10-L20"

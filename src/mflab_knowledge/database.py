@@ -438,7 +438,10 @@ WITH query_input AS (
         SELECT occurrence.branch, occurrence.commit_sha, occurrence.canonical
         FROM mflab_knowledge.document_occurrences AS occurrence
         WHERE occurrence.document_id = d.document_id
-          AND (%(branch)s IS NULL OR occurrence.branch = %(branch)s)
+          AND (
+              %(branch)s::text IS NULL
+              OR occurrence.branch = %(branch)s::text
+          )
         ORDER BY occurrence.canonical DESC, occurrence.branch NULLS LAST
         LIMIT 1
     ) AS preferred ON true
@@ -453,11 +456,17 @@ WITH query_input AS (
         ) AS items
         FROM mflab_knowledge.document_occurrences AS occurrence
         WHERE occurrence.document_id = d.document_id
-          AND (%(branch)s IS NULL OR occurrence.branch = %(branch)s)
+          AND (
+              %(branch)s::text IS NULL
+              OR occurrence.branch = %(branch)s::text
+          )
     ) AS occurrences ON true
     WHERE d.access_class = ANY(%(allowed_access)s::text[])
-      AND (%(project)s IS NULL OR r.project = %(project)s)
-      AND (%(path_prefix)s IS NULL OR d.path LIKE %(path_prefix)s || '%%')
+      AND (%(project)s::text IS NULL OR r.project = %(project)s::text)
+      AND (
+          %(path_prefix)s::text IS NULL
+          OR d.path LIKE %(path_prefix)s::text || '%%'
+      )
       AND (
           c.search_vector @@ query_input.parsed
           OR strpos(lower(d.path), query_input.raw) > 0
