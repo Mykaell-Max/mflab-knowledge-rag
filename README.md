@@ -29,6 +29,7 @@ ainda serão adicionados depois da validação deste corpus.
 ## Requisitos
 
 - Python 3.11 ou superior;
+- módulo `venv` correspondente ao Python do sistema;
 - Git disponível no `PATH` para detectar branch e commit de clones reais.
 - PostgreSQL local e o extra opcional `postgres` apenas para os comandos `db-*`.
 

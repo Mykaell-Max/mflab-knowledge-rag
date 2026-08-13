@@ -8,7 +8,7 @@ acessa uma role PostgreSQL com o mesmo nome, sem senha e sem porta TCP exposta.
 
 ```bash
 sudo apt update
-sudo apt install -y postgresql postgresql-contrib
+sudo apt install -y postgresql postgresql-contrib python3-venv
 sudo systemctl enable --now postgresql
 sudo systemctl status postgresql --no-pager
 ```
@@ -35,8 +35,8 @@ Instale o driver opcional dentro do ambiente virtual do projeto:
 
 ```bash
 cd ~/Desktop/mflab-knowledge-rag
-source .venv/bin/activate 2>/dev/null || true
-python3 -m pip install -e '.[postgres]'
+python3 -m venv --clear .venv
+.venv/bin/python -m pip install -e '.[postgres]'
 ```
 
 No `.env` local, acrescente ou preencha:
@@ -53,14 +53,14 @@ Linux atual.
 ## 4. Criar o schema e carregar o corpus
 
 ```bash
-PYTHONPATH=src python3 -m mflab_knowledge db-init --color always
+.venv/bin/python -m mflab_knowledge db-init --color always
 
-PYTHONPATH=src python3 -m mflab_knowledge db-load \
+.venv/bin/python -m mflab_knowledge db-load \
   --documents data/mfsim-ng-zero-flow/documents.jsonl \
   --chunks data/mfsim-ng-zero-flow/chunks.jsonl \
   --color always
 
-PYTHONPATH=src python3 -m mflab_knowledge db-status --color always
+.venv/bin/python -m mflab_knowledge db-status --color always
 ```
 
 Uma segunda execução de `db-load` com os mesmos arquivos deve informar que o
@@ -69,14 +69,14 @@ corpus foi reutilizado.
 ## 5. Buscar e avaliar
 
 ```bash
-PYTHONPATH=src python3 -m mflab_knowledge db-search \
+.venv/bin/python -m mflab_knowledge db-search \
   --query DPMManager \
   --project MFSim-NG \
   --branch master \
   --limit 5 \
   --color always
 
-PYTHONPATH=src python3 -m mflab_knowledge db-evaluate \
+.venv/bin/python -m mflab_knowledge db-evaluate \
   --suite evaluations/mfsim-ng-pilot.json \
   --output data/mfsim-ng-zero-flow/postgres-evaluation.generated.json \
   --color always
