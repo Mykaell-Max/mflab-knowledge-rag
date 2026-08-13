@@ -10,6 +10,7 @@ from urllib.parse import urlsplit
 
 from mflab_knowledge.credentials import load_git_credentials
 from mflab_knowledge.inventory import build_inventory, detect_git_metadata, write_yaml
+from mflab_knowledge.normalize import normalize_manifest, search_chunks
 from mflab_knowledge.repository import prepare_repository_snapshot
 from mflab_knowledge.sync import sync_repository_branches
 
@@ -21,10 +22,17 @@ class ConsoleReporter:
         "warning": ("AVISO", "1;33"),
         "error": ("ERRO", "1;31"),
         "result": ("RESULTADO", "1;35"),
+        "progress": ("PROGRESSO", "34"),
     }
 
-    def __init__(self, quiet: bool = False, color: str = "auto") -> None:
+    def __init__(
+        self,
+        quiet: bool = False,
+        color: str = "auto",
+        progress_label: str = "inventário",
+    ) -> None:
         self.quiet = quiet
+        self.progress_label = progress_label
         self._last_bucket = -1
         self._last_percent = -1
         self._interactive = sys.stderr.isatty()
@@ -64,6 +72,8 @@ class ConsoleReporter:
         if self.quiet:
             return
         percent = 100 if total == 0 else int(current * 100 / total)
+        progress_name, progress_style = self._STYLES["progress"]
+        prefix = self._styled(f"[mflab:{progress_name}]", progress_style)
         if self._interactive:
             if percent == self._last_percent and current < total:
                 return
@@ -76,7 +86,8 @@ class ConsoleReporter:
             short_path = path if len(path) <= 48 else f"...{path[-45:]}"
             end = "\n" if current >= total else "\r"
             print(
-                f"[mflab] [{bar}] {percent:3d}% {current}/{total} {short_path:<48}",
+                f"{prefix} [{bar}] {percent:3d}% "
+                f"{current}/{total} {short_path:<48}",
                 file=sys.stderr,
                 end=end,
                 flush=True,
@@ -86,7 +97,8 @@ class ConsoleReporter:
             if bucket != self._last_bucket or current >= total:
                 self._last_bucket = bucket
                 print(
-                    f"[mflab] inventário {percent:3d}% ({current}/{total})",
+                    f"{prefix} {self.progress_label} "
+                    f"{percent:3d}% ({current}/{total})",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -185,6 +197,37 @@ def build_parser() -> argparse.ArgumentParser:
         help="Não consulta o remote; usa apenas refs existentes na fonte.",
     )
     _add_console_options(sync)
+
+    normalize = subparsers.add_parser(
+        "normalize",
+        help="Normaliza catálogos sincronizados em documentos e chunks JSONL.",
+    )
+    normalize.add_argument("--manifest", required=True, type=Path)
+    normalize.add_argument(
+        "--output-dir",
+        default=Path("data/normalized"),
+        type=Path,
+    )
+    normalize.add_argument("--cache-dir", default=Path("cache"), type=Path)
+    _add_console_options(normalize)
+
+    search = subparsers.add_parser(
+        "search",
+        help="Executa busca lexical local nos chunks normalizados.",
+    )
+    search.add_argument("--chunks", required=True, type=Path)
+    search.add_argument("--query", required=True)
+    search.add_argument("--limit", type=int, default=10)
+    search.add_argument("--branch")
+    search.add_argument("--project")
+    search.add_argument("--path-prefix")
+    search.add_argument(
+        "--allow-access",
+        action="append",
+        choices=("public", "lab", "project", "restricted"),
+        help="Classe liberada; repita para mais de uma (padrão: public e lab).",
+    )
+    _add_console_options(search)
     return parser
 
 
@@ -297,6 +340,65 @@ def main(argv: Sequence[str] | None = None) -> int:
             result_level,
         )
         print(json.dumps(result, ensure_ascii=False))
+        return 0
+
+    if args.command == "normalize":
+        reporter = ConsoleReporter(
+            args.quiet,
+            args.color,
+            progress_label="normalização",
+        )
+        try:
+            result = normalize_manifest(
+                manifest_path=args.manifest,
+                output_dir=args.output_dir,
+                cache_dir=args.cache_dir,
+                log=reporter.log,
+                progress=reporter.progress,
+            )
+        except (OSError, ValueError) as exc:
+            reporter.error(str(exc))
+            return 1
+        result_level = "warning" if int(result["errors"]) else "result"
+        reporter.log(
+            f"Corpus concluído: {result['unique_documents']} documentos, "
+            f"{result['chunks_count']} chunks, {result['documents_parsed']} "
+            f"processados, {result['documents_reused']} reutilizados, "
+            f"{result['errors']} erros",
+            result_level,
+        )
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
+
+    if args.command == "search":
+        reporter = ConsoleReporter(args.quiet, args.color)
+        if args.limit < 1 or args.limit > 100:
+            reporter.error("--limit deve estar entre 1 e 100")
+            return 1
+        allowed_access = set(args.allow_access or ("public", "lab"))
+        if "project" in allowed_access and args.project is None:
+            reporter.error("--allow-access project exige o filtro --project")
+            return 1
+        try:
+            results = search_chunks(
+                chunks_path=args.chunks,
+                query=args.query,
+                limit=args.limit,
+                branch=args.branch,
+                project=args.project,
+                path_prefix=args.path_prefix,
+                allowed_access=allowed_access,
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            reporter.error(str(exc))
+            return 1
+        reporter.result(f"Busca retornou {len(results)} chunks citáveis")
+        for position, result in enumerate(results, start=1):
+            reporter.log(
+                f"{position}. {result['citation']} (score {result['score']})",
+                "success",
+            )
+        print(json.dumps(results, ensure_ascii=False, indent=2))
         return 0
 
     return 2

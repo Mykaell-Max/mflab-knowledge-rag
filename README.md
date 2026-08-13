@@ -6,7 +6,8 @@ O projeto é separado do MFSim-NG: ele lê um clone ou snapshot fornecido por ca
 
 ## Estado atual
 
-A primeira entrega é o inventário piloto somente leitura. Ela:
+O piloto somente leitura já cobre inventário, sincronização multi-branch,
+normalização e busca lexical local. Ele:
 
 - descobre arquivos automaticamente;
 - em clones Git, considera apenas arquivos versionados no commit atual;
@@ -15,8 +16,12 @@ A primeira entrega é o inventário piloto somente leitura. Ela:
 - classifica formatos;
 - exclui builds, documentação gerada, binários, resultados volumosos e possíveis segredos;
 - gera um relatório YAML sem dependências Python externas.
+- produz documentos e chunks JSONL com linhas e proveniência por branch/commit;
+- deduplica versões idênticas compartilhadas entre branches;
+- oferece uma busca lexical local com filtros de branch, caminho e acesso.
 
-Busca híbrida, PostgreSQL/pgvector, API RAG, modelo local e integração GitLab serão adicionados depois da validação deste inventário.
+PostgreSQL/pgvector, embeddings, API RAG, modelo local e metadados colaborativos
+do GitLab ainda serão adicionados depois da validação deste corpus.
 
 ## Requisitos
 
@@ -155,6 +160,63 @@ de um serviço; elas têm precedência sobre o arquivo.
 Para outro caminho, use `--env-file /caminho/protegido/mflab.env`. O modo
 `--offline` não carrega nem exige credenciais.
 
+## Normalizar e testar a busca
+
+O `sync` também produz `manifest.generated.json` e catálogos JSON equivalentes
+aos YAMLs, usados como contrato interno sem acrescentar uma dependência de YAML.
+Após sincronizar, gere o corpus normalizado:
+
+```bash
+PYTHONPATH=src python -m mflab_knowledge normalize \
+  --manifest inventory/mfsim-ng/manifest.generated.json \
+  --cache-dir cache \
+  --output-dir data/mfsim-ng \
+  --color always
+```
+
+Os resultados são:
+
+```text
+data/mfsim-ng/
+├── normalization.generated.json
+├── documents.jsonl
+└── chunks.jsonl
+```
+
+Cada documento é uma versão única identificada por repositório, caminho, hash e
+classe de acesso. Suas `occurrences` preservam todas as branches e commits em que
+ela existe. Os chunks guardam texto, título/símbolo heurístico, linhas, parser,
+ACL e citações. Conteúdo textual idêntico usa a mesma `embedding_key`, preparando
+a deduplicação dos embeddings.
+
+O parser piloto respeita seções Markdown e reconhece âncoras básicas de
+C/C++/headers, Fortran, CMake e shell; arquivos sem estrutura reconhecida usam
+janelas por linha com sobreposição. Tree-sitter/Clang ainda será incorporado para
+símbolos e relações de código exatas.
+
+Teste uma busca lexical com citações:
+
+```bash
+PYTHONPATH=src python -m mflab_knowledge search \
+  --chunks data/mfsim-ng/chunks.jsonl \
+  --query DPMManager \
+  --branch master \
+  --limit 5 \
+  --color always
+```
+
+Por padrão, a busca libera somente `public` e `lab`. Classes adicionais exigem
+`--allow-access` explícito; `project` também exige `--project`. Conteúdo `pending`
+nunca é recuperável. Esse filtro acontece antes de o texto ser retornado.
+
+## Configuração multi-repositório
+
+O contrato inicial está em `repositories.example.toml`. Ele já descreve o
+MFSim-NG e mantém MFSim legado/MFGUI desabilitados e `pending`. Copie para
+`repositories.toml` apenas no servidor; esse arquivo local é ignorado pelo Git.
+Um próximo comando `sync-all` consumirá essa lista, mas nenhum repositório novo
+será ativado sem confirmação de caminho, branch canônica e classe de acesso.
+
 ## Política inicial de exclusão
 
 São excluídos automaticamente:
@@ -170,10 +232,10 @@ As regras serão transformadas em política configurável depois que o inventár
 
 ## Próximas entregas
 
-1. Revisar o manifesto e a árvore multi-branch do MFSim-NG atualizado.
-2. Adicionar parsing estrutural de C++, Fortran, CMake, Markdown e casos.
-3. Persistir documentos normalizados no PostgreSQL.
-4. Adicionar busca lexical e pgvector.
+1. Revisar documentos, chunks e resultados lexicais do MFSim-NG.
+2. Substituir âncoras heurísticas por parsing estrutural de código e casos.
+3. Persistir documentos normalizados e busca textual no PostgreSQL.
+4. Adicionar embeddings, pgvector e fusão híbrida.
 5. Expor `/search`, `/ask`, `/sources/{id}` e `/index/status`.
 6. Conectar GitLab em modo somente leitura.
 7. Receber webhooks e manter reconciliação agendada.

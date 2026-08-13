@@ -51,6 +51,25 @@ projeto, commit, perfil, classe de acesso, schema e versão da política coincid
 Essa chave impede que uma mudança de regras reutilize resultados semanticamente
 obsoletos. Escritas são atômicas e entradas ausentes ou inválidas são refeitas.
 
+## Corpus normalizado
+
+O piloto materializa primeiro um corpus JSONL auditável antes de escolher o
+schema definitivo do PostgreSQL. Um documento representa uma versão única por
+repositório, caminho, hash e ACL. A lista de ocorrências liga essa versão às
+branches e commits correspondentes. Chunks preservam linhas, estratégia de
+parser, hash próprio e uma `embedding_key` baseada no texto, permitindo calcular
+um embedding uma vez e reutilizá-lo sem perder as citações.
+
+A busca lexical local aplica o filtro de acesso e filtros estruturados antes de
+retornar texto. Ela serve para avaliar corpus, metadados e perguntas reais; não é
+o mecanismo de ranking definitivo. PostgreSQL FTS, pgvector e RRF entrarão após
+essa validação.
+
+O catálogo futuro de fontes é multi-repositório. Identificadores estáveis de
+repositório impedem colisões entre MFSim-NG, MFSim legado, MFGUI e outros
+projetos, mesmo quando possuem caminhos ou símbolos iguais. Novas entradas ficam
+desabilitadas/pending até a política ser confirmada.
+
 Para remotes HTTPS privados, as credenciais são lidas de variáveis de ambiente
 ou de `.env` local ignorado pelo Git. O token é limitado a `read_repository` e
 entregue ao Git por `askpass` temporário, nunca pela URL ou argumentos. Prompts

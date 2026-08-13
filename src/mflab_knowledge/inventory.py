@@ -501,3 +501,10 @@ def write_yaml(inventory: dict[str, Any], output: Path) -> None:
     destination.parent.mkdir(parents=True, exist_ok=True)
     content = "\n".join(_yaml_lines(inventory)) + "\n"
     destination.write_text(content, encoding="utf-8", newline="\n")
+
+
+def write_json(value: dict[str, Any], output: Path) -> None:
+    destination = output.expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    content = json.dumps(value, ensure_ascii=False, indent=2) + "\n"
+    destination.write_text(content, encoding="utf-8", newline="\n")

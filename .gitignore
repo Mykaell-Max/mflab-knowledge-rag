@@ -19,3 +19,4 @@ inventory/**/*.generated.txt
 data/
 cache/
 logs/
+repositories.toml

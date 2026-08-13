@@ -1,0 +1,40 @@
+schema_version = "0.1"
+
+[defaults]
+branch_scope = "remote"
+access_class = "lab"
+profile = "auto"
+cache_root = "cache/repositories"
+inventory_root = "inventory/repositories"
+normalized_root = "data/repositories"
+
+[[repositories]]
+id = "mfsim-ng"
+enabled = true
+project = "MFSim-NG"
+source = "/home/max/Desktop/mfsim-ng"
+canonical_ref = "origin/master"
+branch_scope = "remote"
+access_class = "lab"
+profile = "auto"
+
+# Ative somente após confirmar projeto, caminho, branch canônica e autorização.
+[[repositories]]
+id = "mfsim-legacy"
+enabled = false
+project = "MFSim legado"
+source = "/caminho/a-confirmar/mfsim"
+canonical_ref = "origin/master"
+branch_scope = "remote"
+access_class = "pending"
+profile = "generic"
+
+[[repositories]]
+id = "mfgui"
+enabled = false
+project = "MFGUI"
+source = "/caminho/a-confirmar/mfgui"
+canonical_ref = "origin/master"
+branch_scope = "remote"
+access_class = "pending"
+profile = "generic"

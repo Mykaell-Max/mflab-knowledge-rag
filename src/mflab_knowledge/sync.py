@@ -12,7 +12,12 @@ from pathlib import Path
 from typing import Callable
 
 from mflab_knowledge.credentials import GitCredentials
-from mflab_knowledge.inventory import SCHEMA_VERSION, build_inventory, write_yaml
+from mflab_knowledge.inventory import (
+    SCHEMA_VERSION,
+    build_inventory,
+    write_json,
+    write_yaml,
+)
 from mflab_knowledge.repository import (
     RepositoryBranch,
     compare_branch_to_canonical,
@@ -55,6 +60,16 @@ def _path_component(value: str) -> str:
 def _catalog_path(output_dir: Path, branch_name: str) -> Path:
     components = [_path_component(part) for part in branch_name.split("/")]
     return output_dir / "branches" / Path(*components[:-1]) / f"{components[-1]}.generated.yaml"
+
+
+def _catalog_json_path(output_dir: Path, branch_name: str) -> Path:
+    components = [_path_component(part) for part in branch_name.split("/")]
+    return (
+        output_dir
+        / "branches"
+        / Path(*components[:-1])
+        / f"{components[-1]}.generated.json"
+    )
 
 
 def _inventory_cache_descriptor(
@@ -284,6 +299,7 @@ def sync_repository_branches(
 
     commit_counts = Counter(branch.commit_sha for branch in ordered_branches)
     inventories_by_commit: dict[str, dict[str, object]] = {}
+    snapshot_roots: dict[str, Path] = {}
     entries: list[dict[str, object]] = []
     inventories_built = 0
     inventories_reused = 0
@@ -298,6 +314,14 @@ def sync_repository_branches(
             inventory = copy.deepcopy(inventories_by_commit[branch.commit_sha])
             cache_status = "same_run"
         else:
+            snapshot = materialize_repository_snapshot(
+                mirror,
+                project=project,
+                cache_dir=cache_dir,
+                ref=branch.requested_ref,
+                log=logger,
+            )
+            snapshot_roots[branch.commit_sha] = snapshot.path
             descriptor = _inventory_cache_descriptor(
                 repository=repository_identity,
                 project=project,
@@ -323,13 +347,6 @@ def sync_repository_branches(
                         f"{branch.commit_sha[:12]}; recalculando",
                         "warning",
                     )
-                snapshot = materialize_repository_snapshot(
-                    mirror,
-                    project=project,
-                    cache_dir=cache_dir,
-                    ref=branch.requested_ref,
-                    log=logger,
-                )
                 inventory = build_inventory(
                     source=snapshot.path,
                     project=project,
@@ -373,11 +390,14 @@ def sync_repository_branches(
                 "requested_ref": branch.requested_ref,
                 "canonical": branch.name == canonical.name,
                 "branch_scope": branch.scope,
+                "snapshot_root": str(snapshot_roots[branch.commit_sha]),
             }
         )
 
         catalog = _catalog_path(destination, branch.name)
+        catalog_json = _catalog_json_path(destination, branch.name)
         write_yaml(inventory, catalog)
+        write_json(inventory, catalog_json)
         summary = inventory["summary"]
         assert isinstance(summary, dict)
         relation = compare_branch_to_canonical(
@@ -393,6 +413,7 @@ def sync_repository_branches(
             "commit_sha": branch.commit_sha,
             "snapshot_hash": source_metadata["snapshot_hash"],
             "catalog": catalog.relative_to(destination).as_posix(),
+            "catalog_json": catalog_json.relative_to(destination).as_posix(),
             "discovered_files": summary["discovered_files"],
             "indexable_files": summary["indexable_files"],
             "excluded_files": summary["excluded_files"],
@@ -410,7 +431,7 @@ def sync_repository_branches(
 
     total_errors = sum(int(entry["errors"]) for entry in entries)
     manifest: dict[str, object] = {
-        "schema_version": "0.2",
+        "schema_version": "0.3",
         "generated_at": _utc_now(),
         "project": project,
         "source": str(mirror.source_path),
@@ -429,11 +450,14 @@ def sync_repository_branches(
         "branches": entries,
     }
     manifest_path = destination / "manifest.generated.yaml"
+    manifest_json_path = destination / "manifest.generated.json"
     write_yaml(manifest, manifest_path)
+    write_json(manifest, manifest_json_path)
     logger("Árvore de branches:\n" + tree.rstrip(), "result")
     return {
         "output_dir": str(destination),
         "manifest": str(manifest_path),
+        "manifest_json": str(manifest_json_path),
         "tree": str(tree_path),
         "branches": len(entries),
         "unique_commits": len(inventories_by_commit),

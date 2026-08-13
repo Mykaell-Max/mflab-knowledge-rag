@@ -38,6 +38,7 @@ class RepositorySnapshot:
             "evidence_limit": None,
             "snapshot_strategy": "independent_mirror_and_git_archive",
             "source_root": str(self.source_path),
+            "snapshot_root": str(self.path),
             "cache_mirror": str(self.mirror_path),
         }
 

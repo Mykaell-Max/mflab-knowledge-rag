@@ -90,6 +90,7 @@ class SyncTests(unittest.TestCase):
             self.assertEqual(result["inventories_built"], 2)
             self.assertEqual(result["inventories_reused"], 0)
             self.assertEqual(result["errors"], 0)
+            self.assertTrue(Path(str(result["manifest_json"])).is_file())
             self.assertTrue(first_progress)
             self.assertEqual(_git(source, "rev-parse", "HEAD"), before_head)
             self.assertEqual(_git(source, "status", "--short"), before_status)
@@ -116,6 +117,12 @@ class SyncTests(unittest.TestCase):
             self.assertIn('branch: "diagnostic/dpm"', diagnostic_catalog)
             self.assertIn('branch: "feature/alias"', alias_catalog)
             self.assertNotIn("local-output.h5", master_catalog)
+            master_catalog_json = output / "branches" / "master.generated.json"
+            self.assertTrue(master_catalog_json.is_file())
+            self.assertIn(
+                '"snapshot_root":',
+                master_catalog_json.read_text(encoding="utf-8"),
+            )
 
             manifest = (output / "manifest.generated.yaml").read_text(
                 encoding="utf-8"
