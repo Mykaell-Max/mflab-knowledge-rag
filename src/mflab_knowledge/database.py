@@ -43,6 +43,14 @@ def _schema_sql() -> str:
     )
 
 
+def _vector_schema_sql() -> str:
+    return (
+        resources.files("mflab_knowledge")
+        .joinpath("sql", "002_vector.sql")
+        .read_text(encoding="utf-8")
+    )
+
+
 def _file_hash(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as source:
@@ -143,6 +151,34 @@ def initialize_database(
         connection.execute(_schema_sql())
     logger("Schema PostgreSQL pronto", "success")
     return {"schema": "mflab_knowledge", "initialized": True}
+
+
+def initialize_vector_database(
+    database_url: str,
+    *,
+    log: LogCallback | None = None,
+) -> dict[str, object]:
+    logger = log or (lambda _message, _level="info": None)
+    logger("Validando extensão pgvector e schema de embeddings", "info")
+    with _connect(database_url) as connection:
+        connection.execute(_schema_sql())
+        version = connection.execute(
+            "SELECT extversion FROM pg_extension WHERE extname = 'vector'"
+        ).fetchone()
+        if not version:
+            raise ValueError(
+                "extensão vector não ativada no banco; instale o pacote e "
+                "execute como administrador: sudo -u postgres psql -d "
+                "mflab_knowledge -c 'CREATE EXTENSION vector'"
+            )
+        connection.execute(_vector_schema_sql())
+    logger(f"pgvector {version[0]} pronto", "success")
+    return {
+        "schema": "mflab_knowledge",
+        "vector_initialized": True,
+        "pgvector_version": version[0],
+        "dimensions": 1024,
+    }
 
 
 DOCUMENT_UPSERT = """
@@ -535,6 +571,10 @@ def search_postgres(
     }
     with _connect(database_url, row_factory=dict_row) as connection:
         rows = connection.execute(SEARCH_SQL, parameters).fetchall()
+    return _rows_to_results(rows)
+
+
+def _rows_to_results(rows: Iterable[dict[str, object]]) -> list[dict[str, object]]:
     results: list[dict[str, object]] = []
     for row in rows:
         result = dict(row)

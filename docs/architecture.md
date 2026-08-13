@@ -61,9 +61,8 @@ parser, hash próprio e uma `embedding_key` baseada no texto, permitindo calcula
 um embedding uma vez e reutilizá-lo sem perder as citações.
 
 A busca lexical local aplica o filtro de acesso e filtros estruturados antes de
-retornar texto. Ela serve para avaliar corpus, metadados e perguntas reais; não é
-o mecanismo de ranking definitivo. PostgreSQL FTS, pgvector e RRF entrarão após
-essa validação.
+retornar texto. Ela serve para avaliar corpus, metadados e perguntas reais e
+continua sendo uma das entradas da recuperação híbrida.
 
 A suíte de avaliação versionada transforma perguntas reais em critérios
 reprodutíveis de arquivo e posição. Ela registra pass rate, recall das
@@ -90,9 +89,26 @@ identificadores. ACL, projeto, branch e prefixo de caminho são predicados da
 consulta SQL, anteriores ao retorno do texto. Diversidade por arquivo e
 deduplicação por hash continuam fazendo parte do contrato de recuperação.
 
-O pgvector não entra nessa migração inicial. Ele será acrescentado depois que a
-busca PostgreSQL textual passar pela mesma suíte que estabeleceu a linha de base
-JSONL; isso isola regressões de persistência das decisões sobre embeddings.
+## Embeddings e recuperação híbrida
+
+O schema vetorial é uma migração opcional sobre o backend textual. Cada perfil
+registra modelo, revisão imutável, dimensionalidade, comprimento máximo e prompt
+de consulta. A chave do perfil deriva de todos esses valores; portanto, uma
+mudança incompatível produz um conjunto novo em vez de reutilizar vetores antigos.
+
+Os embeddings são calculados localmente e gravados incrementalmente por lote.
+Chunks `pending` são excluídos antes da inferência. Na consulta semântica, ACL,
+projeto, branch e prefixo de caminho são predicados SQL anteriores ao ranking e
+ao retorno de texto. A proveniência continua vindo das ocorrências por branch.
+
+O corpus piloto usa distância cosseno exata no pgvector. Um índice aproximado
+HNSW somente será considerado quando volume e medições justificarem a troca;
+nesse caso, recall e latência deverão ser avaliados explicitamente.
+
+O modo híbrido busca candidatos de forma independente no PostgreSQL FTS e no
+pgvector. Em seguida, RRF combina apenas as posições nos dois rankings, evitando
+comparar escalas de score incompatíveis. O resultado final volta a aplicar
+diversidade por arquivo e deduplicação por hash.
 
 Para aumentar diversidade, o ranking piloto limita chunks por caminho, colapsa
 conteúdos idênticos e comprime o ganho de frequência lexical. Esses limites são

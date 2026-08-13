@@ -1,0 +1,90 @@
+{
+  "schema_version": "0.1",
+  "name": "MFSim-NG — avaliação semântica piloto em português",
+  "cases": [
+    {
+      "id": "semantic-dpm-initialization",
+      "query": "Onde o gerenciador do modelo de partículas é inicializado e seus contadores são zerados?",
+      "project": "MFSim-NG",
+      "branch": "master",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "src/mfsim/model/lagrangian/DPM/dpm_manager.cpp",
+          "title_contains": "DPMManager",
+          "within_rank": 10
+        }
+      ]
+    },
+    {
+      "id": "semantic-distributed-particle-ids",
+      "query": "Como o código evita colisões entre identificadores de partículas criadas por processos MPI diferentes?",
+      "project": "MFSim-NG",
+      "branch": "diagnostic/dpm",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "src/mfsim/model/lagrangian/DPM/common/dpm_types.hpp",
+          "title_contains": "ParticleIDGenerator",
+          "within_rank": 10
+        },
+        {
+          "path": "src/mfsim/model/lagrangian/DPM/common/dpm_particle.cpp",
+          "within_rank": 10
+        }
+      ]
+    },
+    {
+      "id": "semantic-lagrangian-output",
+      "query": "Como os campos das partículas lagrangianas são gravados em arquivos de saída paralelos?",
+      "project": "MFSim-NG",
+      "branch": "diagnostic/dpm",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "src/mfsim/output/hdf5/hdf5_lag_output.cpp",
+          "within_rank": 10
+        },
+        {
+          "path": "src/mfsim/output/hdf5/hdf5_lag_output.hpp",
+          "within_rank": 10
+        }
+      ]
+    },
+    {
+      "id": "semantic-billion-particle-case",
+      "query": "Qual caso configura a criação de um bilhão de partículas e como sua execução paralela é decomposta?",
+      "project": "MFSim-NG",
+      "branch": "diagnostic/dpm",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "tests/dpm_ram_1b/domain_0/input/dpm.json",
+          "within_rank": 10
+        },
+        {
+          "path": "tests/dpm_ram_1b/domain_0/input/input.json",
+          "within_rank": 10
+        },
+        {
+          "path": "tests/dpm_ram_1b/domains.json",
+          "within_rank": 10
+        }
+      ]
+    },
+    {
+      "id": "semantic-domain-dpm-integration",
+      "query": "Em que parte do domínio principal o modelo de partículas é integrado aos demais componentes da simulação?",
+      "project": "MFSim-NG",
+      "branch": "master",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "src/mfsim/domain/domain.hpp",
+          "title_contains": "Domain",
+          "within_rank": 10
+        }
+      ]
+    }
+  ]
+}

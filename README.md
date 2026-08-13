@@ -7,7 +7,8 @@ O projeto é separado do MFSim-NG: ele lê um clone ou snapshot fornecido por ca
 ## Estado atual
 
 O piloto somente leitura já cobre inventário, sincronização multi-branch,
-normalização, busca lexical local e persistência textual opcional no PostgreSQL.
+normalização, persistência no PostgreSQL e recuperação lexical,
+semântica e híbrida.
 Ele:
 
 - descobre arquivos automaticamente;
@@ -21,17 +22,19 @@ Ele:
 - deduplica versões idênticas compartilhadas entre branches;
 - oferece uma busca lexical local com filtros de branch, caminho e acesso.
 - carrega o mesmo corpus no PostgreSQL de forma transacional e idempotente;
-- executa busca textual PostgreSQL e a mesma suíte de regressão.
+- calcula embeddings incrementais com modelo local e armazena-os no pgvector;
+- combina os rankings lexical e semântico por Reciprocal Rank Fusion (RRF);
+- executa as mesmas suítes versionadas de regressão em cada modo.
 
-Embeddings/pgvector, API RAG, modelo local e metadados colaborativos do GitLab
-ainda serão adicionados depois da validação deste corpus.
+A API RAG e os metadados colaborativos do GitLab ainda serão adicionados.
 
 ## Requisitos
 
 - Python 3.11 ou superior;
 - módulo `venv` correspondente ao Python do sistema;
 - Git disponível no `PATH` para detectar branch e commit de clones reais.
-- PostgreSQL local e o extra opcional `postgres` apenas para os comandos `db-*`.
+- PostgreSQL local e o extra opcional `postgres` para os comandos `db-*`;
+- pgvector e o extra `embeddings` somente para busca semântica/híbrida.
 
 O inventário inicial não instala bibliotecas e não precisa acessar a rede.
 
@@ -297,6 +300,51 @@ PYTHONPATH=src python3 -m mflab_knowledge db-evaluate \
 O comando retorna código diferente de zero se qualquer caso regredir. Use
 `db-status` para conferir contagens e o horário da última carga.
 
+### Embeddings locais e recuperação híbrida
+
+O perfil padrão usa `Qwen/Qwen3-Embedding-0.6B`, fixado por commit, com vetores
+normalizados de 1.024 dimensões. O download inicial dos pesos é feito uma vez;
+o código e os documentos do laboratório permanecem no Morgoth. O dispositivo é
+selecionado automaticamente entre GPU e CPU.
+
+Depois de instalar o pgvector e o extra `embeddings`, inicialize a migração e
+calcule apenas os chunks ainda ausentes:
+
+```bash
+.venv/bin/python -m mflab_knowledge db-vector-init --color always
+
+.venv/bin/python -m mflab_knowledge db-embed \
+  --batch-size 4 \
+  --color always
+
+.venv/bin/python -m mflab_knowledge db-embedding-status --color always
+```
+
+Cada lote é confirmado separadamente. Se o processo for interrompido, executar
+`db-embed` novamente retoma o restante e reutiliza os vetores já gravados. Caso
+a GPU não comporte um lote, use `--batch-size 2`; `--device cpu` fornece um
+fallback mais lento.
+
+Uma consulta híbrida combina correspondências exatas de identificadores com a
+proximidade conceitual:
+
+```bash
+.venv/bin/python -m mflab_knowledge db-search \
+  --mode hybrid \
+  --query "Onde o gerenciador de partículas é inicializado?" \
+  --project MFSim-NG \
+  --branch master \
+  --limit 5 \
+  --color always
+```
+
+ACL, projeto, branch e caminho são aplicados antes de o texto participar dos
+resultados semânticos. O piloto usa busca vetorial exata, sem HNSW, porque o
+corpus atual tem aproximadamente 12 mil chunks e assim a avaliação não perde
+recall por aproximação. A suíte conceitual em português fica em
+`evaluations/mfsim-ng-semantic-pilot.json`; instruções completas estão em
+[`docs/postgresql.md`](docs/postgresql.md).
+
 ## Configuração multi-repositório
 
 O contrato inicial está em `repositories.example.toml`. Ele já descreve o
@@ -320,12 +368,10 @@ As regras serão transformadas em política configurável depois que o inventár
 
 ## Próximas entregas
 
-1. Executar e ampliar a suíte de avaliação com perguntas reais do laboratório.
-2. Validar a busca PostgreSQL contra a mesma suíte do corpus JSONL.
-3. Substituir âncoras heurísticas por parsing estrutural de código e casos.
-4. Adicionar embeddings, pgvector e fusão híbrida.
-5. Expor `/search`, `/ask`, `/sources/{id}` e `/index/status`.
-6. Conectar GitLab em modo somente leitura.
-7. Receber webhooks e manter reconciliação agendada.
+1. Executar e ampliar as suítes lexical e semântica com perguntas reais.
+2. Substituir âncoras heurísticas por parsing estrutural de código e casos.
+3. Expor `/search`, `/ask`, `/sources/{id}` e `/index/status`.
+4. Adicionar o catálogo multi-repositório e o comando `sync-all`.
+5. Receber webhooks do GitLab e manter reconciliação agendada.
 
 As decisões gerais e os limites de segurança estão documentados no `HANDOFF.md` do projeto de continuidade que originou este repositório.

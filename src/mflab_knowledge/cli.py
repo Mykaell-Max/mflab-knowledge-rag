@@ -13,8 +13,20 @@ from mflab_knowledge.database import (
     database_fingerprint,
     database_status,
     initialize_database,
+    initialize_vector_database,
     load_corpus,
     search_postgres,
+)
+from mflab_knowledge.embeddings import (
+    DEFAULT_EMBEDDING_MODEL,
+    DEFAULT_EMBEDDING_REVISION,
+    DEFAULT_MAX_SEQUENCE_LENGTH,
+    LocalEmbedder,
+    embed_database,
+    embedding_status,
+    hybrid_fingerprint,
+    hybrid_search,
+    semantic_search,
 )
 from mflab_knowledge.evaluate import evaluate_suite
 from mflab_knowledge.inventory import build_inventory, detect_git_metadata, write_yaml
@@ -130,6 +142,29 @@ def _add_database_options(parser: argparse.ArgumentParser) -> None:
         help="Arquivo local com MFLAB_DATABASE_URL (padrão: ./.env).",
     )
     _add_console_options(parser)
+
+
+def _add_embedding_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--embedding-model",
+        default=DEFAULT_EMBEDDING_MODEL,
+        help=f"Modelo local (padrão: {DEFAULT_EMBEDDING_MODEL}).",
+    )
+    parser.add_argument(
+        "--embedding-revision",
+        default=DEFAULT_EMBEDDING_REVISION,
+        help="Commit/revisão imutável dos pesos do modelo.",
+    )
+    parser.add_argument(
+        "--device",
+        default="auto",
+        help="Dispositivo do modelo: auto, cpu, cuda etc. (padrão: auto).",
+    )
+    parser.add_argument(
+        "--max-sequence-length",
+        type=int,
+        default=DEFAULT_MAX_SEQUENCE_LENGTH,
+    )
 
 
 def _add_search_options(parser: argparse.ArgumentParser) -> None:
@@ -311,6 +346,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="Executa busca textual no corpus armazenado no PostgreSQL.",
     )
     _add_search_options(db_search)
+    db_search.add_argument(
+        "--mode",
+        choices=("lexical", "semantic", "hybrid"),
+        default="lexical",
+    )
+    _add_embedding_options(db_search)
     _add_database_options(db_search)
 
     db_evaluate = subparsers.add_parser(
@@ -323,6 +364,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=Path("data/postgres-evaluation.generated.json"),
         type=Path,
     )
+    db_evaluate.add_argument(
+        "--mode",
+        choices=("lexical", "semantic", "hybrid"),
+        default="lexical",
+    )
+    _add_embedding_options(db_evaluate)
     _add_database_options(db_evaluate)
 
     db_status = subparsers.add_parser(
@@ -330,6 +377,26 @@ def build_parser() -> argparse.ArgumentParser:
         help="Mostra contagens e última carga do PostgreSQL.",
     )
     _add_database_options(db_status)
+
+    db_vector_init = subparsers.add_parser(
+        "db-vector-init",
+        help="Valida pgvector e cria as tabelas de embeddings.",
+    )
+    _add_database_options(db_vector_init)
+
+    db_embed = subparsers.add_parser(
+        "db-embed",
+        help="Calcula incrementalmente embeddings locais dos chunks.",
+    )
+    _add_embedding_options(db_embed)
+    db_embed.add_argument("--batch-size", type=int, default=4)
+    _add_database_options(db_embed)
+
+    db_embedding_status = subparsers.add_parser(
+        "db-embedding-status",
+        help="Mostra perfis e quantidades de embeddings armazenados.",
+    )
+    _add_database_options(db_embedding_status)
     return parser
 
 
@@ -532,8 +599,17 @@ def main(argv: Sequence[str] | None = None) -> int:
         "db-search",
         "db-evaluate",
         "db-status",
+        "db-vector-init",
+        "db-embed",
+        "db-embedding-status",
     }:
-        reporter = ConsoleReporter(args.quiet, args.color)
+        reporter = ConsoleReporter(
+            args.quiet,
+            args.color,
+            progress_label=(
+                "embeddings" if args.command == "db-embed" else "banco"
+            ),
+        )
         database_url: str | None = None
         try:
             database_url = load_database_url(args.env_file)
@@ -558,21 +634,76 @@ def main(argv: Sequence[str] | None = None) -> int:
                 print(json.dumps(result, ensure_ascii=False))
                 return 0
 
-            if args.command == "db-search":
-                allowed_access = _search_access(args)
-                results = search_postgres(
+            if args.command == "db-vector-init":
+                result = initialize_vector_database(database_url, log=reporter.log)
+                reporter.result("Backend vetorial PostgreSQL inicializado")
+                print(json.dumps(result, ensure_ascii=False))
+                return 0
+
+            if args.command == "db-embed":
+                result = embed_database(
                     database_url,
-                    query=args.query,
-                    limit=args.limit,
-                    branch=args.branch,
-                    project=args.project,
-                    path_prefix=args.path_prefix,
-                    allowed_access=allowed_access,
-                    max_per_path=args.max_per_path,
-                    include_duplicate_content=args.include_duplicate_content,
+                    model_id=args.embedding_model,
+                    revision=args.embedding_revision,
+                    device=args.device,
+                    max_sequence_length=args.max_sequence_length,
+                    batch_size=args.batch_size,
+                    log=reporter.log,
+                    progress=reporter.progress,
                 )
                 reporter.result(
-                    f"Busca PostgreSQL retornou {len(results)} chunks citáveis"
+                    f"Embeddings: {result['embedded']} calculados, "
+                    f"{result['reused']} reutilizados; dispositivo "
+                    f"{result['device']}"
+                )
+                print(json.dumps(result, ensure_ascii=False))
+                return 0
+
+            if args.command == "db-embedding-status":
+                result = embedding_status(database_url)
+                reporter.result(
+                    f"Perfis de embeddings armazenados: {len(result['models'])}"
+                )
+                print(json.dumps(result, ensure_ascii=False, indent=2))
+                return 0
+
+            if args.command == "db-search":
+                allowed_access = _search_access(args)
+                parameters = {
+                    "query": args.query,
+                    "limit": args.limit,
+                    "branch": args.branch,
+                    "project": args.project,
+                    "path_prefix": args.path_prefix,
+                    "allowed_access": allowed_access,
+                    "max_per_path": args.max_per_path,
+                    "include_duplicate_content": (
+                        args.include_duplicate_content
+                    ),
+                }
+                if args.mode == "lexical":
+                    results = search_postgres(database_url, **parameters)
+                else:
+                    embedder = LocalEmbedder(
+                        model_id=args.embedding_model,
+                        revision=args.embedding_revision,
+                        device=args.device,
+                        max_sequence_length=args.max_sequence_length,
+                        log=reporter.log,
+                    )
+                    search_function = (
+                        semantic_search
+                        if args.mode == "semantic"
+                        else hybrid_search
+                    )
+                    results = search_function(
+                        database_url,
+                        embedder,
+                        **parameters,
+                    )
+                reporter.result(
+                    f"Busca PostgreSQL {args.mode} retornou "
+                    f"{len(results)} chunks citáveis"
                 )
                 for position, result in enumerate(results, start=1):
                     reporter.log(
@@ -584,10 +715,30 @@ def main(argv: Sequence[str] | None = None) -> int:
                 return 0
 
             if args.command == "db-evaluate":
-                backend = database_fingerprint(database_url)
+                embedder: LocalEmbedder | None = None
+                if args.mode == "lexical":
+                    backend = database_fingerprint(database_url)
+                    selected_search = search_postgres
+                else:
+                    embedder = LocalEmbedder(
+                        model_id=args.embedding_model,
+                        revision=args.embedding_revision,
+                        device=args.device,
+                        max_sequence_length=args.max_sequence_length,
+                        log=reporter.log,
+                    )
+                    backend = hybrid_fingerprint(database_url, embedder)
+                    backend["mode"] = args.mode
+                    selected_search = (
+                        semantic_search
+                        if args.mode == "semantic"
+                        else hybrid_search
+                    )
 
                 def database_search(**parameters: object) -> list[dict[str, object]]:
-                    return search_postgres(database_url, **parameters)
+                    if embedder is None:
+                        return selected_search(database_url, **parameters)
+                    return selected_search(database_url, embedder, **parameters)
 
                 report = evaluate_suite(
                     suite_path=args.suite,
@@ -600,7 +751,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 assert isinstance(summary, dict)
                 failures = int(summary["cases_failed"])
                 reporter.log(
-                    f"Avaliação PostgreSQL: "
+                    f"Avaliação PostgreSQL {args.mode}: "
                     f"{summary['cases_passed']}/{summary['cases']} casos; "
                     f"recall {float(summary['expectation_recall']):.1%}; "
                     f"MRR {float(summary['mean_reciprocal_rank']):.3f}",

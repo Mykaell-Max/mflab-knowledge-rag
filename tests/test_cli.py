@@ -91,9 +91,19 @@ class ConsoleReporterTests(unittest.TestCase):
                 "never",
             ]
         )
+        hybrid = parser.parse_args(
+            [
+                "db-search",
+                "--query",
+                "partículas distribuídas",
+                "--mode",
+                "hybrid",
+            ]
+        )
         self.assertEqual(inventory.color, "never")
         self.assertEqual(sync.color, "always")
         self.assertEqual(database.color, "never")
+        self.assertEqual(hybrid.mode, "hybrid")
 
 
 if __name__ == "__main__":
