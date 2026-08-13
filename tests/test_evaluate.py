@@ -106,6 +106,46 @@ class EvaluateTests(unittest.TestCase):
             self.assertIn(report["cases"][0]["expectations"][0]["rank"], {1, 2})
             self.assertIsNone(report["cases"][1]["expectations"][0]["rank"])
             self.assertTrue(report_path.exists())
+            self.assertEqual(report["backend"], {"type": "jsonl"})
+            self.assertTrue(str(report["chunks_hash"]).startswith("sha256:"))
+
+    def test_accepts_an_alternate_search_backend(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            suite_path = root / "suite.json"
+            _write_json(
+                suite_path,
+                {
+                    "schema_version": "0.1",
+                    "cases": [
+                        {
+                            "id": "database",
+                            "query": "DPMManager",
+                            "expectations": [
+                                {"path": "src/dpm.cpp", "within_rank": 1}
+                            ],
+                        }
+                    ],
+                },
+            )
+
+            def search(**_parameters: object) -> list[dict[str, object]]:
+                return [
+                    {
+                        "path": "src/dpm.cpp",
+                        "title": "DPMManager",
+                        "citation": "MFSim-NG master@abc src/dpm.cpp:L1-L2",
+                    }
+                ]
+
+            report = evaluate_suite(
+                suite_path=suite_path,
+                search=search,
+                backend={"type": "postgresql"},
+            )
+            self.assertEqual(report["summary"]["cases_passed"], 1)
+            self.assertEqual(report["backend"], {"type": "postgresql"})
+            self.assertNotIn("chunks_file", report)
 
     def test_rejects_empty_suite_and_malformed_access_list(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:

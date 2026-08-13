@@ -1,0 +1,158 @@
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest import mock
+
+from mflab_knowledge import database
+
+
+def _write_jsonl(path: Path, values: list[dict[str, object]]) -> None:
+    path.write_text(
+        "".join(json.dumps(value) + "\n" for value in values),
+        encoding="utf-8",
+    )
+
+
+def _document() -> dict[str, object]:
+    return {
+        "document_id": "document-1",
+        "repository_id": "mfsim-ng-123",
+        "project": "MFSim-NG",
+        "remote_url": "https://gitlab.example/mfsim-ng.git",
+        "path": "src/dpm.cpp",
+        "format": "cpp",
+        "size_bytes": 42,
+        "content_hash": "sha256:document",
+        "access_class": "lab",
+        "encoding": "utf-8",
+        "parser_version": "parser-1",
+        "occurrences": [
+            {
+                "branch": "master",
+                "commit_sha": "a" * 40,
+                "canonical": True,
+                "requested_ref": "origin/master",
+            }
+        ],
+    }
+
+
+def _chunk(document_id: str = "document-1") -> dict[str, object]:
+    return {
+        "chunk_id": "chunk-1",
+        "document_id": document_id,
+        "title": "DPMManager",
+        "kind": "symbol",
+        "line_start": 10,
+        "line_end": 20,
+        "text": "class DPMManager {};",
+        "chunk_hash": "sha256:chunk",
+        "embedding_key": "sha256:chunk",
+        "parser_version": "parser-1",
+    }
+
+
+class _Result:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self.rows = rows
+
+    def fetchall(self) -> list[dict[str, object]]:
+        return self.rows
+
+
+class _Connection:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self.rows = rows
+        self.sql = ""
+        self.parameters: dict[str, object] = {}
+
+    def __enter__(self) -> _Connection:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def execute(self, sql: str, parameters: dict[str, object]) -> _Result:
+        self.sql = sql
+        self.parameters = parameters
+        return _Result(self.rows)
+
+
+class DatabaseTests(unittest.TestCase):
+    def test_schema_preserves_acl_occurrences_and_uses_gin(self) -> None:
+        schema = database._schema_sql()
+        self.assertIn("document_occurrences", schema)
+        self.assertIn("access_class IN", schema)
+        self.assertIn("GENERATED ALWAYS AS", schema)
+        self.assertIn("USING GIN (search_vector)", schema)
+
+    def test_prepares_single_repository_and_rejects_broken_chunk(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            documents_path = root / "documents.jsonl"
+            chunks_path = root / "chunks.jsonl"
+            _write_jsonl(documents_path, [_document()])
+            _write_jsonl(chunks_path, [_chunk()])
+
+            corpus = database._prepare_corpus(documents_path, chunks_path)
+            self.assertEqual(corpus["repository_id"], "mfsim-ng-123")
+            self.assertEqual(corpus["project"], "MFSim-NG")
+            self.assertTrue(str(corpus["documents_hash"]).startswith("sha256:"))
+
+            _write_jsonl(chunks_path, [_chunk("missing")])
+            with self.assertRaisesRegex(ValueError, "documento ausente"):
+                database._prepare_corpus(documents_path, chunks_path)
+
+    def test_postgres_search_filters_acl_before_returning_text(self) -> None:
+        connection = _Connection(
+            [
+                {
+                    "score": 12.25,
+                    "chunk_id": "chunk-1",
+                    "chunk_hash": "sha256:chunk",
+                    "project": "MFSim-NG",
+                    "path": "src/dpm.cpp",
+                    "title": "DPMManager",
+                    "line_start": 10,
+                    "line_end": 20,
+                    "access_class": "lab",
+                    "branch": "master",
+                    "commit_sha": "a" * 40,
+                    "occurrences": [{"branch": "master"}],
+                    "text": "class DPMManager {};",
+                }
+            ]
+        )
+        with mock.patch.object(database, "_driver", return_value=(object(), object())):
+            with mock.patch.object(database, "_connect", return_value=connection):
+                results = database.search_postgres(
+                    "postgresql://not-logged",
+                    query="DPMManager",
+                    branch="master",
+                    project="MFSim-NG",
+                    allowed_access={"lab"},
+                )
+
+        self.assertIn(
+            "d.access_class = ANY(%(allowed_access)s::text[])", connection.sql
+        )
+        self.assertEqual(connection.parameters["allowed_access"], ["lab"])
+        self.assertEqual(results[0]["citation"], (
+            "MFSim-NG master@aaaaaaaaaaaa src/dpm.cpp:L10-L20"
+        ))
+        self.assertNotIn("commit_sha", results[0])
+
+    def test_postgres_search_rejects_pending_access(self) -> None:
+        with self.assertRaisesRegex(ValueError, "filtro de acesso"):
+            database.search_postgres(
+                "postgresql://unused",
+                query="DPMManager",
+                allowed_access={"pending"},
+            )
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -8,6 +8,7 @@ from typing import Callable
 from mflab_knowledge.normalize import search_chunks
 
 LogCallback = Callable[[str, str], None]
+SearchCallback = Callable[..., list[dict[str, object]]]
 EVALUATION_SCHEMA_VERSION = "0.1"
 
 
@@ -66,13 +67,25 @@ def _expectation_rank(
 def evaluate_suite(
     *,
     suite_path: Path,
-    chunks_path: Path,
+    chunks_path: Path | None = None,
     output: Path | None = None,
     log: LogCallback | None = None,
+    search: SearchCallback | None = None,
+    backend: dict[str, object] | None = None,
 ) -> dict[str, object]:
     logger = log or (lambda _message, _level="info": None)
     suite_file = suite_path.expanduser().resolve()
     suite = _load_suite(suite_file)
+    if search is None and chunks_path is None:
+        raise ValueError("avaliação exige chunks_path ou backend de busca")
+    if search is None:
+        assert chunks_path is not None
+
+        def searcher(**parameters: object) -> list[dict[str, object]]:
+            return search_chunks(chunks_path=chunks_path, **parameters)
+
+    else:
+        searcher = search
     cases = suite["cases"]
     assert isinstance(cases, list)
     evaluated: list[dict[str, object]] = []
@@ -99,8 +112,7 @@ def evaluate_suite(
         ):
             raise ValueError(f"allowed_access inválido no caso {case_id}")
         allowed_access = set(raw_allowed_access)
-        results = search_chunks(
-            chunks_path=chunks_path,
+        results = searcher(
             query=query,
             limit=limit,
             branch=(str(raw_case["branch"]) if "branch" in raw_case else None),
@@ -155,8 +167,7 @@ def evaluate_suite(
         "suite": suite.get("name", suite_file.stem),
         "suite_file": str(suite_file),
         "suite_hash": _file_hash(suite_file),
-        "chunks_file": str(chunks_path.expanduser().resolve()),
-        "chunks_hash": _file_hash(chunks_path.expanduser().resolve()),
+        "backend": backend or {"type": "jsonl"},
         "summary": {
             "cases": len(evaluated),
             "cases_passed": cases_passed,
@@ -175,6 +186,10 @@ def evaluate_suite(
         },
         "cases": evaluated,
     }
+    if chunks_path is not None:
+        chunks_file = chunks_path.expanduser().resolve()
+        report["chunks_file"] = str(chunks_file)
+        report["chunks_hash"] = _file_hash(chunks_file)
     if output is not None:
         destination = output.expanduser().resolve()
         destination.parent.mkdir(parents=True, exist_ok=True)

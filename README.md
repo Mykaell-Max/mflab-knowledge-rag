@@ -7,7 +7,8 @@ O projeto é separado do MFSim-NG: ele lê um clone ou snapshot fornecido por ca
 ## Estado atual
 
 O piloto somente leitura já cobre inventário, sincronização multi-branch,
-normalização e busca lexical local. Ele:
+normalização, busca lexical local e persistência textual opcional no PostgreSQL.
+Ele:
 
 - descobre arquivos automaticamente;
 - em clones Git, considera apenas arquivos versionados no commit atual;
@@ -19,14 +20,17 @@ normalização e busca lexical local. Ele:
 - produz documentos e chunks JSONL com linhas e proveniência por branch/commit;
 - deduplica versões idênticas compartilhadas entre branches;
 - oferece uma busca lexical local com filtros de branch, caminho e acesso.
+- carrega o mesmo corpus no PostgreSQL de forma transacional e idempotente;
+- executa busca textual PostgreSQL e a mesma suíte de regressão.
 
-PostgreSQL/pgvector, embeddings, API RAG, modelo local e metadados colaborativos
-do GitLab ainda serão adicionados depois da validação deste corpus.
+Embeddings/pgvector, API RAG, modelo local e metadados colaborativos do GitLab
+ainda serão adicionados depois da validação deste corpus.
 
 ## Requisitos
 
 - Python 3.11 ou superior;
 - Git disponível no `PATH` para detectar branch e commit de clones reais.
+- PostgreSQL local e o extra opcional `postgres` apenas para os comandos `db-*`.
 
 O inventário inicial não instala bibliotecas e não precisa acessar a rede.
 
@@ -236,6 +240,62 @@ casos passam; assim, ele pode bloquear automaticamente uma mudança que piore a
 recuperação. O relatório inclui hashes da suíte e do corpus, além de citações e
 métricas, mas não inclui o texto dos chunks.
 
+## Persistência e busca no PostgreSQL
+
+O backend PostgreSQL é opcional: inventário, sincronização, normalização e busca
+JSONL continuam sem dependências externas. Para habilitá-lo:
+
+```bash
+python3 -m pip install -e '.[postgres]'
+```
+
+O procedimento completo de instalação local está em
+[`docs/postgresql.md`](docs/postgresql.md). Depois da configuração inicial, a
+carga do corpus atual é:
+
+```bash
+PYTHONPATH=src python3 -m mflab_knowledge db-init --color always
+
+PYTHONPATH=src python3 -m mflab_knowledge db-load \
+  --documents data/mfsim-ng-zero-flow/documents.jsonl \
+  --chunks data/mfsim-ng-zero-flow/chunks.jsonl \
+  --color always
+```
+
+A carga inteira ocorre numa transação. Documentos, chunks e ocorrências por
+branch são atualizados por identificadores estáveis; itens obsoletos daquele
+repositório são removidos. Se os hashes dos dois JSONLs não mudaram, uma nova
+execução apenas reutiliza a carga anterior.
+
+Consulte o banco com os mesmos filtros e política de acesso:
+
+```bash
+PYTHONPATH=src python3 -m mflab_knowledge db-search \
+  --query DPMManager \
+  --project MFSim-NG \
+  --branch master \
+  --limit 5 \
+  --color always
+```
+
+`pending` nunca é recuperável. A ACL, projeto, branch e caminho são filtrados no
+SQL antes de o texto entrar no resultado. O índice usa `tsvector` com
+configuração `simple`, adequada a identificadores técnicos e conteúdo misto, e
+GIN para acelerar a busca textual. A consulta também preserva correspondência
+literal em caminhos, títulos e texto.
+
+Por fim, compare o novo backend com a linha de base versionada:
+
+```bash
+PYTHONPATH=src python3 -m mflab_knowledge db-evaluate \
+  --suite evaluations/mfsim-ng-pilot.json \
+  --output data/mfsim-ng-zero-flow/postgres-evaluation.generated.json \
+  --color always
+```
+
+O comando retorna código diferente de zero se qualquer caso regredir. Use
+`db-status` para conferir contagens e o horário da última carga.
+
 ## Configuração multi-repositório
 
 O contrato inicial está em `repositories.example.toml`. Ele já descreve o
@@ -260,7 +320,7 @@ As regras serão transformadas em política configurável depois que o inventár
 ## Próximas entregas
 
 1. Executar e ampliar a suíte de avaliação com perguntas reais do laboratório.
-2. Persistir documentos normalizados e busca textual no PostgreSQL.
+2. Validar a busca PostgreSQL contra a mesma suíte do corpus JSONL.
 3. Substituir âncoras heurísticas por parsing estrutural de código e casos.
 4. Adicionar embeddings, pgvector e fusão híbrida.
 5. Expor `/search`, `/ask`, `/sources/{id}` e `/index/status`.

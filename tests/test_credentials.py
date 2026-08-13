@@ -6,7 +6,11 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from mflab_knowledge.credentials import GitCredentials, load_git_credentials
+from mflab_knowledge.credentials import (
+    GitCredentials,
+    load_database_url,
+    load_git_credentials,
+)
 
 
 class CredentialTests(unittest.TestCase):
@@ -63,6 +67,36 @@ class CredentialTests(unittest.TestCase):
             ):
                 with self.assertRaisesRegex(ValueError, "MFLAB_GIT_READ_TOKEN"):
                     load_git_credentials(env_file)
+
+    def test_database_url_uses_environment_without_exposing_it(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            secret_url = "postgresql://mflab:secret@127.0.0.1/mflab"
+            with mock.patch.dict(
+                os.environ,
+                {"MFLAB_DATABASE_URL": secret_url},
+                clear=False,
+            ):
+                self.assertEqual(load_database_url(env_file), secret_url)
+            self.assertFalse(env_file.exists())
+
+    def test_database_url_placeholder_is_added_to_existing_env(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            env_file.write_text(
+                "MFLAB_GIT_USERNAME=max\nMFLAB_GIT_READ_TOKEN=token\n",
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"MFLAB_DATABASE_URL": ""},
+                clear=False,
+            ):
+                with self.assertRaisesRegex(ValueError, "MFLAB_DATABASE_URL"):
+                    load_database_url(env_file)
+            content = env_file.read_text(encoding="utf-8")
+            self.assertEqual(content.count("MFLAB_DATABASE_URL="), 1)
+            self.assertNotIn("postgresql://", content)
 
 
 if __name__ == "__main__":

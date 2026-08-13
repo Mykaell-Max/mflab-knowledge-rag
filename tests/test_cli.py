@@ -82,8 +82,18 @@ class ConsoleReporterTests(unittest.TestCase):
                 "always",
             ]
         )
+        database = parser.parse_args(
+            [
+                "db-search",
+                "--query",
+                "DPMManager",
+                "--color",
+                "never",
+            ]
+        )
         self.assertEqual(inventory.color, "never")
         self.assertEqual(sync.color, "always")
+        self.assertEqual(database.color, "never")
 
 
 if __name__ == "__main__":

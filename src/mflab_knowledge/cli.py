@@ -8,7 +8,14 @@ from pathlib import Path
 from typing import Sequence
 from urllib.parse import urlsplit
 
-from mflab_knowledge.credentials import load_git_credentials
+from mflab_knowledge.credentials import load_database_url, load_git_credentials
+from mflab_knowledge.database import (
+    database_fingerprint,
+    database_status,
+    initialize_database,
+    load_corpus,
+    search_postgres,
+)
 from mflab_knowledge.evaluate import evaluate_suite
 from mflab_knowledge.inventory import build_inventory, detect_git_metadata, write_yaml
 from mflab_knowledge.normalize import normalize_manifest, search_chunks
@@ -115,6 +122,58 @@ def _add_console_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--quiet", action="store_true")
 
 
+def _add_database_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--env-file",
+        default=Path(".env"),
+        type=Path,
+        help="Arquivo local com MFLAB_DATABASE_URL (padrão: ./.env).",
+    )
+    _add_console_options(parser)
+
+
+def _add_search_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--query", required=True)
+    parser.add_argument("--limit", type=int, default=10)
+    parser.add_argument("--branch")
+    parser.add_argument("--project")
+    parser.add_argument("--path-prefix")
+    parser.add_argument(
+        "--max-per-path",
+        type=int,
+        default=2,
+        help="Máximo de chunks por arquivo (padrão: 2).",
+    )
+    parser.add_argument(
+        "--include-duplicate-content",
+        action="store_true",
+        help="Inclui chunks textualmente idênticos no resultado.",
+    )
+    parser.add_argument(
+        "--allow-access",
+        action="append",
+        choices=("public", "lab", "project", "restricted"),
+        help="Classe liberada; repita para mais de uma (padrão: public e lab).",
+    )
+
+
+def _safe_database_error(error: Exception, database_url: str | None) -> str:
+    message = str(error)
+    if database_url:
+        message = message.replace(database_url, "<MFLAB_DATABASE_URL>")
+        password = urlsplit(database_url).password
+        if password:
+            message = message.replace(password, "***")
+    return message
+
+
+def _search_access(args: argparse.Namespace) -> set[str]:
+    allowed_access = set(args.allow_access or ("public", "lab"))
+    if "project" in allowed_access and args.project is None:
+        raise ValueError("--allow-access project exige o filtro --project")
+    return allowed_access
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="mflab-knowledge",
@@ -217,28 +276,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Executa busca lexical local nos chunks normalizados.",
     )
     search.add_argument("--chunks", required=True, type=Path)
-    search.add_argument("--query", required=True)
-    search.add_argument("--limit", type=int, default=10)
-    search.add_argument("--branch")
-    search.add_argument("--project")
-    search.add_argument("--path-prefix")
-    search.add_argument(
-        "--max-per-path",
-        type=int,
-        default=2,
-        help="Máximo de chunks por arquivo (padrão: 2).",
-    )
-    search.add_argument(
-        "--include-duplicate-content",
-        action="store_true",
-        help="Inclui chunks textualmente idênticos no resultado.",
-    )
-    search.add_argument(
-        "--allow-access",
-        action="append",
-        choices=("public", "lab", "project", "restricted"),
-        help="Classe liberada; repita para mais de uma (padrão: public e lab).",
-    )
+    _add_search_options(search)
     _add_console_options(search)
 
     evaluate = subparsers.add_parser(
@@ -253,6 +291,45 @@ def build_parser() -> argparse.ArgumentParser:
         type=Path,
     )
     _add_console_options(evaluate)
+
+    db_init = subparsers.add_parser(
+        "db-init",
+        help="Cria ou atualiza o schema PostgreSQL do serviço.",
+    )
+    _add_database_options(db_init)
+
+    db_load = subparsers.add_parser(
+        "db-load",
+        help="Carrega um corpus JSONL no PostgreSQL de forma idempotente.",
+    )
+    db_load.add_argument("--documents", required=True, type=Path)
+    db_load.add_argument("--chunks", required=True, type=Path)
+    _add_database_options(db_load)
+
+    db_search = subparsers.add_parser(
+        "db-search",
+        help="Executa busca textual no corpus armazenado no PostgreSQL.",
+    )
+    _add_search_options(db_search)
+    _add_database_options(db_search)
+
+    db_evaluate = subparsers.add_parser(
+        "db-evaluate",
+        help="Executa a suíte de recuperação contra o PostgreSQL.",
+    )
+    db_evaluate.add_argument("--suite", required=True, type=Path)
+    db_evaluate.add_argument(
+        "--output",
+        default=Path("data/postgres-evaluation.generated.json"),
+        type=Path,
+    )
+    _add_database_options(db_evaluate)
+
+    db_status = subparsers.add_parser(
+        "db-status",
+        help="Mostra contagens e última carga do PostgreSQL.",
+    )
+    _add_database_options(db_status)
     return parser
 
 
@@ -400,11 +477,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         if args.limit < 1 or args.limit > 100:
             reporter.error("--limit deve estar entre 1 e 100")
             return 1
-        allowed_access = set(args.allow_access or ("public", "lab"))
-        if "project" in allowed_access and args.project is None:
-            reporter.error("--allow-access project exige o filtro --project")
-            return 1
         try:
+            allowed_access = _search_access(args)
             results = search_chunks(
                 chunks_path=args.chunks,
                 query=args.query,
@@ -451,5 +525,99 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 1 if failures else 0
+
+    if args.command in {
+        "db-init",
+        "db-load",
+        "db-search",
+        "db-evaluate",
+        "db-status",
+    }:
+        reporter = ConsoleReporter(args.quiet, args.color)
+        database_url: str | None = None
+        try:
+            database_url = load_database_url(args.env_file)
+            if args.command == "db-init":
+                result = initialize_database(database_url, log=reporter.log)
+                reporter.result("Banco PostgreSQL inicializado")
+                print(json.dumps(result, ensure_ascii=False))
+                return 0
+
+            if args.command == "db-load":
+                result = load_corpus(
+                    database_url,
+                    documents_path=args.documents,
+                    chunks_path=args.chunks,
+                    log=reporter.log,
+                )
+                state = "reutilizado" if result["reused"] else "atualizado"
+                reporter.result(
+                    f"Corpus PostgreSQL {state}: {result['documents']} documentos, "
+                    f"{result['chunks']} chunks"
+                )
+                print(json.dumps(result, ensure_ascii=False))
+                return 0
+
+            if args.command == "db-search":
+                allowed_access = _search_access(args)
+                results = search_postgres(
+                    database_url,
+                    query=args.query,
+                    limit=args.limit,
+                    branch=args.branch,
+                    project=args.project,
+                    path_prefix=args.path_prefix,
+                    allowed_access=allowed_access,
+                    max_per_path=args.max_per_path,
+                    include_duplicate_content=args.include_duplicate_content,
+                )
+                reporter.result(
+                    f"Busca PostgreSQL retornou {len(results)} chunks citáveis"
+                )
+                for position, result in enumerate(results, start=1):
+                    reporter.log(
+                        f"{position}. {result['citation']} "
+                        f"(score {result['score']})",
+                        "success",
+                    )
+                print(json.dumps(results, ensure_ascii=False, indent=2))
+                return 0
+
+            if args.command == "db-evaluate":
+                backend = database_fingerprint(database_url)
+
+                def database_search(**parameters: object) -> list[dict[str, object]]:
+                    return search_postgres(database_url, **parameters)
+
+                report = evaluate_suite(
+                    suite_path=args.suite,
+                    output=args.output,
+                    log=reporter.log,
+                    search=database_search,
+                    backend=backend,
+                )
+                summary = report["summary"]
+                assert isinstance(summary, dict)
+                failures = int(summary["cases_failed"])
+                reporter.log(
+                    f"Avaliação PostgreSQL: "
+                    f"{summary['cases_passed']}/{summary['cases']} casos; "
+                    f"recall {float(summary['expectation_recall']):.1%}; "
+                    f"MRR {float(summary['mean_reciprocal_rank']):.3f}",
+                    "result" if failures == 0 else "warning",
+                )
+                print(json.dumps(report, ensure_ascii=False, indent=2))
+                return 1 if failures else 0
+
+            result = database_status(database_url)
+            reporter.result(
+                f"PostgreSQL: {result['repositories']} repositórios, "
+                f"{result['documents']} documentos, {result['chunks']} chunks"
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+            return 0
+        except Exception as exc:
+            reporter.error(_safe_database_error(exc, database_url))
+            return 1
 
     return 2

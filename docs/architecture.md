@@ -72,6 +72,28 @@ Esse mesmo contrato será aplicado à busca textual do PostgreSQL e, depois, à
 recuperação híbrida, permitindo comparar os mecanismos sem mudar o conjunto de
 referência.
 
+## Persistência PostgreSQL
+
+O corpus JSONL continua sendo um artefato auditável e reconstruível. A carga no
+PostgreSQL o projeta em quatro entidades: repositórios, documentos deduplicados,
+ocorrências por branch/commit e chunks. Assim, um chunk compartilhado por várias
+branches guarda o texto uma vez e continua citável em cada ocorrência.
+
+A carga é transacional e idempotente. Hashes iguais evitam reprocessamento;
+identificadores estáveis atualizam registros existentes; chunks e documentos que
+sumiram do corpus corrente recebem remoção em cascata. Cada carga concluída
+registra os hashes e contagens que formam o fingerprint usado na avaliação.
+
+A busca textual usa `tsvector` armazenado e índice GIN com configuração
+`simple`, complementados por correspondência literal para caminhos e
+identificadores. ACL, projeto, branch e prefixo de caminho são predicados da
+consulta SQL, anteriores ao retorno do texto. Diversidade por arquivo e
+deduplicação por hash continuam fazendo parte do contrato de recuperação.
+
+O pgvector não entra nessa migração inicial. Ele será acrescentado depois que a
+busca PostgreSQL textual passar pela mesma suíte que estabeleceu a linha de base
+JSONL; isso isola regressões de persistência das decisões sobre embeddings.
+
 Para aumentar diversidade, o ranking piloto limita chunks por caminho, colapsa
 conteúdos idênticos e comprime o ganho de frequência lexical. Esses limites são
 configuráveis para auditorias. Palavras de controle não são aceitas como símbolos

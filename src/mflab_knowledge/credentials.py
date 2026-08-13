@@ -9,6 +9,9 @@ ENV_TEMPLATE = """# Credenciais HTTPS somente leitura do GitLab do MFLab.
 # Nunca faça commit deste arquivo nem use um token com write_repository/api.
 MFLAB_GIT_USERNAME=
 MFLAB_GIT_READ_TOKEN=
+
+# Conexão local com o PostgreSQL. Mantenha a senha somente neste arquivo.
+MFLAB_DATABASE_URL=
 """
 
 
@@ -37,7 +40,11 @@ def _read_env_file(path: Path) -> dict[str, str]:
             raise ValueError(f"linha inválida em {path}:{line_number}")
         name, value = line.split("=", 1)
         name = name.strip()
-        if name in {"MFLAB_GIT_USERNAME", "MFLAB_GIT_READ_TOKEN"}:
+        if name in {
+            "MFLAB_GIT_USERNAME",
+            "MFLAB_GIT_READ_TOKEN",
+            "MFLAB_DATABASE_URL",
+        }:
             values[name] = _unquote(value)
     return values
 
@@ -97,3 +104,41 @@ def load_git_credentials(env_file: Path) -> GitCredentials:
     if "\n" in username or "\r" in username or "\n" in token or "\r" in token:
         raise ValueError("credenciais Git contêm quebra de linha inválida")
     return GitCredentials(username=username, token=token)
+
+
+def load_database_url(env_file: Path) -> str:
+    """Load the PostgreSQL URL without logging or exporting it."""
+
+    path = env_file.expanduser().resolve()
+    database_url = os.environ.get("MFLAB_DATABASE_URL", "").strip()
+    if database_url:
+        return database_url
+
+    if not path.exists():
+        _create_env_file(path)
+        raise ValueError(
+            f"arquivo de configuração criado em {path}. "
+            "Preencha MFLAB_DATABASE_URL e execute novamente"
+        )
+    _protect_env_file(path)
+    values = _read_env_file(path)
+    database_url = values.get("MFLAB_DATABASE_URL", "").strip()
+    if not database_url:
+        content = path.read_text(encoding="utf-8")
+        if "MFLAB_DATABASE_URL=" not in content:
+            with path.open("a", encoding="utf-8", newline="\n") as handle:
+                if content and not content.endswith("\n"):
+                    handle.write("\n")
+                handle.write(
+                    "\n# Conexão local com o PostgreSQL.\n"
+                    "MFLAB_DATABASE_URL=\n"
+                )
+        raise ValueError(
+            f"conexão PostgreSQL não configurada em {path}: "
+            "preencha MFLAB_DATABASE_URL"
+        )
+    if "\n" in database_url or "\r" in database_url:
+        raise ValueError("MFLAB_DATABASE_URL contém quebra de linha inválida")
+    if not database_url.startswith(("postgresql://", "postgres://")):
+        raise ValueError("MFLAB_DATABASE_URL deve usar postgresql://")
+    return database_url
