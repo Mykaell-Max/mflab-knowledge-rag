@@ -189,13 +189,13 @@ def embed_database(
         missing = [dict(row) for row in cursor.fetchall()]
         reused_row = connection.execute(
             """
-            SELECT count(*)
+            SELECT count(*) AS embeddings_count
             FROM mflab_knowledge.chunk_embeddings
             WHERE model_id = %s
             """,
             (profile_id,),
         ).fetchone()
-        reused = int(reused_row[0]) if reused_row else 0
+        reused = int(reused_row["embeddings_count"]) if reused_row else 0
 
     total = len(missing)
     if total == 0:
@@ -386,13 +386,13 @@ def semantic_search(
         embedder.register_vector(connection)
         available = connection.execute(
             """
-            SELECT count(*)
+            SELECT count(*) AS embeddings_count
             FROM mflab_knowledge.chunk_embeddings
             WHERE model_id = %s
             """,
             (embedder.profile_id,),
         ).fetchone()
-        if not available or int(available[0]) == 0:
+        if not available or int(available["embeddings_count"]) == 0:
             raise ValueError(
                 f"nenhum embedding encontrado para {embedder.profile_id}; "
                 "execute db-embed com o mesmo modelo e max-sequence-length"

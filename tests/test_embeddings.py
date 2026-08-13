@@ -17,6 +17,51 @@ def _result(chunk_id: str, path: str, chunk_hash: str) -> dict[str, object]:
 
 
 class EmbeddingTests(unittest.TestCase):
+    def test_embed_reuses_count_returned_by_dict_row(self) -> None:
+        connection = mock.MagicMock()
+        connection.cursor.return_value.fetchall.return_value = []
+        connection.execute.return_value.fetchone.return_value = {
+            "embeddings_count": 12
+        }
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+
+        with mock.patch.object(embeddings, "initialize_vector_database"):
+            with mock.patch.object(embeddings, "_driver", return_value=(None, object())):
+                with mock.patch.object(embeddings, "_connect", return_value=context):
+                    with mock.patch.object(embeddings, "LocalEmbedder") as local:
+                        result = embeddings.embed_database("postgresql://unused")
+
+        self.assertEqual(result["embedded"], 0)
+        self.assertEqual(result["reused"], 12)
+        self.assertEqual(result["device"], "not_loaded")
+        local.assert_not_called()
+
+    def test_semantic_search_reads_available_count_from_dict_row(self) -> None:
+        available = mock.MagicMock()
+        available.fetchone.return_value = {"embeddings_count": 1}
+        results = mock.MagicMock()
+        results.fetchall.return_value = []
+        connection = mock.MagicMock()
+        connection.execute.side_effect = [available, results]
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+        embedder = mock.MagicMock()
+        embedder.profile_id = "profile"
+        embedder.encode_query.return_value = [0.0] * 1024
+
+        with mock.patch.object(embeddings, "_driver", return_value=(None, object())):
+            with mock.patch.object(embeddings, "_connect", return_value=context):
+                values = embeddings.semantic_search(
+                    "postgresql://unused",
+                    embedder,
+                    query="partículas",
+                    allowed_access={"lab"},
+                )
+
+        self.assertEqual(values, [])
+        embedder.register_vector.assert_called_once_with(connection)
+
     def test_profile_changes_with_semantic_configuration(self) -> None:
         first = embeddings.embedding_profile_id(
             "Qwen/model",
