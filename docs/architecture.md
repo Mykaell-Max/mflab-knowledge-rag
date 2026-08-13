@@ -65,6 +65,13 @@ retornar texto. Ela serve para avaliar corpus, metadados e perguntas reais; não
 o mecanismo de ranking definitivo. PostgreSQL FTS, pgvector e RRF entrarão após
 essa validação.
 
+A suíte de avaliação versionada transforma perguntas reais em critérios
+reprodutíveis de arquivo e posição. Ela registra pass rate, recall das
+expectativas e MRR, e retorna falha ao processo quando qualquer caso regride.
+Esse mesmo contrato será aplicado à busca textual do PostgreSQL e, depois, à
+recuperação híbrida, permitindo comparar os mecanismos sem mudar o conjunto de
+referência.
+
 Para aumentar diversidade, o ranking piloto limita chunks por caminho, colapsa
 conteúdos idênticos e comprime o ganho de frequência lexical. Esses limites são
 configuráveis para auditorias. Palavras de controle não são aceitas como símbolos

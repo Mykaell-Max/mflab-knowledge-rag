@@ -1,0 +1,96 @@
+{
+  "schema_version": "0.1",
+  "name": "MFSim-NG — avaliação lexical piloto",
+  "cases": [
+    {
+      "id": "dpm-manager-master",
+      "query": "DPMManager",
+      "project": "MFSim-NG",
+      "branch": "master",
+      "path_prefix": "src/",
+      "limit": 5,
+      "expectations": [
+        {
+          "path": "src/mfsim/model/lagrangian/DPM/dpm_manager.hpp",
+          "title_contains": "DPMManager",
+          "within_rank": 2
+        },
+        {
+          "path": "src/mfsim/model/lagrangian/DPM/dpm_manager.cpp",
+          "within_rank": 5
+        }
+      ]
+    },
+    {
+      "id": "particle-id-generator-diagnostic",
+      "query": "ParticleIDGenerator",
+      "project": "MFSim-NG",
+      "branch": "diagnostic/dpm",
+      "path_prefix": "src/",
+      "limit": 6,
+      "expectations": [
+        {
+          "path": "src/mfsim/model/lagrangian/DPM/common/dpm_types.hpp",
+          "title_contains": "ParticleIDGenerator",
+          "within_rank": 2
+        },
+        {
+          "path": "src/mfsim/model/lagrangian/DPM/common/dpm_particle.cpp",
+          "within_rank": 6
+        }
+      ]
+    },
+    {
+      "id": "particle-counter-diagnostic",
+      "query": "total_particles_created",
+      "project": "MFSim-NG",
+      "branch": "diagnostic/dpm",
+      "limit": 5,
+      "expectations": [
+        {
+          "path": "src/mfsim/model/lagrangian/DPM/dpm_manager.cpp",
+          "title_contains": "countParticles",
+          "within_rank": 3
+        }
+      ]
+    },
+    {
+      "id": "h5part-implementation",
+      "query": "H5Part",
+      "project": "MFSim-NG",
+      "branch": "diagnostic/dpm",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "src/mfsim/output/hdf5/hdf5_lag_output.cpp",
+          "within_rank": 4
+        },
+        {
+          "path": "src/mfsim/output/hdf5/hdf5_lag_output.hpp",
+          "within_rank": 10
+        }
+      ]
+    },
+    {
+      "id": "dpm-ram-1b-bundle",
+      "query": "dpm_ram_1b",
+      "project": "MFSim-NG",
+      "branch": "diagnostic/dpm",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "tests/dpm_ram_1b/domain_0/input/dpm.json",
+          "within_rank": 10
+        },
+        {
+          "path": "tests/dpm_ram_1b/domain_0/input/input.json",
+          "within_rank": 10
+        },
+        {
+          "path": "tests/dpm_ram_1b/domains.json",
+          "within_rank": 10
+        }
+      ]
+    }
+  ]
+}

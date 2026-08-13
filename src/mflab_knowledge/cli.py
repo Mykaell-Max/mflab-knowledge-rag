@@ -9,6 +9,7 @@ from typing import Sequence
 from urllib.parse import urlsplit
 
 from mflab_knowledge.credentials import load_git_credentials
+from mflab_knowledge.evaluate import evaluate_suite
 from mflab_knowledge.inventory import build_inventory, detect_git_metadata, write_yaml
 from mflab_knowledge.normalize import normalize_manifest, search_chunks
 from mflab_knowledge.repository import prepare_repository_snapshot
@@ -239,6 +240,19 @@ def build_parser() -> argparse.ArgumentParser:
         help="Classe liberada; repita para mais de uma (padrão: public e lab).",
     )
     _add_console_options(search)
+
+    evaluate = subparsers.add_parser(
+        "evaluate",
+        help="Executa uma suíte versionada de avaliação da recuperação.",
+    )
+    evaluate.add_argument("--suite", required=True, type=Path)
+    evaluate.add_argument("--chunks", required=True, type=Path)
+    evaluate.add_argument(
+        "--output",
+        default=Path("data/evaluation.generated.json"),
+        type=Path,
+    )
+    _add_console_options(evaluate)
     return parser
 
 
@@ -413,5 +427,29 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         print(json.dumps(results, ensure_ascii=False, indent=2))
         return 0
+
+    if args.command == "evaluate":
+        reporter = ConsoleReporter(args.quiet, args.color)
+        try:
+            report = evaluate_suite(
+                suite_path=args.suite,
+                chunks_path=args.chunks,
+                output=args.output,
+                log=reporter.log,
+            )
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            reporter.error(str(exc))
+            return 1
+        summary = report["summary"]
+        assert isinstance(summary, dict)
+        failures = int(summary["cases_failed"])
+        reporter.log(
+            f"Avaliação: {summary['cases_passed']}/{summary['cases']} casos; "
+            f"recall {float(summary['expectation_recall']):.1%}; "
+            f"MRR {float(summary['mean_reciprocal_rank']):.3f}",
+            "result" if failures == 0 else "warning",
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1 if failures else 0
 
     return 2

@@ -216,6 +216,26 @@ Use `--max-per-path 20` para investigar profundamente um arquivo e
 iguais. A frequência lexical usa crescimento logarítmico para que repetição
 excessiva não domine sozinha o ranking.
 
+### Avaliação de regressão
+
+As consultas reais validadas no MFSim-NG estão registradas em
+`evaluations/mfsim-ng-pilot.json`. Execute a suíte após normalizar o corpus:
+
+```bash
+PYTHONPATH=src python3 -m mflab_knowledge evaluate \
+  --suite evaluations/mfsim-ng-pilot.json \
+  --chunks data/mfsim-ng-zero-flow/chunks.jsonl \
+  --output data/mfsim-ng-zero-flow/evaluation.generated.json \
+  --color always
+```
+
+O relatório mede casos aprovados, recall das expectativas e MRR (posição do
+primeiro resultado relevante). Cada expectativa fixa arquivo, título opcional e
+posição máxima aceitável. O comando retorna código zero somente quando todos os
+casos passam; assim, ele pode bloquear automaticamente uma mudança que piore a
+recuperação. O relatório inclui hashes da suíte e do corpus, além de citações e
+métricas, mas não inclui o texto dos chunks.
+
 ## Configuração multi-repositório
 
 O contrato inicial está em `repositories.example.toml`. Ele já descreve o
@@ -239,9 +259,9 @@ As regras serão transformadas em política configurável depois que o inventár
 
 ## Próximas entregas
 
-1. Revisar documentos, chunks e resultados lexicais do MFSim-NG.
-2. Substituir âncoras heurísticas por parsing estrutural de código e casos.
-3. Persistir documentos normalizados e busca textual no PostgreSQL.
+1. Executar e ampliar a suíte de avaliação com perguntas reais do laboratório.
+2. Persistir documentos normalizados e busca textual no PostgreSQL.
+3. Substituir âncoras heurísticas por parsing estrutural de código e casos.
 4. Adicionar embeddings, pgvector e fusão híbrida.
 5. Expor `/search`, `/ask`, `/sources/{id}` e `/index/status`.
 6. Conectar GitLab em modo somente leitura.
