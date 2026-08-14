@@ -29,7 +29,6 @@ QUERY_PROMPT = (
     "relevant code, configuration, or documentation passages that answer it\n"
     "Query:"
 )
-CONTEXT_RRF_WEIGHT = 1.0
 _PAIRED_EXTENSIONS = {
     ".c": (".h",),
     ".cc": (".hh", ".hpp"),
@@ -585,10 +584,11 @@ WHERE embedding.model_id = %(profile)s
           SELECT 1
           FROM unnest(%(symbols)s::text[]) AS requested(symbol)
           WHERE strpos(lower(chunk.title), lower(requested.symbol)) > 0
-             OR strpos(lower(chunk.text), lower(requested.symbol)) > 0
       )
   )
-ORDER BY embedding.embedding <=> %(query_embedding)s
+ORDER BY
+    CASE WHEN document.path = ANY(%(exact_paths)s::text[]) THEN 0 ELSE 1 END,
+    embedding.embedding <=> %(query_embedding)s
 LIMIT 50
 """
 
@@ -665,19 +665,16 @@ def _contextual_search(
     ]
     if bundle_candidates:
         selected.append(bundle_candidates[0])
-    used_relations = {
-        str(value[3].get("context_relation")) for value in selected
-    }
-    for value in annotated:
-        if value in selected:
-            continue
-        relation = str(value[3].get("context_relation"))
-        if relation in used_relations:
-            continue
-        selected.append(value)
-        used_relations.add(relation)
-        if len(selected) == 2:
-            break
+    else:
+        used_relations: set[str] = set()
+        for value in annotated:
+            relation = str(value[3].get("context_relation"))
+            if relation in used_relations:
+                continue
+            selected.append(value)
+            used_relations.add(relation)
+            if len(selected) == 2:
+                break
 
     results: list[dict[str, object]] = []
     for context_rank, (_strength, _source_rank, _score, candidate) in enumerate(
@@ -687,6 +684,56 @@ def _contextual_search(
         candidate["context_rank"] = context_rank
         results.append(candidate)
     return results
+
+
+def _interleave_context(
+    baseline: list[dict[str, object]],
+    contextual: list[dict[str, object]],
+    *,
+    limit: int,
+    max_per_path: int,
+    include_duplicate_content: bool,
+) -> list[dict[str, object]]:
+    by_source: dict[int, list[dict[str, object]]] = {}
+    for candidate in contextual:
+        source_rank = int(candidate.get("context_source_rank", 0))
+        if source_rank > 0:
+            by_source.setdefault(source_rank, []).append(candidate)
+
+    results: list[dict[str, object]] = []
+    paths: Counter[str] = Counter()
+    seen_content: set[str] = set()
+    seen_chunks: set[str] = set()
+
+    def append(candidate: dict[str, object]) -> None:
+        chunk_id = str(candidate.get("chunk_id", ""))
+        path = str(candidate.get("path", ""))
+        chunk_hash = str(candidate.get("chunk_hash", ""))
+        if chunk_id in seen_chunks or paths[path] >= max_per_path:
+            return
+        if not include_duplicate_content and chunk_hash in seen_content:
+            return
+        results.append(candidate)
+        seen_chunks.add(chunk_id)
+        paths[path] += 1
+        if chunk_hash:
+            seen_content.add(chunk_hash)
+
+    for source_rank, candidate in enumerate(baseline, start=1):
+        append(candidate)
+        source_score = float(candidate.get("rrf_score", 0.0))
+        for context_position, related in enumerate(
+            by_source.get(source_rank, []),
+            start=1,
+        ):
+            related["rrf_score"] = max(
+                0.0,
+                source_score - context_position * 0.000001,
+            )
+            append(related)
+        if len(results) >= limit:
+            break
+    return results[:limit]
 
 
 def hybrid_search(
@@ -732,19 +779,19 @@ def hybrid_search(
             item["rrf_score"] = float(item.get("rrf_score", 0.0)) + 1.0 / (
                 rrf_k + rank
             )
-    ranked = sorted(
-        combined.values(),
-        key=lambda value: (
-            -float(value["rrf_score"]),
-            str(value.get("path", "")),
+    baseline = _diversify(
+        sorted(
+            combined.values(),
+            key=lambda value: (
+                -float(value.get("rrf_score", 0.0)),
+                str(value.get("path", "")),
+            ),
         ),
-    )
-    seeds = _diversify(
-        ranked,
-        limit=limit,
+        limit=candidate_limit,
         max_per_path=max_per_path,
         include_duplicate_content=include_duplicate_content,
     )
+    seeds = baseline[:limit]
     contextual = _contextual_search(
         database_url,
         embedder,
@@ -755,31 +802,16 @@ def hybrid_search(
         path_prefix=path_prefix,
         allowed_access=effective_access,
     )
-    for context_rank, value in enumerate(contextual, start=1):
-        chunk_id = str(value["chunk_id"])
-        item = combined.setdefault(chunk_id, dict(value))
-        item["context_rank"] = context_rank
-        item["context_relation"] = value["context_relation"]
-        item["context_source_rank"] = value["context_source_rank"]
-        item["context_score"] = value["score"]
-        item["rrf_score"] = float(item.get("rrf_score", 0.0)) + (
-            CONTEXT_RRF_WEIGHT / (rrf_k + context_rank)
-        )
-    ranked = sorted(
-        combined.values(),
-        key=lambda value: (
-            -float(value.get("rrf_score", 0.0)),
-            str(value.get("path", "")),
-        ),
-    )
-    for value in ranked:
-        value["score"] = round(float(value["rrf_score"]), 6)
-    return _diversify(
-        ranked,
+    ranked = _interleave_context(
+        baseline,
+        contextual,
         limit=limit,
         max_per_path=max_per_path,
         include_duplicate_content=include_duplicate_content,
     )
+    for value in ranked:
+        value["score"] = round(float(value["rrf_score"]), 6)
+    return ranked
 
 
 def embedding_status(database_url: str) -> dict[str, object]:
@@ -816,8 +848,7 @@ def embedding_status(database_url: str) -> dict[str, object]:
 def hybrid_fingerprint(database_url: str, embedder: LocalEmbedder) -> dict[str, object]:
     fingerprint = database_fingerprint(database_url)
     fingerprint["mode"] = "hybrid"
-    fingerprint["retrieval_algorithm"] = "context_rrf_v2"
-    fingerprint["context_rrf_weight"] = CONTEXT_RRF_WEIGHT
+    fingerprint["retrieval_algorithm"] = "context_interleave_v1"
     fingerprint["embedding_model"] = embedder.model_id
     fingerprint["embedding_revision"] = embedder.revision
     fingerprint["embedding_profile"] = embedder.profile_id

@@ -311,6 +311,8 @@ class EmbeddingTests(unittest.TestCase):
         ]
         self.assertEqual(len(promoted), 2)
         self.assertTrue(all(value["path"].endswith(".hpp") for value in promoted))
+        self.assertEqual(results[0]["chunk_id"], "semantic-1")
+        self.assertEqual(results[1]["chunk_id"], "context-1")
 
     def test_vector_schema_has_fixed_dimension_and_no_approximate_index(self) -> None:
         schema = embeddings.initialize_vector_database.__globals__["_vector_schema_sql"]()

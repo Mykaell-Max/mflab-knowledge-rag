@@ -180,8 +180,9 @@ O objetivo é melhorar as perguntas conceituais sem regredir a suíte de símbol
 exatos. O modo semântico usa distância cosseno exata; o modo híbrido combina os
 rankings lexical e vetorial por RRF. Hints explícitos de pares fonte/header,
 símbolos específicos e bundles de teste alimentam uma terceira consulta sob os
-mesmos filtros SQL. No máximo dois documentos relacionados entram na fusão. Essa
-etapa reutiliza os embeddings existentes.
+mesmos filtros SQL. No máximo dois documentos relacionados são intercalados logo
+depois da evidência de origem, sem substituir sua posição. Essa etapa reutiliza
+os embeddings existentes.
 
 ## 10. Limites desta etapa
 

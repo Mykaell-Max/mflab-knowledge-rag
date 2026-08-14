@@ -114,9 +114,10 @@ Uma expansão contextual conservadora deriva hints explícitos dos primeiros
 candidatos: pares fonte/header, identificadores suficientemente específicos e
 arquivos estruturais do mesmo bundle em `tests/`. Uma segunda consulta vetorial
 busca somente esses hints e repete ACL, projeto, branch e prefixo de caminho no
-SQL. No máximo dois documentos formam a terceira lista RRF; o resultado registra
-`context_relation`, `context_rank` e a posição da evidência que originou a
-relação. Nenhum caminho ou texto é lido fora das fontes autorizadas.
+SQL. No máximo dois documentos são intercalados imediatamente depois da
+evidência que originou o hint, preservando a ordem do ranking principal. O
+resultado registra `context_relation`, `context_rank` e a posição da evidência.
+Nenhum caminho ou texto é lido fora das fontes autorizadas.
 
 Para aumentar diversidade, o ranking piloto limita chunks por caminho, colapsa
 conteúdos idênticos e comprime o ganho de frequência lexical. Esses limites são

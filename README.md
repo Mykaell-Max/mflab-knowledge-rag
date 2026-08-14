@@ -348,9 +348,10 @@ recall por aproximação. A suíte conceitual em português fica em
 O modo híbrido também deriva hints contextuais explícitos dos primeiros
 resultados: pares `.cpp`/`.hpp`, identificadores específicos e arquivos
 estruturais do mesmo caso em `tests/`. No máximo dois documentos relacionados são
-consultados no PostgreSQL e fundidos como uma terceira lista RRF. A consulta
-repete ACL, projeto, branch e caminho antes de retornar qualquer texto, e os
-metadados indicam quando e por que o reforço foi aplicado.
+consultados no PostgreSQL e intercalados imediatamente depois da evidência que
+originou cada hint, sem competir com ela. A consulta repete ACL, projeto, branch
+e caminho antes de retornar qualquer texto, e os metadados indicam quando e por
+que o reforço foi aplicado.
 
 ## Configuração multi-repositório
 
