@@ -120,7 +120,9 @@ algoritmo.
 Uma segunda consulta busca somente essas relações e repete ACL, projeto, branch
 e prefixo de caminho no SQL. Chunks do mesmo documento são ordenados primeiro
 pela distância estrutural até as evidências já recuperadas e depois pela
-similaridade vetorial. Cada bundle de diretório pode fornecer no máximo um
+similaridade vetorial. Esses documentos também têm prioridade na janela de
+candidatos SQL, antes de pares de arquivos e bundles, para que seus vizinhos não
+sejam perdidos por truncamento. Cada bundle pode fornecer no máximo um
 complemento. O resultado registra `context_relation`, `context_group`,
 `context_rank` e a posição da evidência. Nenhum caminho ou texto é lido fora das
 fontes autorizadas.

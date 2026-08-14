@@ -654,13 +654,14 @@ WHERE embedding.model_id = %(profile)s
   )
 ORDER BY
     CASE
-        WHEN document.path = ANY(%(exact_paths)s::text[]) THEN 0
+        WHEN document.path = ANY(%(same_document_paths)s::text[]) THEN 0
+        WHEN document.path = ANY(%(exact_paths)s::text[]) THEN 1
         WHEN EXISTS (
             SELECT 1
             FROM unnest(%(directory_prefixes)s::text[]) AS requested(prefix)
             WHERE document.path LIKE requested.prefix || '/%%'
-        ) THEN 1
-        ELSE 2
+        ) THEN 2
+        ELSE 3
     END,
     embedding.embedding <=> %(query_embedding)s
 LIMIT %(context_candidate_limit)s
@@ -712,6 +713,11 @@ def _contextual_search(
                     {str(seed.get("path", "")) for seed in seeds if seed.get("path")}
                 ),
                 "exact_paths": sorted(path_hints),
+                "same_document_paths": sorted(
+                    path
+                    for path, hint in path_hints.items()
+                    if hint[0] == "same_document"
+                ),
                 "directory_prefixes": sorted(directory_hints),
                 "symbols": list(symbol_hints),
                 "context_candidate_limit": active_policy.context_candidate_limit,
@@ -978,7 +984,7 @@ def hybrid_fingerprint(
     active_policy = retrieval_policy or RetrievalPolicy()
     fingerprint = database_fingerprint(database_url)
     fingerprint["mode"] = "hybrid"
-    fingerprint["retrieval_algorithm"] = "structural_context_v1"
+    fingerprint["retrieval_algorithm"] = "structural_context_v2"
     fingerprint["retrieval_policy"] = active_policy.fingerprint()
     fingerprint["embedding_model"] = embedder.model_id
     fingerprint["embedding_revision"] = embedder.revision

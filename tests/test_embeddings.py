@@ -326,6 +326,10 @@ class EmbeddingTests(unittest.TestCase):
         )
         self.assertIn("occurrence.branch = %(branch)s::text", sql)
         self.assertIn(
+            "document.path = ANY(%(same_document_paths)s::text[])",
+            sql,
+        )
+        self.assertIn(
             "chunk.chunk_id = ANY(%(seed_chunk_ids)s::text[])",
             sql,
         )
@@ -540,6 +544,32 @@ class EmbeddingTests(unittest.TestCase):
         self.assertTrue(all(value["path"].endswith(".hpp") for value in promoted))
         self.assertEqual(results[0]["chunk_id"], "semantic-1")
         self.assertEqual(results[1]["chunk_id"], "context-1")
+
+    def test_interleave_keeps_adjacent_chunk_within_path_limit(self) -> None:
+        baseline = [
+            _result("particle-a", "src/model/particle.cpp", "a"),
+            _result("particle-b", "src/model/particle.cpp", "b"),
+            _result("generator", "src/common/generator.cpp", "c"),
+            _result("types-method", "src/model/types.hpp", "d"),
+            _result("particle-header", "src/model/particle.hpp", "e"),
+            _result("types-preamble", "src/model/types.hpp", "f"),
+        ]
+        for rank, value in enumerate(baseline, start=1):
+            value["rrf_score"] = 1.0 / (60 + rank)
+        adjacent = _result("types-adjacent", "src/model/types.hpp", "g")
+        adjacent["context_relation"] = "same_document"
+        adjacent["context_source_rank"] = 4
+
+        results = embeddings._interleave_context(
+            baseline,
+            [adjacent],
+            limit=10,
+            max_per_path=2,
+            include_duplicate_content=False,
+        )
+
+        self.assertIn("types-adjacent", [value["chunk_id"] for value in results])
+        self.assertNotIn("types-preamble", [value["chunk_id"] for value in results])
 
     def test_vector_schema_has_fixed_dimension_and_no_approximate_index(self) -> None:
         schema = embeddings.initialize_vector_database.__globals__["_vector_schema_sql"]()
