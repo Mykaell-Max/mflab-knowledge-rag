@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import copy
+import fnmatch
 import hashlib
 import json
 import re
@@ -70,6 +71,17 @@ def _catalog_json_path(output_dir: Path, branch_name: str) -> Path:
         / Path(*components[:-1])
         / f"{components[-1]}.generated.json"
     )
+
+
+def _branch_selected(
+    name: str,
+    *,
+    include: tuple[str, ...],
+    exclude: tuple[str, ...],
+) -> bool:
+    if include and not any(fnmatch.fnmatchcase(name, pattern) for pattern in include):
+        return False
+    return not any(fnmatch.fnmatchcase(name, pattern) for pattern in exclude)
 
 
 def _inventory_cache_descriptor(
@@ -247,6 +259,8 @@ def sync_repository_branches(
     profile: str,
     cache_dir: Path,
     output_dir: Path,
+    include_branches: tuple[str, ...] = (),
+    exclude_branches: tuple[str, ...] = (),
     refresh_remote: bool = True,
     credentials: GitCredentials | None = None,
     log: LogCallback | None = None,
@@ -264,24 +278,35 @@ def sync_repository_branches(
         credentials=credentials,
         log=logger,
     )
-    branches = list_repository_branches(mirror, scope=branch_scope)
+    discovered_branches = list_repository_branches(mirror, scope=branch_scope)
     canonical_name = _canonical_name(canonical_ref)
     canonical = next(
-        (branch for branch in branches if branch.name == canonical_name),
+        (branch for branch in discovered_branches if branch.name == canonical_name),
         None,
     )
     if canonical is None:
-        available = ", ".join(branch.name for branch in branches[:20])
+        available = ", ".join(branch.name for branch in discovered_branches[:20])
         raise ValueError(
             f"branch canônica não descoberta: {canonical_ref}. Disponíveis: {available}"
         )
+
+    branches = [
+        branch
+        for branch in discovered_branches
+        if branch.name == canonical.name
+        or _branch_selected(
+            branch.name,
+            include=include_branches,
+            exclude=exclude_branches,
+        )
+    ]
 
     ordered_branches = [canonical] + [
         branch for branch in branches if branch.name != canonical.name
     ]
     logger(
-        f"Descobertas {len(ordered_branches)} branches; "
-        f"canônica: {canonical.name}",
+        f"Descobertas {len(discovered_branches)} branches; "
+        f"selecionadas {len(ordered_branches)}; canônica: {canonical.name}",
         "success",
     )
 
@@ -439,7 +464,14 @@ def sync_repository_branches(
         "canonical_branch": canonical.name,
         "canonical_ref": canonical.requested_ref,
         "branch_scope": branch_scope,
+        "branch_filters": {
+            "include": list(include_branches),
+            "exclude": list(exclude_branches),
+            "canonical_always_included": True,
+        },
         "summary": {
+            "branches_discovered": len(discovered_branches),
+            "branches_filtered": len(discovered_branches) - len(entries),
             "branches": len(entries),
             "unique_commits": len(inventories_by_commit),
             "catalogs": len(entries),
@@ -460,6 +492,8 @@ def sync_repository_branches(
         "manifest_json": str(manifest_json_path),
         "tree": str(tree_path),
         "branches": len(entries),
+        "branches_discovered": len(discovered_branches),
+        "branches_filtered": len(discovered_branches) - len(entries),
         "unique_commits": len(inventories_by_commit),
         "inventories_built": inventories_built,
         "inventories_reused": inventories_reused,

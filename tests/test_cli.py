@@ -79,8 +79,21 @@ class ConsoleReporterTests(unittest.TestCase):
                 ".",
                 "--project",
                 "test",
+                "--canonical-ref",
+                "origin/trunk",
                 "--color",
                 "always",
+            ]
+        )
+        sync_all = parser.parse_args(
+            [
+                "sync-all",
+                "--config",
+                "repositories.toml",
+                "--repository",
+                "solver-next",
+                "--color",
+                "never",
             ]
         )
         database = parser.parse_args(
@@ -105,9 +118,26 @@ class ConsoleReporterTests(unittest.TestCase):
         )
         self.assertEqual(inventory.color, "never")
         self.assertEqual(sync.color, "always")
+        self.assertEqual(sync.canonical_ref, "origin/trunk")
+        self.assertEqual(sync.profile, "generic")
+        self.assertEqual(sync_all.repository, ["solver-next"])
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
         self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))
+
+    def test_single_repository_sync_requires_explicit_canonical_ref(self) -> None:
+        parser = build_parser()
+        with redirect_stderr(io.StringIO()):
+            with self.assertRaises(SystemExit):
+                parser.parse_args(
+                    [
+                        "sync",
+                        "--source",
+                        ".",
+                        "--project",
+                        "test",
+                    ]
+                )
 
 
 if __name__ == "__main__":

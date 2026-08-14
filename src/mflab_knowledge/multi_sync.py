@@ -1,0 +1,186 @@
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Callable
+from urllib.parse import urlsplit
+
+from mflab_knowledge.credentials import GitCredentials
+from mflab_knowledge.inventory import detect_git_metadata, write_json, write_yaml
+from mflab_knowledge.repository_config import RepositoryCatalog, RepositoryDefinition
+from mflab_knowledge.sync import sync_repository_branches
+
+LogCallback = Callable[[str, str], None]
+ProgressCallback = Callable[[int, int, str], None]
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def repository_uses_https(repository: RepositoryDefinition) -> bool:
+    metadata = detect_git_metadata(repository.source)
+    remote_url = metadata.get("remote_url")
+    if not isinstance(remote_url, str):
+        return False
+    return urlsplit(remote_url).scheme.casefold() in {"http", "https"}
+
+
+def sync_all_repositories(
+    *,
+    catalog: RepositoryCatalog,
+    refresh_remote: bool = True,
+    credentials: GitCredentials | None = None,
+    repository_ids: set[str] | None = None,
+    fail_fast: bool = False,
+    log: LogCallback | None = None,
+    progress: ProgressCallback | None = None,
+) -> dict[str, object]:
+    logger = log or (lambda _message, _level="info": None)
+    known_ids = {repository.id for repository in catalog.repositories}
+    if repository_ids is not None:
+        unknown = sorted(repository_ids - known_ids)
+        if unknown:
+            raise ValueError("repositórios desconhecidos: " + ", ".join(unknown))
+    selected = [
+        repository
+        for repository in catalog.enabled
+        if repository_ids is None or repository.id in repository_ids
+    ]
+    if not selected:
+        raise ValueError("nenhum repositório habilitado foi selecionado")
+
+    catalog.inventory_root.mkdir(parents=True, exist_ok=True)
+    entries: list[dict[str, object]] = []
+    branches = 0
+    unique_commits = 0
+    inventories_built = 0
+    inventories_reused = 0
+    inventory_errors = 0
+    failed = 0
+
+    for position, repository in enumerate(selected, start=1):
+        logger(
+            f"Repositório {position}/{len(selected)}: "
+            f"{repository.id} ({repository.project})",
+            "info",
+        )
+
+        def repository_log(message: str, level: str = "info") -> None:
+            logger(f"[{repository.id}] {message}", level)
+
+        output_dir = catalog.inventory_root / repository.id
+        cache_dir = catalog.cache_root / repository.id
+        try:
+            result = sync_repository_branches(
+                source=repository.source,
+                project=repository.project,
+                canonical_ref=repository.canonical_ref,
+                branch_scope=repository.branch_scope,
+                access_class=repository.access_class,
+                profile=repository.profile,
+                cache_dir=cache_dir,
+                output_dir=output_dir,
+                include_branches=repository.include_branches,
+                exclude_branches=repository.exclude_branches,
+                refresh_remote=refresh_remote,
+                credentials=(
+                    credentials
+                    if refresh_remote and repository_uses_https(repository)
+                    else None
+                ),
+                log=repository_log,
+                progress=progress,
+            )
+            result_errors = int(result["errors"])
+            status = "warning" if result_errors else "success"
+            entries.append(
+                {
+                    "id": repository.id,
+                    "project": repository.project,
+                    "status": status,
+                    "source": str(repository.source),
+                    "canonical_ref": repository.canonical_ref,
+                    "branch_scope": repository.branch_scope,
+                    "access_class": repository.access_class,
+                    "profile": repository.profile,
+                    "include_branches": list(repository.include_branches),
+                    "exclude_branches": list(repository.exclude_branches),
+                    **result,
+                }
+            )
+            branches += int(result["branches"])
+            unique_commits += int(result["unique_commits"])
+            inventories_built += int(result["inventories_built"])
+            inventories_reused += int(result["inventories_reused"])
+            inventory_errors += result_errors
+            repository_log(
+                f"Concluído: {result['branches']} branches, "
+                f"{result['unique_commits']} commits, {result_errors} erros",
+                "warning" if result_errors else "success",
+            )
+        except (OSError, ValueError) as exc:
+            failed += 1
+            entries.append(
+                {
+                    "id": repository.id,
+                    "project": repository.project,
+                    "status": "failed",
+                    "source": str(repository.source),
+                    "canonical_ref": repository.canonical_ref,
+                    "branch_scope": repository.branch_scope,
+                    "access_class": repository.access_class,
+                    "profile": repository.profile,
+                    "error": str(exc),
+                }
+            )
+            repository_log(str(exc), "error")
+            if fail_fast:
+                break
+
+    succeeded = sum(entry["status"] == "success" for entry in entries)
+    warnings = sum(entry["status"] == "warning" for entry in entries)
+    manifest: dict[str, object] = {
+        "schema_version": "0.1",
+        "generated_at": _utc_now(),
+        "config_file": str(catalog.path),
+        "config_hash": catalog.config_hash,
+        "cache_root": str(catalog.cache_root),
+        "inventory_root": str(catalog.inventory_root),
+        "normalized_root": str(catalog.normalized_root),
+        "summary": {
+            "configured": len(catalog.repositories),
+            "enabled": len(catalog.enabled),
+            "selected": len(selected),
+            "processed": len(entries),
+            "succeeded": succeeded,
+            "warnings": warnings,
+            "failed": failed,
+            "branches": branches,
+            "unique_commits": unique_commits,
+            "inventories_built": inventories_built,
+            "inventories_reused": inventories_reused,
+            "inventory_errors": inventory_errors,
+        },
+        "repositories": entries,
+    }
+    manifest_path = catalog.inventory_root / "manifest.generated.yaml"
+    manifest_json_path = catalog.inventory_root / "manifest.generated.json"
+    write_yaml(manifest, manifest_path)
+    write_json(manifest, manifest_json_path)
+    return {
+        "manifest": str(manifest_path),
+        "manifest_json": str(manifest_json_path),
+        "configured": len(catalog.repositories),
+        "enabled": len(catalog.enabled),
+        "selected": len(selected),
+        "processed": len(entries),
+        "succeeded": succeeded,
+        "warnings": warnings,
+        "failed": failed,
+        "branches": branches,
+        "unique_commits": unique_commits,
+        "inventories_built": inventories_built,
+        "inventories_reused": inventories_reused,
+        "inventory_errors": inventory_errors,
+    }

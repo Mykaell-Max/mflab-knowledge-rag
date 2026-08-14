@@ -35,9 +35,9 @@ mantém um mirror privado no próprio cache. Cada branch ou commit é materializ
 por `git archive` em um snapshot imutável, sem diretório `.git`, arquivos locais,
 builds não versionados ou mudanças ainda não commitadas.
 
-Uma consulta pode, portanto, usar `master` enquanto o clone fornecido está em uma
-branch de trabalho. Conteúdos idênticos entre refs serão deduplicados por hash na
-etapa de normalização e embeddings.
+Uma consulta pode, portanto, usar a ref canônica configurada enquanto o clone
+fornecido está em outra branch de trabalho. Conteúdos idênticos entre refs serão
+deduplicados por hash na etapa de normalização e embeddings.
 
 O comando `sync` consulta o remote a partir do mirror privado, descobre as
 branches remotas e produz uma árvore versionada de catálogos. A branch canônica é
@@ -138,10 +138,13 @@ configuráveis para auditorias. Palavras de controle não são aceitas como sím
 pelas âncoras heurísticas C++, mas um parser sintático ainda será necessário para
 relações e assinaturas exatas.
 
-O catálogo futuro de fontes é multi-repositório. Identificadores estáveis de
-repositório impedem colisões entre MFSim-NG, MFSim legado, MFGUI e outros
-projetos, mesmo quando possuem caminhos ou símbolos iguais. Novas entradas ficam
-desabilitadas/pending até a política ser confirmada.
+O catálogo de fontes é multi-repositório. Identificadores estáveis impedem
+colisões mesmo quando projetos possuem caminhos ou símbolos iguais. Cada entrada
+define explicitamente fonte, ref canônica, escopo, ACL, perfil e filtros de
+branch; nenhum nome de branch é presumido pelo orquestrador. O `sync-all` isola
+cache, saída e falhas por repositório e grava um manifesto agregado com o hash da
+configuração. Novas entradas ficam desabilitadas/`pending` até a política ser
+confirmada.
 
 Para remotes HTTPS privados, as credenciais são lidas de variáveis de ambiente
 ou de `.env` local ignorado pelo Git. O token é limitado a `read_repository` e

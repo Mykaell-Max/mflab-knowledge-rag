@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mflab_knowledge.sync import sync_repository_branches
+from mflab_knowledge.sync import _branch_selected, sync_repository_branches
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -22,6 +22,29 @@ def _git(repository: Path, *arguments: str) -> str:
 
 @unittest.skipUnless(shutil.which("git"), "Git não está disponível")
 class SyncTests(unittest.TestCase):
+    def test_branch_filters_are_generic_globs(self) -> None:
+        self.assertTrue(
+            _branch_selected(
+                "research/particle-model",
+                include=("research/*",),
+                exclude=("archive/*",),
+            )
+        )
+        self.assertFalse(
+            _branch_selected(
+                "research/retired-v1",
+                include=("research/*",),
+                exclude=("research/retired-*",),
+            )
+        )
+        self.assertFalse(
+            _branch_selected(
+                "release/current",
+                include=("research/*",),
+                exclude=(),
+            )
+        )
+
     def test_syncs_remote_branches_and_renders_hierarchy(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -192,6 +215,31 @@ class SyncTests(unittest.TestCase):
             )
             self.assertEqual(changed_policy["inventories_built"], 2)
             self.assertEqual(changed_policy["inventories_reused"], 0)
+
+            filtered = sync_repository_branches(
+                source=source,
+                project="MFSim-NG",
+                canonical_ref="origin/master",
+                branch_scope="remote",
+                access_class="project",
+                profile="generic",
+                cache_dir=cache,
+                output_dir=output,
+                include_branches=("diagnostic/*",),
+                exclude_branches=("master",),
+            )
+            self.assertEqual(filtered["branches_discovered"], 3)
+            self.assertEqual(filtered["branches"], 2)
+            self.assertEqual(filtered["branches_filtered"], 1)
+            filtered_manifest = (
+                output / "manifest.generated.yaml"
+            ).read_text(encoding="utf-8")
+            self.assertIn('canonical_branch: "master"', filtered_manifest)
+            self.assertIn('include:', filtered_manifest)
+            self.assertIn('"diagnostic/*"', filtered_manifest)
+            self.assertFalse(
+                (output / "branches" / "feature" / "alias.generated.yaml").exists()
+            )
 
 
 if __name__ == "__main__":

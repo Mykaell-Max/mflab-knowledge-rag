@@ -6,7 +6,8 @@ O projeto é separado do MFSim-NG: ele lê um clone ou snapshot fornecido por ca
 
 ## Estado atual
 
-O piloto somente leitura já cobre inventário, sincronização multi-branch,
+O piloto somente leitura já cobre inventário, sincronização multi-repositório
+e multi-branch,
 normalização, persistência no PostgreSQL e recuperação lexical,
 semântica e híbrida.
 Ele:
@@ -25,6 +26,8 @@ Ele:
 - calcula embeddings incrementais com modelo local e armazena-os no pgvector;
 - combina os rankings lexical e semântico por Reciprocal Rank Fusion (RRF);
 - executa as mesmas suítes versionadas de regressão em cada modo.
+- aplica branch canônica, escopo e filtros independentes por repositório,
+  declarados em TOML e registrados por hash no manifesto agregado.
 
 A API RAG e os metadados colaborativos do GitLab ainda serão adicionados.
 
@@ -115,7 +118,7 @@ PYTHONPATH=src python -m mflab_knowledge sync \
   --canonical-ref origin/master \
   --branch-scope remote \
   --access-class lab \
-  --profile auto \
+  --profile mfsim-ng-pilot \
   --cache-dir cache \
   --output-dir inventory/mfsim-ng
 ```
@@ -132,7 +135,9 @@ inventory/mfsim-ng/
         └── dpm.generated.yaml
 ```
 
-`master` é marcada como canônica. As demais branches permanecem consultáveis,
+A ref passada em `--canonical-ref` é marcada como canônica. O argumento é
+obrigatório: o indexador não presume `master`, `main` ou qualquer outro nome.
+As demais branches permanecem consultáveis,
 mas separadas. Branches no mesmo commit reutilizam o inventário já calculado.
 Para operar temporariamente sem consultar o GitLab, acrescente `--offline`.
 
@@ -364,11 +369,40 @@ mesmos padrões documentados no exemplo. `db-search` e `db-evaluate` também ace
 
 ## Configuração multi-repositório
 
-O contrato inicial está em `repositories.example.toml`. Ele já descreve o
-MFSim-NG e mantém MFSim legado/MFGUI desabilitados e `pending`. Copie para
-`repositories.toml` apenas no servidor; esse arquivo local é ignorado pelo Git.
-Um próximo comando `sync-all` consumirá essa lista, mas nenhum repositório novo
-será ativado sem confirmação de caminho, branch canônica e classe de acesso.
+O contrato está em `repositories.example.toml`. Ele descreve o MFSim-NG e
+mantém exemplos adicionais desabilitados e `pending`. Copie-o para o arquivo
+local ignorado pelo Git e edite somente os dados confirmados no laboratório:
+
+```bash
+cp repositories.example.toml repositories.toml
+${EDITOR:-nano} repositories.toml
+```
+
+Cada bloco `[[repositories]]` exige seu próprio `id`, caminho, projeto e
+`canonical_ref`. `branch_scope`, classe de acesso, perfil e os globs opcionais
+`include_branches`/`exclude_branches` também são independentes. A branch
+canônica é preservada mesmo que um filtro a exclua. Nomes como `master`,
+`develop`, caminhos do MFSim ou convenções de um projeto vivem somente nesse
+arquivo de configuração, nunca no motor genérico.
+
+Sincronize todos os repositórios habilitados com uma execução:
+
+```bash
+.venv/bin/python -m mflab_knowledge sync-all \
+  --config repositories.toml \
+  --env-file .env \
+  --color always
+```
+
+Para testar apenas um ou alguns IDs, repita `--repository ID`. Uma falha é
+isolada: os outros repositórios continuam por padrão. `--fail-fast` muda esse
+comportamento e `--offline` reutiliza apenas as refs já presentes nos mirrors.
+O resultado agregado fica em `inventory/repositories/manifest.generated.yaml`;
+cada repositório recebe sua própria subárvore, cache e manifesto. O hash do TOML
+efetivamente usado é gravado para auditoria, mas credenciais nunca entram nele.
+
+Um repositório `pending` não pode ser habilitado. Antes de ativá-lo, confirme
+caminho, branch canônica, perfil e autorização de acesso.
 
 ## Política inicial de exclusão
 
@@ -388,7 +422,8 @@ As regras serão transformadas em política configurável depois que o inventár
 1. Executar e ampliar as suítes lexical e semântica com perguntas reais.
 2. Substituir âncoras heurísticas por parsing estrutural de código e casos.
 3. Expor `/search`, `/ask`, `/sources/{id}` e `/index/status`.
-4. Adicionar o catálogo multi-repositório e o comando `sync-all`.
+4. Normalizar, carregar e calcular embeddings incrementalmente a partir do
+   manifesto agregado multi-repositório.
 5. Receber webhooks do GitLab e manter reconciliação agendada.
 
 As decisões gerais e os limites de segurança estão documentados no `HANDOFF.md` do projeto de continuidade que originou este repositório.

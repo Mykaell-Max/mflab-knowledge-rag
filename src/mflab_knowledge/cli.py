@@ -30,8 +30,10 @@ from mflab_knowledge.embeddings import (
 )
 from mflab_knowledge.evaluate import evaluate_suite
 from mflab_knowledge.inventory import build_inventory, detect_git_metadata, write_yaml
+from mflab_knowledge.multi_sync import repository_uses_https, sync_all_repositories
 from mflab_knowledge.normalize import normalize_manifest, search_chunks
 from mflab_knowledge.repository import prepare_repository_snapshot
+from mflab_knowledge.repository_config import load_repository_catalog
 from mflab_knowledge.retrieval import load_retrieval_policy
 from mflab_knowledge.sync import sync_repository_branches
 
@@ -269,7 +271,11 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync.add_argument("--source", required=True, type=Path)
     sync.add_argument("--project", required=True)
-    sync.add_argument("--canonical-ref", default="origin/master")
+    sync.add_argument(
+        "--canonical-ref",
+        required=True,
+        help="Ref canônica explícita deste repositório; não há nome padrão.",
+    )
     sync.add_argument(
         "--branch-scope",
         default="remote",
@@ -283,7 +289,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync.add_argument(
         "--profile",
-        default="auto",
+        default="generic",
         choices=("auto", "generic", "mfsim-ng-pilot"),
     )
     sync.add_argument("--cache-dir", default=Path("cache"), type=Path)
@@ -303,7 +309,52 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Não consulta o remote; usa apenas refs existentes na fonte.",
     )
+    sync.add_argument(
+        "--include-branch",
+        action="append",
+        default=[],
+        help="Padrão glob de branch a incluir; repita para mais de um.",
+    )
+    sync.add_argument(
+        "--exclude-branch",
+        action="append",
+        default=[],
+        help="Padrão glob de branch a excluir; a canônica sempre permanece.",
+    )
     _add_console_options(sync)
+
+    sync_all = subparsers.add_parser(
+        "sync-all",
+        help="Sincroniza os repositórios habilitados em repositories.toml.",
+    )
+    sync_all.add_argument(
+        "--config",
+        default=Path("repositories.toml"),
+        type=Path,
+        help="Catálogo TOML de repositórios (padrão: ./repositories.toml).",
+    )
+    sync_all.add_argument(
+        "--repository",
+        action="append",
+        help="ID a processar; repita para selecionar vários.",
+    )
+    sync_all.add_argument(
+        "--env-file",
+        default=Path(".env"),
+        type=Path,
+        help="Credenciais HTTPS locais (padrão: ./.env).",
+    )
+    sync_all.add_argument(
+        "--offline",
+        action="store_true",
+        help="Não consulta remotes; usa somente refs já disponíveis.",
+    )
+    sync_all.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Interrompe após a primeira falha de repositório.",
+    )
+    _add_console_options(sync_all)
 
     normalize = subparsers.add_parser(
         "normalize",
@@ -505,6 +556,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 profile=args.profile,
                 cache_dir=args.cache_dir,
                 output_dir=args.output_dir,
+                include_branches=tuple(args.include_branch),
+                exclude_branches=tuple(args.exclude_branch),
                 refresh_remote=not args.offline,
                 credentials=credentials,
                 log=reporter.log,
@@ -524,6 +577,53 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(result, ensure_ascii=False))
         return 0
+
+    if args.command == "sync-all":
+        reporter = ConsoleReporter(args.quiet, args.color)
+        try:
+            catalog = load_repository_catalog(args.config)
+            selected_ids = set(args.repository) if args.repository else None
+            selected_repositories = [
+                repository
+                for repository in catalog.enabled
+                if selected_ids is None or repository.id in selected_ids
+            ]
+            needs_https_credentials = not args.offline and any(
+                repository_uses_https(repository)
+                for repository in selected_repositories
+            )
+            credentials = (
+                load_git_credentials(args.env_file)
+                if needs_https_credentials
+                else None
+            )
+            if credentials is not None:
+                reporter.success("Credenciais HTTPS não interativas configuradas")
+            result = sync_all_repositories(
+                catalog=catalog,
+                refresh_remote=not args.offline,
+                credentials=credentials,
+                repository_ids=selected_ids,
+                fail_fast=args.fail_fast,
+                log=reporter.log,
+                progress=reporter.progress,
+            )
+        except (OSError, ValueError) as exc:
+            reporter.error(str(exc))
+            return 1
+        result_level = (
+            "warning"
+            if int(result["failed"]) or int(result["inventory_errors"])
+            else "result"
+        )
+        reporter.log(
+            f"Sincronização multi-repositório concluída: "
+            f"{result['succeeded']} concluídos, {result['warnings']} avisos, "
+            f"{result['failed']} falhas, {result['branches']} branches",
+            result_level,
+        )
+        print(json.dumps(result, ensure_ascii=False))
+        return 1 if int(result["failed"]) or int(result["inventory_errors"]) else 0
 
     if args.command == "normalize":
         reporter = ConsoleReporter(
