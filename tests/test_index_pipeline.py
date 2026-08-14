@@ -46,6 +46,9 @@ class IndexPipelineTests(unittest.TestCase):
                         "project": "FIRST",
                         "status": "success",
                         "manifest": str(root / "inventory/first/manifest.generated.yaml"),
+                        "manifest_json": str(
+                            root / "inventory/first/manifest.generated.json"
+                        ),
                         "branches": 3,
                     },
                     {
@@ -115,6 +118,10 @@ class IndexPipelineTests(unittest.TestCase):
             self.assertEqual(result["loaded_repositories"], 1)
             self.assertEqual(result["embeddings_built"], 25)
             normalize.assert_called_once()
+            self.assertEqual(
+                normalize.call_args.kwargs["manifest_path"].suffix,
+                ".json",
+            )
             load.assert_called_once()
             embed.assert_called_once()
             self.assertEqual(
@@ -146,6 +153,9 @@ class IndexPipelineTests(unittest.TestCase):
                         "project": "FIRST",
                         "status": "success",
                         "manifest": str(root / "inventory/first/manifest.generated.yaml"),
+                        "manifest_json": str(
+                            root / "inventory/first/manifest.generated.json"
+                        ),
                     }
                 ],
             }

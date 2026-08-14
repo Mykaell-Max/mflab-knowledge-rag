@@ -142,7 +142,12 @@ def index_all_repositories(
                 progress(current, total, f"{repository_id} :: {path}")
 
         try:
-            manifest_path = Path(str(synchronized["manifest"]))
+            manifest_json = synchronized.get("manifest_json")
+            if not isinstance(manifest_json, str) or not manifest_json:
+                raise ValueError(
+                    "sincronização não informou manifest_json para normalização"
+                )
+            manifest_path = Path(manifest_json)
             normalization = normalize_manifest(
                 manifest_path=manifest_path,
                 output_dir=catalog.normalized_root / repository_id,
