@@ -424,6 +424,30 @@ essa opção, repositórios grandes mostram marcos de progresso a cada 5%. Com
 `--quiet`, somente erros e o JSON final são emitidos, preservando uma interface
 estável para automação.
 
+### Pipeline completo e incremental
+
+Depois que `repositories.toml` e `.env` estiverem configurados, um único comando
+executa sincronização, normalização, carga no PostgreSQL e embeddings locais:
+
+```bash
+.venv/bin/python -m mflab_knowledge index-all \
+  --config repositories.toml \
+  --env-file .env \
+  --color always
+```
+
+O pipeline é idempotente em todos os estágios: mirrors, snapshots, inventários,
+parses, corpora PostgreSQL e embeddings existentes são reutilizados. Cada corpus
+é substituído apenas dentro de seu `repository_id`; projetos diferentes
+permanecem simultaneamente no banco. Falhas são isoladas por repositório e o
+resultado auditável fica em `data/repositories/index-all.generated.yaml`, sem a
+URL do banco ou credenciais.
+
+`--repository ID` restringe um teste, `--offline` usa os mirrors existentes e
+`--no-embeddings` valida somente até a carga no banco. A operação normal do
+serviço deve omitir `--no-embeddings`, para manter o RAG integralmente
+atualizado.
+
 Um repositório `pending` não pode ser habilitado. Antes de ativá-lo, confirme
 caminho, branch canônica, perfil e autorização de acesso.
 

@@ -93,6 +93,7 @@ class MultiSyncTests(unittest.TestCase):
             self.assertEqual(result["succeeded"], 1)
             self.assertEqual(result["failed"], 1)
             self.assertEqual(result["branches"], 4)
+            self.assertEqual(len(result["repositories"]), 2)
             self.assertTrue(Path(str(result["manifest_json"])).is_file())
             manifest = Path(str(result["manifest_json"])).read_text(encoding="utf-8")
             self.assertIn('"status": "success"', manifest)

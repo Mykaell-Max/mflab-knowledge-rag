@@ -126,6 +126,19 @@ class ConsoleReporterTests(unittest.TestCase):
                 "never",
             ]
         )
+        index_all = parser.parse_args(
+            [
+                "index-all",
+                "--config",
+                "repositories.toml",
+                "--repository",
+                "solver-next",
+                "--offline",
+                "--no-embeddings",
+                "--batch-size",
+                "8",
+            ]
+        )
         database = parser.parse_args(
             [
                 "db-search",
@@ -153,6 +166,10 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(sync.fetch_timeout_seconds, 2400)
         self.assertEqual(sync_all.repository, ["solver-next"])
         self.assertFalse(sync_all.verbose)
+        self.assertEqual(index_all.repository, ["solver-next"])
+        self.assertTrue(index_all.offline)
+        self.assertTrue(index_all.no_embeddings)
+        self.assertEqual(index_all.batch_size, 8)
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
         self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))

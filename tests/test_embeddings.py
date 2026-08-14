@@ -37,6 +37,49 @@ class EmbeddingTests(unittest.TestCase):
         self.assertEqual(result["device"], "not_loaded")
         local.assert_not_called()
 
+    def test_embed_can_reuse_prevalidated_vector_backend(self) -> None:
+        connection = mock.MagicMock()
+        connection.cursor.return_value.fetchall.return_value = []
+        connection.execute.return_value.fetchone.return_value = {
+            "embeddings_count": 3
+        }
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+
+        with mock.patch.object(embeddings, "initialize_vector_database") as initialize:
+            with mock.patch.object(embeddings, "_driver", return_value=(None, object())):
+                with mock.patch.object(embeddings, "_connect", return_value=context):
+                    result = embeddings.embed_database(
+                        "postgresql://unused",
+                        initialize_vector_backend=False,
+                    )
+
+        initialize.assert_not_called()
+        self.assertEqual(result["reused"], 3)
+
+    def test_embed_filters_pipeline_scope_by_repository_id(self) -> None:
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchall.return_value = []
+        connection.execute.return_value.fetchone.return_value = {
+            "embeddings_count": 0
+        }
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+
+        with mock.patch.object(embeddings, "initialize_vector_database"):
+            with mock.patch.object(embeddings, "_driver", return_value=(None, object())):
+                with mock.patch.object(embeddings, "_connect", return_value=context):
+                    embeddings.embed_database(
+                        "postgresql://unused",
+                        repository_ids={"repository-b", "repository-a"},
+                    )
+
+        missing_parameters = cursor.execute.call_args.args[1]
+        reused_parameters = connection.execute.call_args.args[1]
+        self.assertEqual(missing_parameters[1], ["repository-a", "repository-b"])
+        self.assertEqual(reused_parameters[1], ["repository-a", "repository-b"])
+
     def test_semantic_search_reads_available_count_from_dict_row(self) -> None:
         available = mock.MagicMock()
         available.fetchone.return_value = {"embeddings_count": 1}

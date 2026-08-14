@@ -178,6 +178,12 @@ sincronização das demais branches.
 
 ## Sincronização futura
 
+O comando `index-all` é a unidade idempotente de atualização do serviço. Ele
+consome exclusivamente o catálogo de repositórios e encadeia mirror, inventário,
+normalização, carga transacional por `repository_id` e embeddings incrementais.
+O listener de eventos deve chamar esse mesmo contrato, opcionalmente limitado
+ao repositório afetado, em vez de reimplementar as etapas.
+
 1. Um webhook recebe eventos de push, issue, merge request e comentário.
 2. O evento é autenticado, deduplicado e colocado numa fila.
 3. O worker executa `git fetch` no clone de cache.

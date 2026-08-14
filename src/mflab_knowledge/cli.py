@@ -30,6 +30,7 @@ from mflab_knowledge.embeddings import (
 )
 from mflab_knowledge.evaluate import evaluate_suite
 from mflab_knowledge.inventory import build_inventory, detect_git_metadata, write_yaml
+from mflab_knowledge.index_pipeline import index_all_repositories
 from mflab_knowledge.multi_sync import repository_uses_https, sync_all_repositories
 from mflab_knowledge.normalize import normalize_manifest, search_chunks
 from mflab_knowledge.repository import prepare_repository_snapshot
@@ -389,6 +390,46 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_console_options(sync_all)
 
+    index_all = subparsers.add_parser(
+        "index-all",
+        help="Sincroniza, normaliza, carrega e gera embeddings incrementalmente.",
+    )
+    index_all.add_argument(
+        "--config",
+        default=Path("repositories.toml"),
+        type=Path,
+        help="Catálogo TOML de repositórios (padrão: ./repositories.toml).",
+    )
+    index_all.add_argument(
+        "--repository",
+        action="append",
+        help="ID a processar; repita para selecionar vários.",
+    )
+    index_all.add_argument(
+        "--env-file",
+        default=Path(".env"),
+        type=Path,
+        help="Credenciais Git e PostgreSQL locais (padrão: ./.env).",
+    )
+    index_all.add_argument(
+        "--offline",
+        action="store_true",
+        help="Não consulta remotes; usa somente os mirrors existentes.",
+    )
+    index_all.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Interrompe o pipeline após a primeira falha.",
+    )
+    index_all.add_argument(
+        "--no-embeddings",
+        action="store_true",
+        help="Executa sincronização, normalização e banco sem embeddings.",
+    )
+    _add_embedding_options(index_all)
+    index_all.add_argument("--batch-size", type=int, default=4)
+    _add_console_options(index_all)
+
     normalize = subparsers.add_parser(
         "normalize",
         help="Normaliza catálogos sincronizados em documentos e chunks JSONL.",
@@ -638,6 +679,63 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         print(json.dumps(result, ensure_ascii=False))
         return 1 if int(result["failed"]) or int(result["inventory_errors"]) else 0
+
+    if args.command == "index-all":
+        reporter = ConsoleReporter(
+            args.quiet,
+            args.color,
+            progress_label="pipeline",
+            verbose=args.verbose,
+        )
+        database_url: str | None = None
+        try:
+            catalog = load_repository_catalog(args.config)
+            selected_ids = set(args.repository) if args.repository else None
+            known_ids = {repository.id for repository in catalog.repositories}
+            if selected_ids is not None:
+                unknown = sorted(selected_ids - known_ids)
+                if unknown:
+                    raise ValueError(
+                        "repositórios desconhecidos: " + ", ".join(unknown)
+                    )
+            selected_repositories = [
+                repository
+                for repository in catalog.enabled
+                if selected_ids is None or repository.id in selected_ids
+            ]
+            needs_https_credentials = not args.offline and any(
+                repository_uses_https(repository)
+                for repository in selected_repositories
+            )
+            credentials = (
+                load_git_credentials(args.env_file)
+                if needs_https_credentials
+                else None
+            )
+            database_url = load_database_url(args.env_file)
+            if credentials is not None:
+                reporter.success("Credenciais HTTPS não interativas configuradas")
+            result = index_all_repositories(
+                catalog=catalog,
+                database_url=database_url,
+                refresh_remote=not args.offline,
+                credentials=credentials,
+                repository_ids=selected_ids,
+                fail_fast=args.fail_fast,
+                include_embeddings=not args.no_embeddings,
+                embedding_model=args.embedding_model,
+                embedding_revision=args.embedding_revision,
+                device=args.device,
+                max_sequence_length=args.max_sequence_length,
+                batch_size=args.batch_size,
+                log=reporter.log,
+                progress=reporter.progress,
+            )
+        except Exception as exc:
+            reporter.error(_safe_database_error(exc, database_url))
+            return 1
+        print(json.dumps(result, ensure_ascii=False))
+        return 1 if int(result["failed"]) or int(result["warnings"]) else 0
 
     if args.command == "normalize":
         reporter = ConsoleReporter(

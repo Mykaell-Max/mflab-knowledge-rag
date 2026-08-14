@@ -164,13 +164,16 @@ def embed_database(
     device: str = "auto",
     max_sequence_length: int = DEFAULT_MAX_SEQUENCE_LENGTH,
     batch_size: int = 4,
+    initialize_vector_backend: bool = True,
+    repository_ids: set[str] | None = None,
     log: LogCallback | None = None,
     progress: ProgressCallback | None = None,
 ) -> dict[str, object]:
     if batch_size < 1 or batch_size > 256:
         raise ValueError("batch_size deve estar entre 1 e 256")
     logger = log or (lambda _message, _level="info": None)
-    initialize_vector_database(database_url, log=logger)
+    if initialize_vector_backend:
+        initialize_vector_database(database_url, log=logger)
     profile_id = embedding_profile_id(
         model_id,
         revision=revision,
@@ -198,18 +201,38 @@ def embed_database(
              AND embedding.model_id = %s
             WHERE embedding.chunk_id IS NULL
               AND document.access_class <> 'pending'
+              AND (
+                  %s::text[] IS NULL
+                  OR document.repository_id = ANY(%s::text[])
+              )
             ORDER BY chunk.chunk_id
             """,
-            (profile_id,),
+            (
+                profile_id,
+                sorted(repository_ids) if repository_ids is not None else None,
+                sorted(repository_ids) if repository_ids is not None else None,
+            ),
         )
         missing = [dict(row) for row in cursor.fetchall()]
         reused_row = connection.execute(
             """
             SELECT count(*) AS embeddings_count
-            FROM mflab_knowledge.chunk_embeddings
-            WHERE model_id = %s
+            FROM mflab_knowledge.chunk_embeddings AS embedding
+            JOIN mflab_knowledge.chunks AS chunk
+              ON chunk.chunk_id = embedding.chunk_id
+            JOIN mflab_knowledge.documents AS document
+              ON document.document_id = chunk.document_id
+            WHERE embedding.model_id = %s
+              AND (
+                  %s::text[] IS NULL
+                  OR document.repository_id = ANY(%s::text[])
+              )
             """,
-            (profile_id,),
+            (
+                profile_id,
+                sorted(repository_ids) if repository_ids is not None else None,
+                sorted(repository_ids) if repository_ids is not None else None,
+            ),
         ).fetchone()
         reused = int(reused_row["embeddings_count"]) if reused_row else 0
 

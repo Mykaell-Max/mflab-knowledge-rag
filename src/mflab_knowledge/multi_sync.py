@@ -238,4 +238,5 @@ def sync_all_repositories(
         "inventories_reused": inventories_reused,
         "inventory_errors": inventory_errors,
         "duration_seconds": round(elapsed_seconds, 3),
+        "repositories": entries,
     }
