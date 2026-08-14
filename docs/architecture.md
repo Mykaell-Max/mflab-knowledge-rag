@@ -30,8 +30,10 @@ GitLab / clones / documentos autorizados
 
 ## Isolamento de repositórios
 
-O indexador não opera sobre o worktree de um pesquisador. Para cada fonte Git,
-mantém um mirror privado no próprio cache. Cada branch ou commit é materializado
+O indexador não opera sobre o worktree de um pesquisador. Cada origem pode ser
+um clone local somente leitura ou uma URL Git configurada. Em ambos os casos o
+serviço mantém um mirror privado no próprio cache; uma URL não exige clone de
+trabalho. Cada branch ou commit é materializado
 por `git archive` em um snapshot imutável, sem diretório `.git`, arquivos locais,
 builds não versionados ou mudanças ainda não commitadas.
 
@@ -145,6 +147,11 @@ branch; nenhum nome de branch é presumido pelo orquestrador. O `sync-all` isola
 cache, saída e falhas por repositório e grava um manifesto agregado com o hash da
 configuração. Novas entradas ficam desabilitadas/`pending` até a política ser
 confirmada.
+
+Quando a política canônica é `remote_default`, o Git informa simbolicamente o
+nome da branch padrão. O serviço persiste essa relação no mirror e registra no
+manifesto tanto a política quanto a branch efetivamente resolvida; não presume
+nomes como `master` ou `main`.
 
 Para remotes HTTPS privados, as credenciais são lidas de variáveis de ambiente
 ou de `.env` local ignorado pelo Git. O token é limitado a `read_repository` e

@@ -5,12 +5,15 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from mflab_knowledge.normalize import ACCESS_CLASSES
 
 REPOSITORY_CONFIG_SCHEMA_VERSION = "0.1"
 REPOSITORY_ID = re.compile(r"^[a-z0-9][a-z0-9._-]*$")
 BRANCH_SCOPES = {"remote", "local", "all"}
+REMOTE_URL_SCHEMES = {"file", "git", "http", "https", "ssh"}
+SCP_REMOTE_URL = re.compile(r"^[^@\s]+@[^:\s]+:.+$")
 
 
 @dataclass(frozen=True)
@@ -18,13 +21,22 @@ class RepositoryDefinition:
     id: str
     enabled: bool
     project: str
-    source: Path
+    source: Path | None
     canonical_ref: str
     branch_scope: str
     access_class: str
     profile: str
     include_branches: tuple[str, ...] = ()
     exclude_branches: tuple[str, ...] = ()
+    remote_url: str | None = None
+
+    @property
+    def source_kind(self) -> str:
+        return "remote_url" if self.remote_url is not None else "local_worktree"
+
+    @property
+    def source_label(self) -> str:
+        return self.remote_url or str(self.source)
 
 
 @dataclass(frozen=True)
@@ -63,6 +75,21 @@ def _resolve_path(base: Path, value: object, field: str, record: str) -> Path:
     if not path.is_absolute():
         path = base / path
     return path.resolve()
+
+
+def _remote_url(value: object, field: str, record: str) -> str:
+    remote_url = _required_text(value, field, record)
+    parsed = urlsplit(remote_url)
+    scheme = parsed.scheme.casefold()
+    if scheme in REMOTE_URL_SCHEMES and parsed.path:
+        if parsed.password is not None or (
+            scheme in {"http", "https"} and parsed.username is not None
+        ):
+            raise ValueError(f"{record}.{field} não pode conter credenciais")
+        return remote_url
+    if SCP_REMOTE_URL.fullmatch(remote_url):
+        return remote_url
+    raise ValueError(f"{record}.{field} não é uma URL Git suportada")
 
 
 def load_repository_catalog(path: Path) -> RepositoryCatalog:
@@ -155,6 +182,7 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
         "enabled",
         "project",
         "source",
+        "remote_url",
         "canonical_ref",
         "branch_scope",
         "access_class",
@@ -208,17 +236,42 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
             "exclude_branches",
             record,
         )
+        has_source = raw_repository.get("source") is not None
+        has_remote_url = raw_repository.get("remote_url") is not None
+        if has_source == has_remote_url:
+            raise ValueError(
+                f"{record} exige exatamente uma origem: source ou remote_url"
+            )
+        source = (
+            _resolve_path(base, raw_repository.get("source"), "source", record)
+            if has_source
+            else None
+        )
+        remote_url = (
+            _remote_url(raw_repository.get("remote_url"), "remote_url", record)
+            if has_remote_url
+            else None
+        )
+        if remote_url is not None and scope == "local":
+            raise ValueError(
+                f"{record}.branch_scope local exige uma origem source"
+            )
+        canonical_ref = _required_text(
+            raw_repository.get("canonical_ref"),
+            "canonical_ref",
+            record,
+        )
+        if canonical_ref == "remote_default" and remote_url is None:
+            raise ValueError(
+                f"{record}.canonical_ref remote_default exige remote_url"
+            )
         repositories.append(
             RepositoryDefinition(
                 id=repository_id,
                 enabled=enabled,
                 project=_required_text(raw_repository.get("project"), "project", record),
-                source=_resolve_path(base, raw_repository.get("source"), "source", record),
-                canonical_ref=_required_text(
-                    raw_repository.get("canonical_ref"),
-                    "canonical_ref",
-                    record,
-                ),
+                source=source,
+                canonical_ref=canonical_ref,
                 branch_scope=scope,
                 access_class=access_class,
                 profile=_required_text(
@@ -228,6 +281,7 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
                 ),
                 include_branches=include,
                 exclude_branches=exclude,
+                remote_url=remote_url,
             )
         )
 

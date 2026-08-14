@@ -25,6 +25,8 @@ from mflab_knowledge.repository import (
     list_repository_branches,
     materialize_repository_snapshot,
     prepare_repository_mirror,
+    prepare_remote_repository_mirror,
+    resolve_remote_default_branch,
 )
 
 LogCallback = Callable[[str, str], None]
@@ -251,7 +253,8 @@ def _render_tree(project: str, entries: list[dict[str, object]]) -> str:
 
 def sync_repository_branches(
     *,
-    source: Path,
+    source: Path | None,
+    remote_url: str | None = None,
     project: str,
     canonical_ref: str,
     branch_scope: str,
@@ -270,16 +273,37 @@ def sync_repository_branches(
     destination = output_dir.expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
 
-    mirror = prepare_repository_mirror(
-        source,
-        project=project,
-        cache_dir=cache_dir,
-        refresh_remote=refresh_remote,
-        credentials=credentials,
-        log=logger,
-    )
+    if (source is None) == (remote_url is None):
+        raise ValueError("informe exatamente uma origem: source ou remote_url")
+    if remote_url is not None:
+        mirror = prepare_remote_repository_mirror(
+            remote_url,
+            project=project,
+            cache_dir=cache_dir,
+            refresh_remote=refresh_remote,
+            credentials=credentials,
+            log=logger,
+        )
+    else:
+        assert source is not None
+        mirror = prepare_repository_mirror(
+            source,
+            project=project,
+            cache_dir=cache_dir,
+            refresh_remote=refresh_remote,
+            credentials=credentials,
+            log=logger,
+        )
     discovered_branches = list_repository_branches(mirror, scope=branch_scope)
-    canonical_name = _canonical_name(canonical_ref)
+    if canonical_ref == "remote_default":
+        canonical_name = resolve_remote_default_branch(
+            mirror,
+            refresh_remote=refresh_remote,
+            credentials=credentials,
+        )
+        logger(f"Branch canônica descoberta pelo remote: {canonical_name}", "success")
+    else:
+        canonical_name = _canonical_name(canonical_ref)
     canonical = next(
         (branch for branch in discovered_branches if branch.name == canonical_name),
         None,
@@ -459,10 +483,12 @@ def sync_repository_branches(
         "schema_version": "0.3",
         "generated_at": _utc_now(),
         "project": project,
-        "source": str(mirror.source_path),
+        "source": remote_url or str(mirror.source_path),
+        "source_kind": "remote_url" if remote_url is not None else "local_worktree",
         "remote_url": mirror.remote_url,
         "canonical_branch": canonical.name,
         "canonical_ref": canonical.requested_ref,
+        "canonical_policy": canonical_ref,
         "branch_scope": branch_scope,
         "branch_filters": {
             "include": list(include_branches),

@@ -12,8 +12,10 @@ from mflab_knowledge.credentials import GitCredentials
 from mflab_knowledge import repository
 from mflab_knowledge.repository import (
     list_repository_branches,
+    prepare_remote_repository_mirror,
     prepare_repository_mirror,
     prepare_repository_snapshot,
+    resolve_remote_default_branch,
 )
 
 
@@ -29,6 +31,96 @@ def _git(repository: Path, *arguments: str) -> str:
 
 @unittest.skipUnless(shutil.which("git"), "Git não está disponível")
 class RepositorySnapshotTests(unittest.TestCase):
+    @unittest.skipIf(
+        os.name == "nt",
+        "Git for Windows não pode iniciar upload-pack no sandbox local",
+    )
+    def test_prepares_remote_only_mirror_and_reuses_it_offline(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "source"
+            remote = root / "remote.git"
+            cache = root / "cache"
+            source.mkdir()
+            subprocess.run(
+                ["git", "init", "--bare", str(remote)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            subprocess.run(
+                ["git", "init", "-b", "trunk", str(source)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            _git(source, "config", "user.name", "Remote Test")
+            _git(source, "config", "user.email", "remote@example.invalid")
+            (source / "README.md").write_text("remote\n", encoding="utf-8")
+            _git(source, "add", "README.md")
+            _git(source, "commit", "-m", "initial")
+            _git(source, "remote", "add", "origin", str(remote))
+            _git(source, "push", "origin", "trunk")
+            subprocess.run(
+                [
+                    "git",
+                    "--git-dir",
+                    str(remote),
+                    "symbolic-ref",
+                    "HEAD",
+                    "refs/heads/trunk",
+                ],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+
+            online = prepare_remote_repository_mirror(
+                remote.as_uri(),
+                project="Remote Project",
+                cache_dir=cache,
+            )
+            branches = list_repository_branches(online, scope="remote")
+            online_default = resolve_remote_default_branch(
+                online,
+                refresh_remote=True,
+            )
+            offline = prepare_remote_repository_mirror(
+                remote.as_uri(),
+                project="Remote Project",
+                cache_dir=cache,
+                refresh_remote=False,
+            )
+            offline_default = resolve_remote_default_branch(
+                offline,
+                refresh_remote=False,
+            )
+
+            self.assertEqual([branch.name for branch in branches], ["trunk"])
+            self.assertEqual(online.mirror_path, offline.mirror_path)
+            self.assertEqual(online.remote_url, remote.as_uri())
+            self.assertEqual(online_default, "trunk")
+            self.assertEqual(offline_default, "trunk")
+
+    def test_remote_only_offline_requires_an_existing_mirror(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with self.assertRaisesRegex(ValueError, "ainda não existe"):
+                prepare_remote_repository_mirror(
+                    "https://gitlab.example.invalid/group/repo.git",
+                    project="Missing",
+                    cache_dir=Path(temporary_directory),
+                    refresh_remote=False,
+                )
+
+    def test_remote_only_rejects_credentials_inside_url(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            with self.assertRaisesRegex(ValueError, "não pode conter credenciais"):
+                prepare_remote_repository_mirror(
+                    "https://user:token@gitlab.example.invalid/group/repo.git",
+                    project="Unsafe",
+                    cache_dir=Path(temporary_directory),
+                )
+
     def test_remote_credentials_do_not_enter_git_arguments(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             mirror = Path(temporary_directory) / "mirror.git"

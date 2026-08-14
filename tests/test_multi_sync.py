@@ -22,12 +22,26 @@ def _repository(identifier: str, source: Path, canonical_ref: str) -> Repository
     )
 
 
+def _remote_repository(identifier: str, canonical_ref: str) -> RepositoryDefinition:
+    return RepositoryDefinition(
+        id=identifier,
+        enabled=True,
+        project=identifier.upper(),
+        source=None,
+        canonical_ref=canonical_ref,
+        branch_scope="remote",
+        access_class="lab",
+        profile="generic",
+        remote_url=f"https://gitlab.example.invalid/group/{identifier}.git",
+    )
+
+
 class MultiSyncTests(unittest.TestCase):
     def test_continues_after_repository_failure_and_writes_manifest(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             first = _repository("first", root / "first", "origin/trunk")
-            second = _repository("second", root / "second", "origin/release/current")
+            second = _remote_repository("second", "origin/release/current")
             catalog = RepositoryCatalog(
                 path=root / "repositories.toml",
                 config_hash="sha256:config",
@@ -67,6 +81,11 @@ class MultiSyncTests(unittest.TestCase):
                 synchronize.call_args_list[1].kwargs["canonical_ref"],
                 "origin/release/current",
             )
+            self.assertIsNone(synchronize.call_args_list[1].kwargs["source"])
+            self.assertEqual(
+                synchronize.call_args_list[1].kwargs["remote_url"],
+                "https://gitlab.example.invalid/group/second.git",
+            )
             self.assertEqual(result["succeeded"], 1)
             self.assertEqual(result["failed"], 1)
             self.assertEqual(result["branches"], 4)
@@ -75,6 +94,7 @@ class MultiSyncTests(unittest.TestCase):
             self.assertIn('"status": "success"', manifest)
             self.assertIn('"status": "failed"', manifest)
             self.assertIn("branch canônica ausente", manifest)
+            self.assertIn('"source_kind": "remote_url"', manifest)
             self.assertTrue(any("[second]" in message for message, _ in messages))
 
     def test_repository_filter_rejects_unknown_ids(self) -> None:

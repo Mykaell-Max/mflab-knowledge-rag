@@ -12,8 +12,8 @@ normalized_root = "data/repositories"
 id = "mfsim-ng"
 enabled = true
 project = "MFSim-NG"
-source = "/home/max/Desktop/mfsim-ng"
-canonical_ref = "origin/master"
+remote_url = "https://www.mflab.mecanica.ufu.br/gitlab/mfsim/mfsim-ng.git"
+canonical_ref = "remote_default"
 branch_scope = "remote"
 access_class = "lab"
 profile = "mfsim-ng-pilot"
@@ -21,17 +21,17 @@ profile = "mfsim-ng-pilot"
 # include_branches = ["master", "develop", "feature/*"]
 # exclude_branches = ["archive/*"]
 
-# Ative somente após confirmar projeto, caminho, branch canônica e autorização.
 [[repositories]]
-id = "mfsim-legacy"
-enabled = false
-project = "MFSim legado"
-source = "/caminho/a-confirmar/mfsim"
-canonical_ref = "origin/<confirmar>"
+id = "mfsim-cmake"
+enabled = true
+project = "MFSim CMake"
+remote_url = "https://www.mflab.mecanica.ufu.br/gitlab/mfsim/mfsim-cmake.git"
+canonical_ref = "remote_default"
 branch_scope = "remote"
-access_class = "pending"
+access_class = "lab"
 profile = "generic"
 
+# Exemplo de fonte ainda não autorizada. Ative somente após confirmar a política.
 [[repositories]]
 id = "mfgui"
 enabled = false

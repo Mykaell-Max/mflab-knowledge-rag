@@ -19,6 +19,9 @@ def _utc_now() -> str:
 
 
 def repository_uses_https(repository: RepositoryDefinition) -> bool:
+    if repository.remote_url is not None:
+        return urlsplit(repository.remote_url).scheme.casefold() in {"http", "https"}
+    assert repository.source is not None
     metadata = detect_git_metadata(repository.source)
     remote_url = metadata.get("remote_url")
     if not isinstance(remote_url, str):
@@ -74,6 +77,7 @@ def sync_all_repositories(
         try:
             result = sync_repository_branches(
                 source=repository.source,
+                remote_url=repository.remote_url,
                 project=repository.project,
                 canonical_ref=repository.canonical_ref,
                 branch_scope=repository.branch_scope,
@@ -99,7 +103,9 @@ def sync_all_repositories(
                     "id": repository.id,
                     "project": repository.project,
                     "status": status,
-                    "source": str(repository.source),
+                    "source": repository.source_label,
+                    "source_kind": repository.source_kind,
+                    "remote_url": repository.remote_url,
                     "canonical_ref": repository.canonical_ref,
                     "branch_scope": repository.branch_scope,
                     "access_class": repository.access_class,
@@ -126,7 +132,9 @@ def sync_all_repositories(
                     "id": repository.id,
                     "project": repository.project,
                     "status": "failed",
-                    "source": str(repository.source),
+                    "source": repository.source_label,
+                    "source_kind": repository.source_kind,
+                    "remote_url": repository.remote_url,
                     "canonical_ref": repository.canonical_ref,
                     "branch_scope": repository.branch_scope,
                     "access_class": repository.access_class,

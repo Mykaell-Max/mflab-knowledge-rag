@@ -10,6 +10,7 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable
+from urllib.parse import urlsplit
 
 from mflab_knowledge.credentials import GitCredentials
 from mflab_knowledge.inventory import detect_git_metadata
@@ -94,7 +95,7 @@ def _slug(value: str) -> str:
     return normalized or "repository"
 
 
-def _source_identity(source: Path) -> str:
+def _source_identity(source: Path | str) -> str:
     return hashlib.sha256(str(source).encode("utf-8")).hexdigest()[:12]
 
 
@@ -341,6 +342,127 @@ def prepare_repository_mirror(
         mirror_path=mirror,
         remote_url=remote_url,
     )
+
+
+def prepare_remote_repository_mirror(
+    remote_url: str,
+    *,
+    project: str,
+    cache_dir: Path,
+    refresh_remote: bool = True,
+    credentials: GitCredentials | None = None,
+    log: LogCallback | None = None,
+) -> RepositoryMirror:
+    logger = log or (lambda _message, _level="info": None)
+    url = remote_url.strip()
+    if not url or "\x00" in url or "\n" in url or "\r" in url:
+        raise ValueError("remote_url inválida")
+    parsed = urlsplit(url)
+    if parsed.password is not None or (
+        parsed.scheme.casefold() in {"http", "https"}
+        and parsed.username is not None
+    ):
+        raise ValueError("remote_url não pode conter credenciais")
+
+    cache_root = cache_dir.expanduser().resolve()
+    repositories_dir = cache_root / "repositories"
+    repositories_dir.mkdir(parents=True, exist_ok=True)
+    mirror_name = f"{_slug(project)}-{_source_identity(url)}.git"
+    mirror = repositories_dir / mirror_name
+
+    if not mirror.exists():
+        if not refresh_remote:
+            raise ValueError(
+                f"mirror remoto ainda não existe para modo offline: {mirror}"
+            )
+        logger(f"Criando mirror remoto isolado: {mirror}")
+        _run(["git", "init", "--bare", str(mirror)])
+    else:
+        logger(f"Atualizando mirror remoto isolado: {mirror}")
+
+    if refresh_remote:
+        logger(f"Atualizando branches diretamente do remote: {url}")
+        _refresh_mirror_from_remote(mirror, url, credentials)
+
+    return RepositoryMirror(
+        source_path=mirror,
+        mirror_path=mirror,
+        remote_url=url,
+    )
+
+
+def resolve_remote_default_branch(
+    mirror: RepositoryMirror,
+    *,
+    refresh_remote: bool,
+    credentials: GitCredentials | None = None,
+) -> str:
+    if mirror.remote_url is None:
+        raise ValueError("a origem não possui remote_url para descobrir a branch padrão")
+
+    symbolic_ref = "refs/remotes/origin/HEAD"
+    if refresh_remote:
+        command = [
+            "git",
+            "-c",
+            "credential.helper=",
+            "ls-remote",
+            "--symref",
+            mirror.remote_url,
+            "HEAD",
+        ]
+        if credentials is None:
+            environment = os.environ.copy()
+            environment["GIT_TERMINAL_PROMPT"] = "0"
+            output = _run(command, timeout=120, env=environment)
+        else:
+            environment, temporary = _askpass_environment(
+                mirror.mirror_path.parent,
+                credentials,
+            )
+            try:
+                output = _run(command, timeout=120, env=environment)
+            finally:
+                temporary.cleanup()
+
+        prefix = "ref: refs/heads/"
+        default_branch = next(
+            (
+                line.removeprefix(prefix).split("\t", 1)[0]
+                for line in output.splitlines()
+                if line.startswith(prefix) and line.endswith("\tHEAD")
+            ),
+            None,
+        )
+        if not default_branch:
+            raise ValueError("o remote não informou sua branch padrão")
+        _run(
+            [
+                "git",
+                "--git-dir",
+                str(mirror.mirror_path),
+                "symbolic-ref",
+                symbolic_ref,
+                f"refs/remotes/origin/{default_branch}",
+            ]
+        )
+        return default_branch
+
+    resolved = _run(
+        [
+            "git",
+            "--git-dir",
+            str(mirror.mirror_path),
+            "symbolic-ref",
+            "--short",
+            symbolic_ref,
+        ]
+    )
+    prefix = "refs/remotes/" if resolved.startswith("refs/remotes/") else ""
+    normalized = resolved.removeprefix(prefix).removeprefix("origin/")
+    if not normalized:
+        raise ValueError("branch padrão remota não está armazenada no mirror")
+    return normalized
 
 
 def list_repository_branches(

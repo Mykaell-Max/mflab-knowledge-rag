@@ -33,9 +33,8 @@ exclude_branches = ["research/retired-*" ]
 [[repositories]]
 id = "desktop-ui"
 project = "Desktop UI"
-source = "sources/ui"
-canonical_ref = "origin/stable/qt6"
-branch_scope = "all"
+remote_url = "https://gitlab.example.invalid/tools/desktop-ui.git"
+canonical_ref = "remote_default"
 access_class = "project"
 
 [[repositories]]
@@ -57,9 +56,15 @@ access_class = "pending"
             self.assertEqual(solver.canonical_ref, "origin/trunk")
             self.assertEqual(solver.include_branches, ("trunk", "research/*"))
             self.assertEqual(solver.exclude_branches, ("research/retired-*",))
-            self.assertEqual(ui.canonical_ref, "origin/stable/qt6")
-            self.assertEqual(ui.branch_scope, "all")
+            self.assertEqual(ui.canonical_ref, "remote_default")
+            self.assertEqual(ui.branch_scope, "remote")
             self.assertEqual(ui.access_class, "project")
+            self.assertIsNone(ui.source)
+            self.assertEqual(
+                ui.remote_url,
+                "https://gitlab.example.invalid/tools/desktop-ui.git",
+            )
+            self.assertEqual(ui.source_kind, "remote_url")
             self.assertFalse(legacy.enabled)
             self.assertEqual(catalog.cache_root, (root / "state/cache").resolve())
             self.assertTrue(catalog.config_hash.startswith("sha256:"))
@@ -117,6 +122,51 @@ canonical_ref = "origin/trunk"
             )
             with self.assertRaisesRegex(ValueError, "desconhecidas"):
                 load_repository_catalog(config)
+
+    def test_requires_one_safe_source_kind(self) -> None:
+        cases = {
+            "missing": "",
+            "both": (
+                'source = "source"\n'
+                'remote_url = "https://gitlab.example.invalid/group/repo.git"\n'
+            ),
+            "credentials": (
+                'remote_url = "https://user:token@gitlab.example.invalid/repo.git"\n'
+            ),
+            "local_scope": (
+                'remote_url = "ssh://git@gitlab.example.invalid/group/repo.git"\n'
+                'branch_scope = "local"\n'
+            ),
+            "local_default": (
+                'source = "source"\n'
+                'canonical_ref = "remote_default"\n'
+            ),
+        }
+        expected = {
+            "missing": "exatamente uma origem",
+            "both": "exatamente uma origem",
+            "credentials": "não pode conter credenciais",
+            "local_scope": "local exige uma origem source",
+            "local_default": "remote_default exige remote_url",
+        }
+        for name, source_options in cases.items():
+            with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:
+                config = Path(temporary) / "repositories.toml"
+                config.write_text(
+                    "schema_version = \"0.1\"\n"
+                    "[[repositories]]\n"
+                    "id = \"repo\"\n"
+                    "project = \"Repo\"\n"
+                    + (
+                        "canonical_ref = \"origin/trunk\"\n"
+                        if name != "local_default"
+                        else ""
+                    )
+                    + source_options,
+                    encoding="utf-8",
+                )
+                with self.assertRaisesRegex(ValueError, expected[name]):
+                    load_repository_catalog(config)
 
 
 if __name__ == "__main__":

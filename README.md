@@ -378,12 +378,20 @@ cp repositories.example.toml repositories.toml
 ${EDITOR:-nano} repositories.toml
 ```
 
-Cada bloco `[[repositories]]` exige seu próprio `id`, caminho, projeto e
-`canonical_ref`. `branch_scope`, classe de acesso, perfil e os globs opcionais
+Cada bloco `[[repositories]]` exige seu próprio `id`, projeto e exatamente uma
+origem: `source` para um clone local ou `remote_url` para o serviço manter seu
+próprio mirror sem clone de trabalho. URLs com usuário, token ou senha embutidos
+são rejeitadas. `canonical_ref`, `branch_scope`, classe de acesso, perfil e os globs opcionais
 `include_branches`/`exclude_branches` também são independentes. A branch
 canônica é preservada mesmo que um filtro a exclua. Nomes como `master`,
 `develop`, caminhos do MFSim ou convenções de um projeto vivem somente nesse
 arquivo de configuração, nunca no motor genérico.
+
+`canonical_ref = "remote_default"` segue explicitamente a branch padrão
+informada pelo servidor Git. O nome resolvido é armazenado como ref simbólica no
+mirror para que o modo `--offline` continue reproduzível. Também é possível
+fixar qualquer ref, como `origin/trunk` ou `origin/release/current`, por
+repositório.
 
 Sincronize todos os repositórios habilitados com uma execução:
 
