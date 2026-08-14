@@ -148,6 +148,11 @@ informar todos os vetores como reutilizados e não carregar o modelo na memória
 
 ## 9. Buscar e avaliar os três modos
 
+Opcionalmente, copie `retrieval.example.toml` para `retrieval.toml` e ajuste os
+limites globais do serviço. O arquivo local é ignorado pelo Git. Sem ele, os
+mesmos padrões do exemplo são utilizados. Não inclua nomes de casos ou símbolos
+nessa política; expectativas específicas pertencem às suítes de avaliação.
+
 ```bash
 .venv/bin/python -m mflab_knowledge db-search \
   --mode hybrid \
@@ -178,11 +183,11 @@ informar todos os vetores como reutilizados e não carregar o modelo na memória
 
 O objetivo é melhorar as perguntas conceituais sem regredir a suíte de símbolos
 exatos. O modo semântico usa distância cosseno exata; o modo híbrido combina os
-rankings lexical e vetorial por RRF. Hints explícitos de pares fonte/header,
-símbolos específicos e bundles de teste alimentam uma terceira consulta sob os
-mesmos filtros SQL. No máximo dois documentos relacionados são intercalados logo
-depois da evidência de origem, sem substituir sua posição. Essa etapa reutiliza
-os embeddings existentes.
+rankings lexical e vetorial por RRF. Relações genéricas de pares fonte/header,
+símbolos, vizinhança de chunks e bundles inferidos por ancestral comum alimentam
+uma terceira consulta sob os mesmos filtros SQL. No máximo dois documentos
+relacionados são intercalados logo depois da evidência de origem, sem substituir
+sua posição. Essa etapa reutiliza os embeddings existentes.
 
 ## 10. Limites desta etapa
 

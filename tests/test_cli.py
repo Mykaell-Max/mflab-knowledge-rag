@@ -4,6 +4,7 @@ import io
 import os
 import unittest
 from contextlib import redirect_stderr
+from pathlib import Path
 from unittest import mock
 
 from mflab_knowledge.cli import ConsoleReporter, build_parser
@@ -98,12 +99,15 @@ class ConsoleReporterTests(unittest.TestCase):
                 "partículas distribuídas",
                 "--mode",
                 "hybrid",
+                "--retrieval-config",
+                "retrieval.toml",
             ]
         )
         self.assertEqual(inventory.color, "never")
         self.assertEqual(sync.color, "always")
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
+        self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))
 
 
 if __name__ == "__main__":

@@ -345,18 +345,22 @@ recall por aproximação. A suíte conceitual em português fica em
 `evaluations/mfsim-ng-semantic-pilot.json`; instruções completas estão em
 [`docs/postgresql.md`](docs/postgresql.md).
 
-O modo híbrido também deriva hints contextuais explícitos dos primeiros
-resultados: pares `.cpp`/`.hpp`, identificadores específicos e arquivos
-estruturais do mesmo caso em `tests/`. No máximo dois documentos relacionados são
-consultados no PostgreSQL e intercalados imediatamente depois da evidência que
-originou cada hint, sem competir com ela. A consulta repete ACL, projeto, branch
-e caminho antes de retornar qualquer texto, e os metadados indicam quando e por
-que o reforço foi aplicado.
+O modo híbrido também deriva contexto estrutural dos primeiros resultados:
+pares fonte/header, referências a identificadores, chunks vizinhos do mesmo
+documento e grupos de arquivos estruturados sob um ancestral comum. A inferência
+de grupos usa apenas estrutura e formatos configurados; o algoritmo não contém
+nomes de projetos, casos, arquivos ou símbolos do MFSim-NG.
 
-Headers fortemente representados podem fornecer um terceiro chunk do mesmo
-documento, enquanto bundles concorrentes recebem no máximo um complemento por
-raiz de caso. Isso impede que um caso semelhante esconda a configuração do caso
-realmente consultado.
+No máximo dois documentos relacionados são consultados no PostgreSQL e
+intercalados imediatamente depois da evidência que originou cada relação, sem
+competir com ela. A consulta repete ACL, projeto, branch e caminho antes de
+retornar qualquer texto. Os metadados registram a relação, a evidência de origem
+e a política usada no ranking.
+
+Os limites globais ficam em `retrieval.toml`, ignorado pelo Git. Use
+`retrieval.example.toml` como base. Se o arquivo não existir, o serviço usa os
+mesmos padrões documentados no exemplo. `db-search` e `db-evaluate` também aceitam
+`--retrieval-config`; a política efetiva entra no fingerprint da avaliação.
 
 ## Configuração multi-repositório
 

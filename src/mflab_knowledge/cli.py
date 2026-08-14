@@ -32,6 +32,7 @@ from mflab_knowledge.evaluate import evaluate_suite
 from mflab_knowledge.inventory import build_inventory, detect_git_metadata, write_yaml
 from mflab_knowledge.normalize import normalize_manifest, search_chunks
 from mflab_knowledge.repository import prepare_repository_snapshot
+from mflab_knowledge.retrieval import load_retrieval_policy
 from mflab_knowledge.sync import sync_repository_branches
 
 
@@ -192,6 +193,17 @@ def _add_search_options(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_retrieval_policy_option(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--retrieval-config",
+        type=Path,
+        help=(
+            "Política TOML de recuperação. Sem a opção, usa ./retrieval.toml "
+            "quando existir ou os padrões auditáveis do serviço."
+        ),
+    )
+
+
 def _safe_database_error(error: Exception, database_url: str | None) -> str:
     message = str(error)
     if database_url:
@@ -346,6 +358,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="Executa busca textual no corpus armazenado no PostgreSQL.",
     )
     _add_search_options(db_search)
+    _add_retrieval_policy_option(db_search)
     db_search.add_argument(
         "--mode",
         choices=("lexical", "semantic", "hybrid"),
@@ -370,6 +383,7 @@ def build_parser() -> argparse.ArgumentParser:
         default="lexical",
     )
     _add_embedding_options(db_evaluate)
+    _add_retrieval_policy_option(db_evaluate)
     _add_database_options(db_evaluate)
 
     db_status = subparsers.add_parser(
@@ -696,6 +710,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         if args.mode == "semantic"
                         else hybrid_search
                     )
+                    if args.mode == "hybrid":
+                        parameters["retrieval_policy"] = load_retrieval_policy(
+                            args.retrieval_config
+                        )
                     results = search_function(
                         database_url,
                         embedder,
@@ -716,6 +734,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 
             if args.command == "db-evaluate":
                 embedder: LocalEmbedder | None = None
+                retrieval_policy = None
                 if args.mode == "lexical":
                     backend = database_fingerprint(database_url)
                     selected_search = search_postgres
@@ -727,10 +746,19 @@ def main(argv: Sequence[str] | None = None) -> int:
                         max_sequence_length=args.max_sequence_length,
                         log=reporter.log,
                     )
-                    backend = hybrid_fingerprint(database_url, embedder)
+                    if args.mode == "hybrid":
+                        retrieval_policy = load_retrieval_policy(
+                            args.retrieval_config
+                        )
+                    backend = hybrid_fingerprint(
+                        database_url,
+                        embedder,
+                        retrieval_policy,
+                    )
                     backend["mode"] = args.mode
                     if args.mode == "semantic":
                         backend["retrieval_algorithm"] = "exact_cosine"
+                        backend.pop("retrieval_policy", None)
                     selected_search = (
                         semantic_search
                         if args.mode == "semantic"
@@ -740,6 +768,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                 def database_search(**parameters: object) -> list[dict[str, object]]:
                     if embedder is None:
                         return selected_search(database_url, **parameters)
+                    if retrieval_policy is not None:
+                        parameters["retrieval_policy"] = retrieval_policy
                     return selected_search(database_url, embedder, **parameters)
 
                 report = evaluate_suite(

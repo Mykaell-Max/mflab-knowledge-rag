@@ -192,15 +192,18 @@ class EmbeddingTests(unittest.TestCase):
             },
         ]
 
-        paths, symbols = embeddings._context_hints(seeds)
+        paths, directories, symbols = embeddings._context_hints(seeds)
 
         self.assertIn("src/output/hdf5/hdf5_lag_output.hpp", paths)
         self.assertEqual(
             paths["src/output/hdf5/hdf5_lag_output.hpp"][0],
             "paired_source",
         )
-        self.assertIn("tests/dpm_ram_1b/domains.json", paths)
-        self.assertIn("tests/dpm_ram_1b/domain_0/input/input.json", paths)
+        self.assertIn("tests/dpm_ram_1b", directories)
+        self.assertEqual(
+            directories["tests/dpm_ram_1b"][0],
+            "directory_bundle",
+        )
         self.assertEqual(
             paths["src/dpm/common/dpm_types.hpp"][0],
             "same_document",
@@ -209,7 +212,7 @@ class EmbeddingTests(unittest.TestCase):
         self.assertLessEqual(len(symbols), 24)
 
     def test_single_test_hit_does_not_expand_the_whole_bundle(self) -> None:
-        paths, _symbols = embeddings._context_hints(
+        _paths, directories, _symbols = embeddings._context_hints(
             [
                 {
                     "path": "tests/dpm_ram_1b/domain_0/input/dpm.json",
@@ -219,11 +222,56 @@ class EmbeddingTests(unittest.TestCase):
             ]
         )
 
-        self.assertNotIn("tests/dpm_ram_1b/domains.json", paths)
-        self.assertNotIn(
-            "tests/dpm_ram_1b/domain_0/input/input.json",
-            paths,
+        self.assertEqual(directories, {})
+
+    def test_directory_bundles_are_inferred_without_repository_names(self) -> None:
+        _paths, directories, _symbols = embeddings._context_hints(
+            [
+                {
+                    "path": "experiments/case-alpha/setup/physics.yaml",
+                    "title": "arquivo",
+                    "text": "model: particles",
+                },
+                {
+                    "path": "experiments/case-alpha/resources.toml",
+                    "title": "arquivo",
+                    "text": "workers = 8",
+                },
+                {
+                    "path": "experiments/case-beta/setup/physics.yaml",
+                    "title": "arquivo",
+                    "text": "model: particles",
+                },
+                {
+                    "path": "experiments/case-beta/resources.toml",
+                    "title": "arquivo",
+                    "text": "workers = 16",
+                },
+            ]
         )
+
+        self.assertEqual(
+            set(directories),
+            {"experiments/case-alpha", "experiments/case-beta"},
+        )
+
+    def test_directory_bundle_does_not_merge_isolated_child_directories(self) -> None:
+        _paths, directories, _symbols = embeddings._context_hints(
+            [
+                {
+                    "path": "experiments/case-alpha/setup/physics.yaml",
+                    "title": "arquivo",
+                    "text": "model: particles",
+                },
+                {
+                    "path": "experiments/case-beta/setup/physics.yaml",
+                    "title": "arquivo",
+                    "text": "model: particles",
+                },
+            ]
+        )
+
+        self.assertEqual(directories, {})
 
     def test_context_search_filters_before_returning_related_text(self) -> None:
         row = {
@@ -283,10 +331,11 @@ class EmbeddingTests(unittest.TestCase):
         )
         self.assertEqual(parameters["allowed_access"], ["lab"])
         self.assertEqual(parameters["branch"], "diagnostic/dpm")
+        self.assertEqual(parameters["context_candidate_limit"], 50)
         self.assertEqual(values[0]["context_relation"], "symbol_reference")
         self.assertEqual(values[0]["context_source_rank"], 1)
 
-    def test_context_search_keeps_one_complement_per_test_bundle(self) -> None:
+    def test_context_search_keeps_one_complement_per_directory_bundle(self) -> None:
         def bundle_row(chunk_id: str, path: str, score: float) -> dict[str, object]:
             return {
                 "score": score,
@@ -378,8 +427,73 @@ class EmbeddingTests(unittest.TestCase):
             ],
         )
         self.assertTrue(
-            all(value["context_relation"] == "test_bundle" for value in values)
+            all(value["context_relation"] == "directory_bundle" for value in values)
         )
+
+    def test_same_document_context_prefers_the_nearest_chunk(self) -> None:
+        def row(chunk_id: str, title: str, start: int, end: int, score: float):
+            return {
+                "score": score,
+                "chunk_id": chunk_id,
+                "chunk_hash": f"{chunk_id}-hash",
+                "project": "AnyProject",
+                "path": "src/model/types.hpp",
+                "title": title,
+                "line_start": start,
+                "line_end": end,
+                "access_class": "lab",
+                "branch": "feature/ids",
+                "commit_sha": "b" * 40,
+                "occurrences": [{"branch": "feature/ids"}],
+                "text": title,
+            }
+
+        result_cursor = mock.MagicMock()
+        result_cursor.fetchall.return_value = [
+            row("far", "UnrelatedType", 60, 70, 0.95),
+            row("adjacent", "RelevantType", 24, 30, 0.70),
+        ]
+        connection = mock.MagicMock()
+        connection.execute.return_value = result_cursor
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+        embedder = mock.MagicMock()
+        embedder.profile_id = "profile"
+        embedder.encode_query.return_value = [0.0] * 1024
+        seeds = [
+            {
+                "chunk_id": "before",
+                "path": "src/model/types.hpp",
+                "line_start": 1,
+                "line_end": 23,
+                "title": "preamble",
+                "text": "types",
+            },
+            {
+                "chunk_id": "after",
+                "path": "src/model/types.hpp",
+                "line_start": 90,
+                "line_end": 100,
+                "title": "factory",
+                "text": "types",
+            },
+        ]
+
+        with mock.patch.object(embeddings, "_driver", return_value=(None, object())):
+            with mock.patch.object(embeddings, "_connect", return_value=context):
+                values = embeddings._contextual_search(
+                    "postgresql://unused",
+                    embedder,
+                    query="como os identificadores são criados",
+                    seeds=seeds,
+                    branch="feature/ids",
+                    project="AnyProject",
+                    path_prefix=None,
+                    allowed_access={"lab"},
+                )
+
+        self.assertEqual(values[0]["chunk_id"], "adjacent")
+        self.assertEqual(values[0]["context_relation"], "same_document")
 
     def test_hybrid_promotes_at_most_two_explicit_context_results(self) -> None:
         semantic = []

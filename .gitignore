@@ -20,3 +20,4 @@ data/
 cache/
 logs/
 repositories.toml
+retrieval.toml

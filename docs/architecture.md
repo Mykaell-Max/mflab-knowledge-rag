@@ -110,20 +110,25 @@ pgvector. Em seguida, RRF combina apenas as posições nos dois rankings, evitan
 comparar escalas de score incompatíveis. O resultado final volta a aplicar
 diversidade por arquivo e deduplicação por hash.
 
-Uma expansão contextual conservadora deriva hints explícitos dos primeiros
-candidatos: pares fonte/header, identificadores suficientemente específicos e
-arquivos estruturais do mesmo bundle em `tests/`. Uma segunda consulta vetorial
-busca somente esses hints e repete ACL, projeto, branch e prefixo de caminho no
-SQL. No máximo dois documentos são intercalados imediatamente depois da
-evidência que originou o hint, preservando a ordem do ranking principal. O
-resultado registra `context_relation`, `context_rank` e a posição da evidência.
-Nenhum caminho ou texto é lido fora das fontes autorizadas.
+Uma expansão contextual conservadora deriva relações dos primeiros candidatos:
+pares fonte/header, identificadores suficientemente específicos, vizinhança de
+linhas no mesmo documento e diretórios sustentados por múltiplos documentos
+estruturados. O ancestral comum mais específico define cada bundle; nomes de
+repositórios, diretórios, arquivos, casos e símbolos não fazem parte do
+algoritmo.
 
-Quando dois chunks de um mesmo header já estão entre as evidências iniciais, a
-consulta pode selecionar outro chunk desse documento (`same_document`), sem
-repetir os chunks usados como seed. Para bundles, no máximo um complemento de
-cada raiz `tests/<caso>` é escolhido, evitando que o caso mais bem ranqueado
-oculte outro bundle também sustentado por múltiplas evidências.
+Uma segunda consulta busca somente essas relações e repete ACL, projeto, branch
+e prefixo de caminho no SQL. Chunks do mesmo documento são ordenados primeiro
+pela distância estrutural até as evidências já recuperadas e depois pela
+similaridade vetorial. Cada bundle de diretório pode fornecer no máximo um
+complemento. O resultado registra `context_relation`, `context_group`,
+`context_rank` e a posição da evidência. Nenhum caminho ou texto é lido fora das
+fontes autorizadas.
+
+Os limites e formatos que podem formar bundles são carregados de uma política
+TOML local e incorporados ao fingerprint da recuperação. Assim, clientes CLI,
+API e MCP podem compartilhar a mesma política auditável quando o processo se
+tornar um serviço persistente.
 
 Para aumentar diversidade, o ranking piloto limita chunks por caminho, colapsa
 conteúdos idênticos e comprime o ganho de frequência lexical. Esses limites são

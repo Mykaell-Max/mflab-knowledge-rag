@@ -16,6 +16,7 @@ from mflab_knowledge.database import (
     search_postgres,
 )
 from mflab_knowledge.normalize import RETRIEVABLE_ACCESS_CLASSES
+from mflab_knowledge.retrieval import RetrievalPolicy
 
 LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, int, str], None]
@@ -461,20 +462,19 @@ def _diversify(
 
 def _context_hints(
     seeds: list[dict[str, object]],
-) -> tuple[dict[str, tuple[str, int, int]], dict[str, int]]:
+    policy: RetrievalPolicy | None = None,
+) -> tuple[
+    dict[str, tuple[str, int, int]],
+    dict[str, tuple[str, int, int]],
+    dict[str, int],
+]:
+    active_policy = policy or RetrievalPolicy()
     paths: dict[str, tuple[str, int, int]] = {}
+    directory_prefixes: dict[str, tuple[str, int, int]] = {}
     symbols: dict[str, int] = {}
-    bundle_paths: dict[str, set[str]] = {}
     seed_path_counts: Counter[str] = Counter(
         str(seed.get("path", "")) for seed in seeds if seed.get("path")
     )
-
-    for seed in seeds:
-        raw_path = str(seed.get("path", ""))
-        parts = PurePosixPath(raw_path).parts
-        if len(parts) >= 2 and parts[0] == "tests":
-            root = "/".join(parts[:2])
-            bundle_paths.setdefault(root, set()).add(raw_path)
 
     def add_path(path: PurePosixPath, reason: str, rank: int, strength: int) -> None:
         value = path.as_posix()
@@ -488,41 +488,22 @@ def _context_hints(
         if raw_path:
             path = PurePosixPath(raw_path)
             suffix = path.suffix.casefold()
-            if suffix in {".h", ".hh", ".hpp", ".hxx"} and seed_path_counts[
+            if suffix in active_policy.same_document_extensions and seed_path_counts[
                 raw_path
-            ] >= 2:
+            ] >= active_policy.same_document_min_hits:
                 add_path(
                     path,
                     "same_document",
                     source_rank,
-                    6,
+                    active_policy.same_document_strength,
                 )
             for paired_suffix in _PAIRED_EXTENSIONS.get(suffix, ()):
                 add_path(
                     path.with_suffix(paired_suffix),
                     "paired_source",
                     source_rank,
-                    5,
+                    active_policy.paired_source_strength,
                 )
-
-            parts = path.parts
-            if len(parts) >= 2 and parts[0] == "tests":
-                bundle_root = PurePosixPath(*parts[:2])
-                bundle_key = bundle_root.as_posix()
-                if len(bundle_paths.get(bundle_key, set())) >= 2:
-                    add_path(
-                        bundle_root / "domains.json",
-                        "test_bundle",
-                        source_rank,
-                        4,
-                    )
-                    if path.parent.name == "input":
-                        add_path(
-                            path.parent / "input.json",
-                            "test_bundle",
-                            source_rank,
-                            4,
-                        )
 
         searchable = f"{seed.get('title', '')}\n{seed.get('text', '')}"
         for identifier in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", searchable):
@@ -536,8 +517,73 @@ def _context_hints(
             if previous_rank is None or source_rank < previous_rank:
                 symbols[identifier] = source_rank
 
+    ancestor_documents: dict[str, dict[str, int]] = {}
+    for source_rank, seed in enumerate(seeds, start=1):
+        raw_path = str(seed.get("path", ""))
+        path = PurePosixPath(raw_path)
+        if path.suffix.casefold() not in active_policy.directory_extensions:
+            continue
+        for parent in path.parents:
+            parts = parent.parts
+            if not parts or parent.as_posix() == ".":
+                continue
+            root = parent.as_posix()
+            documents = ancestor_documents.setdefault(root, {})
+            documents[raw_path] = min(source_rank, documents.get(raw_path, source_rank))
+
+    qualifying = {
+        root: documents
+        for root, documents in ancestor_documents.items()
+        if len(documents) >= active_policy.directory_min_documents
+        and (
+            not active_policy.directory_require_root_document
+            or any(PurePosixPath(path).parent.as_posix() == root for path in documents)
+        )
+    }
+    deepest = {
+        root: documents
+        for root, documents in qualifying.items()
+        if not any(
+            other != root and other.startswith(root + "/") for other in qualifying
+        )
+    }
+    for root, documents in deepest.items():
+        directory_prefixes[root] = (
+            "directory_bundle",
+            min(documents.values()),
+            active_policy.directory_strength,
+        )
+
     ordered_symbols = sorted(symbols, key=lambda value: (symbols[value], -len(value)))
-    return paths, {value: symbols[value] for value in ordered_symbols[:24]}
+    limited_symbols = {
+        value: symbols[value]
+        for value in ordered_symbols[: active_policy.symbol_hints_limit]
+    }
+    return paths, directory_prefixes, limited_symbols
+
+
+def _line_distance(
+    candidate: dict[str, object],
+    seeds: list[dict[str, object]],
+) -> int:
+    path = str(candidate.get("path", ""))
+    start = int(candidate.get("line_start") or 0)
+    end = int(candidate.get("line_end") or start)
+    distances: list[int] = []
+    for seed in seeds:
+        if str(seed.get("path", "")) != path:
+            continue
+        seed_start = int(seed.get("line_start") or 0)
+        seed_end = int(seed.get("line_end") or seed_start)
+        if not start or not end or not seed_start or not seed_end:
+            continue
+        if end < seed_start:
+            distances.append(seed_start - end)
+        elif seed_end < start:
+            distances.append(start - seed_end)
+        else:
+            distances.append(0)
+    return min(distances, default=1_000_000_000)
 
 
 CONTEXT_SEARCH_SQL = """
@@ -592,6 +638,14 @@ WHERE embedding.model_id = %(profile)s
   AND NOT (chunk.chunk_id = ANY(%(seed_chunk_ids)s::text[]))
   AND (
       document.path = ANY(%(exact_paths)s::text[])
+      OR (
+          NOT (document.path = ANY(%(seed_paths)s::text[]))
+          AND EXISTS (
+              SELECT 1
+              FROM unnest(%(directory_prefixes)s::text[]) AS requested(prefix)
+              WHERE document.path LIKE requested.prefix || '/%%'
+          )
+      )
       OR EXISTS (
           SELECT 1
           FROM unnest(%(symbols)s::text[]) AS requested(symbol)
@@ -599,9 +653,17 @@ WHERE embedding.model_id = %(profile)s
       )
   )
 ORDER BY
-    CASE WHEN document.path = ANY(%(exact_paths)s::text[]) THEN 0 ELSE 1 END,
+    CASE
+        WHEN document.path = ANY(%(exact_paths)s::text[]) THEN 0
+        WHEN EXISTS (
+            SELECT 1
+            FROM unnest(%(directory_prefixes)s::text[]) AS requested(prefix)
+            WHERE document.path LIKE requested.prefix || '/%%'
+        ) THEN 1
+        ELSE 2
+    END,
     embedding.embedding <=> %(query_embedding)s
-LIMIT 50
+LIMIT %(context_candidate_limit)s
 """
 
 
@@ -615,9 +677,16 @@ def _contextual_search(
     project: str | None,
     path_prefix: str | None,
     allowed_access: set[str],
+    policy: RetrievalPolicy | None = None,
 ) -> list[dict[str, object]]:
-    path_hints, symbol_hints = _context_hints(seeds)
-    if not path_hints and not symbol_hints:
+    active_policy = policy or RetrievalPolicy()
+    if active_policy.max_context_results == 0:
+        return []
+    path_hints, directory_hints, symbol_hints = _context_hints(
+        seeds,
+        active_policy,
+    )
+    if not path_hints and not directory_hints and not symbol_hints:
         return []
     query_embedding = embedder.encode_query(query)
     _psycopg, dict_row = _driver()
@@ -639,72 +708,98 @@ def _contextual_search(
                         if seed.get("chunk_id")
                     }
                 ),
+                "seed_paths": sorted(
+                    {str(seed.get("path", "")) for seed in seeds if seed.get("path")}
+                ),
                 "exact_paths": sorted(path_hints),
+                "directory_prefixes": sorted(directory_hints),
                 "symbols": list(symbol_hints),
+                "context_candidate_limit": active_policy.context_candidate_limit,
             },
         ).fetchall()
-    candidates = _diversify(
-        _rows_to_results(rows),
-        limit=20,
-        max_per_path=1,
-        include_duplicate_content=False,
-    )
-    annotated: list[tuple[int, int, float, dict[str, object]]] = []
+    candidates = _rows_to_results(rows)
+    annotated: list[tuple[int, int, int, float, dict[str, object]]] = []
     for candidate in candidates:
         path = str(candidate.get("path", ""))
         hint = path_hints.get(path)
+        context_group: str
         if hint is not None:
             reason, source_rank, strength = hint
+            context_group = f"{reason}:{path}"
         else:
-            searchable = (
-                f"{candidate.get('title', '')}\n{candidate.get('text', '')}"
-            ).casefold()
-            matched = [
-                (rank, symbol)
-                for symbol, rank in symbol_hints.items()
-                if symbol.casefold() in searchable
+            matching_directories = [
+                (root, value)
+                for root, value in directory_hints.items()
+                if path.startswith(root + "/")
             ]
-            if not matched:
-                continue
-            source_rank, _symbol = min(matched)
-            reason = "symbol_reference"
-            strength = 4
+            if matching_directories:
+                root, (reason, source_rank, strength) = max(
+                    matching_directories,
+                    key=lambda value: len(PurePosixPath(value[0]).parts),
+                )
+                context_group = f"{reason}:{root}"
+            else:
+                searchable = (
+                    f"{candidate.get('title', '')}\n{candidate.get('text', '')}"
+                ).casefold()
+                matched = [
+                    (rank, symbol)
+                    for symbol, rank in symbol_hints.items()
+                    if symbol.casefold() in searchable
+                ]
+                if not matched:
+                    continue
+                source_rank, symbol = min(matched)
+                reason = "symbol_reference"
+                strength = active_policy.symbol_strength
+                context_group = f"{reason}:{symbol.casefold()}"
         candidate["context_relation"] = reason
         candidate["context_source_rank"] = source_rank
-        annotated.append(
-            (-strength, source_rank, -float(candidate.get("score", 0.0)), candidate)
+        candidate["context_group"] = context_group
+        structural_distance = (
+            _line_distance(candidate, seeds)
+            if reason == "same_document"
+            else 1_000_000_000
         )
-    annotated.sort(key=lambda value: value[:3])
-    selected: list[tuple[int, int, float, dict[str, object]]] = []
-    bundle_candidates = [
-        value
-        for value in annotated
-        if value[3].get("context_relation") == "test_bundle"
-    ]
-    if bundle_candidates:
-        selected_bundles: set[str] = set()
-        for value in bundle_candidates:
-            parts = PurePosixPath(str(value[3].get("path", ""))).parts
-            bundle = "/".join(parts[:2]) if len(parts) >= 2 else ""
-            if bundle in selected_bundles:
-                continue
-            selected.append(value)
-            selected_bundles.add(bundle)
-            if len(selected) == 2:
-                break
-    else:
-        used_relations: set[str] = set()
-        for value in annotated:
-            relation = str(value[3].get("context_relation"))
-            if relation in used_relations:
-                continue
-            selected.append(value)
-            used_relations.add(relation)
-            if len(selected) == 2:
-                break
+        annotated.append(
+            (
+                -strength,
+                source_rank,
+                structural_distance,
+                -float(candidate.get("score", 0.0)),
+                candidate,
+            )
+        )
+    annotated.sort(key=lambda value: value[:4])
+    selected: list[tuple[int, int, int, float, dict[str, object]]] = []
+    used_groups: set[str] = set()
+    used_paths: set[str] = set()
+    used_hashes: set[str] = set()
+    for value in annotated:
+        candidate = value[4]
+        group = str(candidate.get("context_group", ""))
+        path = str(candidate.get("path", ""))
+        chunk_hash = str(candidate.get("chunk_hash", ""))
+        if group in used_groups or path in used_paths:
+            continue
+        if chunk_hash and chunk_hash in used_hashes:
+            continue
+        selected.append(value)
+        used_groups.add(group)
+        used_paths.add(path)
+        if chunk_hash:
+            used_hashes.add(chunk_hash)
+        if len(selected) >= active_policy.max_context_results:
+            break
 
     results: list[dict[str, object]] = []
-    for context_rank, (_strength, _source_rank, _score, candidate) in enumerate(
+    for context_rank, (
+        _strength,
+        _source_rank,
+        _distance,
+        _score,
+        candidate,
+    ) in enumerate(
         selected,
         start=1,
     ):
@@ -776,7 +871,9 @@ def hybrid_search(
     max_per_path: int = 2,
     include_duplicate_content: bool = False,
     rrf_k: int = 60,
+    retrieval_policy: RetrievalPolicy | None = None,
 ) -> list[dict[str, object]]:
+    active_policy = retrieval_policy or RetrievalPolicy()
     effective_access = allowed_access if allowed_access is not None else {"public"}
     if not effective_access or not effective_access.issubset(
         RETRIEVABLE_ACCESS_CLASSES
@@ -828,6 +925,7 @@ def hybrid_search(
         project=project,
         path_prefix=path_prefix,
         allowed_access=effective_access,
+        policy=active_policy,
     )
     ranked = _interleave_context(
         baseline,
@@ -872,10 +970,16 @@ def embedding_status(database_url: str) -> dict[str, object]:
     return {"models": models}
 
 
-def hybrid_fingerprint(database_url: str, embedder: LocalEmbedder) -> dict[str, object]:
+def hybrid_fingerprint(
+    database_url: str,
+    embedder: LocalEmbedder,
+    retrieval_policy: RetrievalPolicy | None = None,
+) -> dict[str, object]:
+    active_policy = retrieval_policy or RetrievalPolicy()
     fingerprint = database_fingerprint(database_url)
     fingerprint["mode"] = "hybrid"
-    fingerprint["retrieval_algorithm"] = "context_interleave_v2"
+    fingerprint["retrieval_algorithm"] = "structural_context_v1"
+    fingerprint["retrieval_policy"] = active_policy.fingerprint()
     fingerprint["embedding_model"] = embedder.model_id
     fingerprint["embedding_revision"] = embedder.revision
     fingerprint["embedding_profile"] = embedder.profile_id

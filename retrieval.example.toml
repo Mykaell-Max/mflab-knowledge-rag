@@ -1,0 +1,16 @@
+schema_version = "0.1"
+
+[context]
+# Limites globais do serviço. Não contêm nomes de projeto, arquivos ou símbolos.
+max_context_results = 2
+same_document_min_hits = 2
+same_document_strength = 6
+paired_source_strength = 5
+directory_min_documents = 2
+directory_require_root_document = true
+directory_strength = 7
+symbol_hints_limit = 24
+symbol_strength = 4
+context_candidate_limit = 50
+same_document_extensions = [".h", ".hh", ".hpp", ".hxx"]
+directory_extensions = [".cfg", ".ini", ".json", ".toml", ".xml", ".yaml", ".yml"]
