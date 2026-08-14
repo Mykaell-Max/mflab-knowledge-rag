@@ -24,8 +24,13 @@
       "limit": 10,
       "expectations": [
         {
+          "path": "src/mfsim/common/id_generator.cpp",
+          "title_contains": "IDGenerator::IDInit",
+          "within_rank": 10
+        },
+        {
           "path": "src/mfsim/model/lagrangian/DPM/common/dpm_types.hpp",
-          "title_contains": "ParticleIDGenerator",
+          "title_contains": "getUniqueID",
           "within_rank": 10
         },
         {

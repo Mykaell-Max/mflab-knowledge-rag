@@ -189,6 +189,12 @@ uma terceira consulta sob os mesmos filtros SQL. No máximo dois documentos
 relacionados são intercalados logo depois da evidência de origem, sem substituir
 sua posição. Essa etapa reutiliza os embeddings existentes.
 
+Expectativas conceituais devem apontar para trechos que explicam o mecanismo,
+não apenas para o símbolo de entrada mais conhecido. Por exemplo, a separação de
+IDs entre processos é sustentada pela inicialização do seed com o rank MPI e
+pelo contador local; a presença exata do wrapper é verificada separadamente na
+suíte lexical.
+
 ## 10. Limites desta etapa
 
 - ainda não expõe API ou porta de rede;
