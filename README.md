@@ -419,6 +419,8 @@ Durante a execução, o console separa visualmente cada repositório, identifica
 branch nas barras de inventário e mostra progresso global, cache calculado ou
 reutilizado, duração e resumo agregado. A árvore completa de branches permanece
 no arquivo `branches.generated.txt` em vez de poluir o log do serviço. Com
+`--verbose`, cada branch e reutilização de cache ganha detalhes adicionais. Sem
+essa opção, repositórios grandes mostram marcos de progresso a cada 5%. Com
 `--quiet`, somente erros e o JSON final são emitidos, preservando uma interface
 estável para automação.
 

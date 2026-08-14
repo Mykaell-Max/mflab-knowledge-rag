@@ -88,7 +88,7 @@ def sync_all_repositories(
             f"canônica={repository.canonical_ref}  |  "
             f"perfil={repository.profile}  |  "
             f"modo={'online' if refresh_remote else 'offline'}",
-            "detail",
+            "info",
         )
 
         def repository_log(message: str, level: str = "info") -> None:

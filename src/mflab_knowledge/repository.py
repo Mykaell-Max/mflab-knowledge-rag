@@ -531,8 +531,10 @@ def prepare_remote_repository_mirror(
             )
         logger(f"Criando mirror remoto isolado: {mirror}")
         _run(["git", "init", "--bare", str(mirror)])
-    else:
+    elif refresh_remote:
         logger(f"Atualizando mirror remoto isolado: {mirror}")
+    else:
+        logger(f"Reutilizando mirror remoto isolado: {mirror}", "cache")
 
     if refresh_remote:
         logger(f"Atualizando branches diretamente do remote: {url}")
@@ -800,7 +802,7 @@ def materialize_repository_snapshot(
     marker = snapshot_container / ".complete"
 
     if marker.exists() and marker.read_text(encoding="utf-8").strip() == commit_sha:
-        logger(f"Reutilizando snapshot imutável {commit_sha[:12]}", "success")
+        logger(f"Reutilizando snapshot imutável {commit_sha[:12]}", "cache")
     else:
         if snapshot_container.exists():
             cache_boundary = snapshots_dir.resolve()

@@ -45,6 +45,22 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertIn("50% (5/10)", output.getvalue())
         self.assertIn("feature/solver :: src/solver.cpp", output.getvalue())
 
+    def test_details_and_cache_require_verbose_mode(self) -> None:
+        concise = io.StringIO()
+        with redirect_stderr(concise):
+            reporter = ConsoleReporter(color="never")
+            reporter.log("configuração", "detail")
+            reporter.log("reutilizado", "cache")
+        self.assertEqual(concise.getvalue(), "")
+
+        expanded = io.StringIO()
+        with redirect_stderr(expanded):
+            reporter = ConsoleReporter(color="never", verbose=True)
+            reporter.log("configuração", "detail")
+            reporter.log("reutilizado", "cache")
+        self.assertIn("[mflab:DETALHE] configuração", expanded.getvalue())
+        self.assertIn("[mflab:CACHE] reutilizado", expanded.getvalue())
+
     def test_auto_color_respects_tty_and_no_color(self) -> None:
         interactive = _InteractiveBuffer()
         with redirect_stderr(interactive):
@@ -136,6 +152,7 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(sync.profile, "generic")
         self.assertEqual(sync.fetch_timeout_seconds, 2400)
         self.assertEqual(sync_all.repository, ["solver-next"])
+        self.assertFalse(sync_all.verbose)
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
         self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))

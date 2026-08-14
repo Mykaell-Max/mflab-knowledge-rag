@@ -375,13 +375,22 @@ def sync_repository_branches(
     inventories_built = 0
     inventories_reused = 0
     repository_identity = mirror.remote_url or str(mirror.source_path)
+    last_branch_progress_bucket = -1
 
     for index, branch in enumerate(ordered_branches, start=1):
         branch_started = time.monotonic()
-        logger(
-            f"Branches {_counter_bar(index, len(ordered_branches))}  "
-            f"{branch.name} @ {branch.commit_sha[:12]}"
-        )
+        branch_percent = int(index * 100 / len(ordered_branches))
+        branch_progress_bucket = branch_percent // 5
+        if (
+            index == 1
+            or index == len(ordered_branches)
+            or branch_progress_bucket != last_branch_progress_bucket
+        ):
+            logger(
+                f"Branches {_counter_bar(index, len(ordered_branches))}  "
+                f"{branch.name} @ {branch.commit_sha[:12]}"
+            )
+            last_branch_progress_bucket = branch_progress_bucket
         if branch.commit_sha in inventories_by_commit:
             inventory = copy.deepcopy(inventories_by_commit[branch.commit_sha])
             cache_status = "same_run"

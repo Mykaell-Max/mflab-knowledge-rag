@@ -56,8 +56,10 @@ class ConsoleReporter:
         quiet: bool = False,
         color: str = "auto",
         progress_label: str = "inventário",
+        verbose: bool = False,
     ) -> None:
         self.quiet = quiet
+        self.verbose = verbose
         self.progress_label = progress_label
         self._last_bucket = -1
         self._last_percent = -1
@@ -77,6 +79,8 @@ class ConsoleReporter:
         return f"\033[{code}m{text}\033[0m" if self._color else text
 
     def log(self, message: str, level: str = "info") -> None:
+        if level in {"detail", "cache"} and not self.verbose:
+            return
         if not self.quiet or level == "error":
             label, style = self._STYLES.get(level, self._STYLES["info"])
             prefix = self._styled(f"[mflab:{label}]", style)
@@ -153,6 +157,11 @@ def _add_console_options(parser: argparse.ArgumentParser) -> None:
         help="Cores nos logs: auto, always ou never (padrão: auto).",
     )
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Exibe detalhes por branch e cada reutilização de cache.",
+    )
 
 
 def _add_database_options(parser: argparse.ArgumentParser) -> None:
@@ -493,7 +502,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.command == "inventory":
-        reporter = ConsoleReporter(args.quiet, args.color)
+        reporter = ConsoleReporter(args.quiet, args.color, verbose=args.verbose)
         try:
             source = args.source
             metadata_override = None
@@ -552,7 +561,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "sync":
-        reporter = ConsoleReporter(args.quiet, args.color)
+        reporter = ConsoleReporter(args.quiet, args.color, verbose=args.verbose)
         try:
             source_metadata = detect_git_metadata(args.source.expanduser().resolve())
             remote_url = source_metadata.get("remote_url")
@@ -595,7 +604,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "sync-all":
-        reporter = ConsoleReporter(args.quiet, args.color)
+        reporter = ConsoleReporter(args.quiet, args.color, verbose=args.verbose)
         try:
             catalog = load_repository_catalog(args.config)
             selected_ids = set(args.repository) if args.repository else None
@@ -635,6 +644,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             args.quiet,
             args.color,
             progress_label="normalização",
+            verbose=args.verbose,
         )
         try:
             result = normalize_manifest(
@@ -659,7 +669,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "search":
-        reporter = ConsoleReporter(args.quiet, args.color)
+        reporter = ConsoleReporter(args.quiet, args.color, verbose=args.verbose)
         if args.limit < 1 or args.limit > 100:
             reporter.error("--limit deve estar entre 1 e 100")
             return 1
@@ -689,7 +699,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "evaluate":
-        reporter = ConsoleReporter(args.quiet, args.color)
+        reporter = ConsoleReporter(args.quiet, args.color, verbose=args.verbose)
         try:
             report = evaluate_suite(
                 suite_path=args.suite,
@@ -728,6 +738,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             progress_label=(
                 "embeddings" if args.command == "db-embed" else "banco"
             ),
+            verbose=args.verbose,
         )
         database_url: str | None = None
         try:
