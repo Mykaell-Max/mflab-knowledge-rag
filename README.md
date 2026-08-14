@@ -415,6 +415,13 @@ O resultado agregado fica em `inventory/repositories/manifest.generated.yaml`;
 cada repositório recebe sua própria subárvore, cache e manifesto. O hash do TOML
 efetivamente usado é gravado para auditoria, mas credenciais nunca entram nele.
 
+Durante a execução, o console separa visualmente cada repositório, identifica a
+branch nas barras de inventário e mostra progresso global, cache calculado ou
+reutilizado, duração e resumo agregado. A árvore completa de branches permanece
+no arquivo `branches.generated.txt` em vez de poluir o log do serviço. Com
+`--quiet`, somente erros e o JSON final são emitidos, preservando uma interface
+estável para automação.
+
 Um repositório `pending` não pode ser habilitado. Antes de ativá-lo, confirme
 caminho, branch canônica, perfil e autorização de acesso.
 

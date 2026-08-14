@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable
@@ -16,6 +17,17 @@ ProgressCallback = Callable[[int, int, str], None]
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _format_duration(seconds: float) -> str:
+    total_seconds = max(0, int(round(seconds)))
+    minutes, seconds = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}min {seconds:02d}s"
+    if minutes:
+        return f"{minutes}min {seconds:02d}s"
+    return f"{seconds}s"
 
 
 def repository_uses_https(repository: RepositoryDefinition) -> bool:
@@ -39,6 +51,7 @@ def sync_all_repositories(
     log: LogCallback | None = None,
     progress: ProgressCallback | None = None,
 ) -> dict[str, object]:
+    synchronization_started = time.monotonic()
     logger = log or (lambda _message, _level="info": None)
     known_ids = {repository.id for repository in catalog.repositories}
     if repository_ids is not None:
@@ -63,10 +76,19 @@ def sync_all_repositories(
     failed = 0
 
     for position, repository in enumerate(selected, start=1):
+        repository_started = time.monotonic()
         logger(
-            f"Repositório {position}/{len(selected)}: "
-            f"{repository.id} ({repository.project})",
-            "info",
+            f"REPOSITÓRIO {position}/{len(selected)}  |  "
+            f"{repository.project}  |  id={repository.id}",
+            "section",
+        )
+        logger(
+            f"fonte={repository.source_kind}  |  "
+            f"branches={repository.branch_scope}  |  "
+            f"canônica={repository.canonical_ref}  |  "
+            f"perfil={repository.profile}  |  "
+            f"modo={'online' if refresh_remote else 'offline'}",
+            "detail",
         )
 
         def repository_log(message: str, level: str = "info") -> None:
@@ -123,8 +145,10 @@ def sync_all_repositories(
             inventories_reused += int(result["inventories_reused"])
             inventory_errors += result_errors
             repository_log(
-                f"Concluído: {result['branches']} branches, "
-                f"{result['unique_commits']} commits, {result_errors} erros",
+                f"Concluído em {_format_duration(time.monotonic() - repository_started)}: "
+                f"{result['branches']} branches, {result['unique_commits']} commits, "
+                f"cache {result['inventories_reused']} reutilizados / "
+                f"{result['inventories_built']} calculados, {result_errors} erros",
                 "warning" if result_errors else "success",
             )
         except (OSError, ValueError) as exc:
@@ -145,12 +169,17 @@ def sync_all_repositories(
                     "error": str(exc),
                 }
             )
-            repository_log(str(exc), "error")
+            repository_log(
+                f"Falhou após "
+                f"{_format_duration(time.monotonic() - repository_started)}: {exc}",
+                "error",
+            )
             if fail_fast:
                 break
 
     succeeded = sum(entry["status"] == "success" for entry in entries)
     warnings = sum(entry["status"] == "warning" for entry in entries)
+    elapsed_seconds = time.monotonic() - synchronization_started
     manifest: dict[str, object] = {
         "schema_version": "0.1",
         "generated_at": _utc_now(),
@@ -172,6 +201,7 @@ def sync_all_repositories(
             "inventories_built": inventories_built,
             "inventories_reused": inventories_reused,
             "inventory_errors": inventory_errors,
+            "duration_seconds": round(elapsed_seconds, 3),
         },
         "repositories": entries,
     }
@@ -179,6 +209,19 @@ def sync_all_repositories(
     manifest_json_path = catalog.inventory_root / "manifest.generated.json"
     write_yaml(manifest, manifest_path)
     write_json(manifest, manifest_json_path)
+    logger("RESUMO DA SINCRONIZAÇÃO", "section")
+    logger(
+        f"Repositórios: {succeeded} concluídos, {warnings} avisos, "
+        f"{failed} falhas  |  tempo={_format_duration(elapsed_seconds)}",
+        "warning" if failed or inventory_errors else "result",
+    )
+    logger(
+        f"Conteúdo: {branches} branches, {unique_commits} commits únicos  |  "
+        f"inventários={inventories_built} calculados + "
+        f"{inventories_reused} reutilizados  |  erros={inventory_errors}",
+        "warning" if inventory_errors else "result",
+    )
+    logger(f"Manifesto: {manifest_path}", "detail")
     return {
         "manifest": str(manifest_path),
         "manifest_json": str(manifest_json_path),
@@ -194,4 +237,5 @@ def sync_all_repositories(
         "inventories_built": inventories_built,
         "inventories_reused": inventories_reused,
         "inventory_errors": inventory_errors,
+        "duration_seconds": round(elapsed_seconds, 3),
     }

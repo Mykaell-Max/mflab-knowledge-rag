@@ -100,6 +100,11 @@ class MultiSyncTests(unittest.TestCase):
             self.assertIn("branch canônica ausente", manifest)
             self.assertIn('"source_kind": "remote_url"', manifest)
             self.assertTrue(any("[second]" in message for message, _ in messages))
+            self.assertTrue(any(level == "section" for _, level in messages))
+            self.assertTrue(
+                any("RESUMO DA SINCRONIZAÇÃO" in message for message, _ in messages)
+            )
+            self.assertIn("duration_seconds", result)
 
     def test_repository_filter_rejects_unknown_ids(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

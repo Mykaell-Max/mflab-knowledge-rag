@@ -179,6 +179,16 @@ class SyncTests(unittest.TestCase):
                 sum("Reutilizando inventário" in message for message, _ in messages),
                 2,
             )
+            self.assertTrue(
+                any("Branches [" in message for message, _ in messages)
+            )
+            self.assertTrue(
+                any("Árvore de branches gravada" in message for message, _ in messages)
+            )
+            self.assertFalse(
+                any("MFSim-NG — 3 branches" in message for message, _ in messages)
+            )
+            self.assertIn("duration_seconds", second)
             second_manifest = (output / "manifest.generated.yaml").read_text(
                 encoding="utf-8"
             )

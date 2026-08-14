@@ -25,6 +25,7 @@ class ConsoleReporterTests(unittest.TestCase):
             reporter.warning("atenção")
             reporter.error("falhou")
             reporter.result("resumo")
+            reporter.section("repositório 1/2")
 
         content = output.getvalue()
         self.assertIn("\033[36m[mflab:INFO]\033[0m", content)
@@ -32,6 +33,17 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertIn("\033[1;33m[mflab:AVISO]\033[0m", content)
         self.assertIn("\033[1;31m[mflab:ERRO]\033[0m", content)
         self.assertIn("\033[1;35m[mflab:RESULTADO]\033[0m", content)
+        self.assertIn("\033[1;36m[mflab:ETAPA]\033[0m", content)
+        self.assertIn("=" * 72, content)
+
+    def test_non_interactive_progress_identifies_current_context(self) -> None:
+        output = io.StringIO()
+        with redirect_stderr(output):
+            reporter = ConsoleReporter(color="never")
+            reporter.progress(5, 10, "feature/solver :: src/solver.cpp")
+
+        self.assertIn("50% (5/10)", output.getvalue())
+        self.assertIn("feature/solver :: src/solver.cpp", output.getvalue())
 
     def test_auto_color_respects_tty_and_no_color(self) -> None:
         interactive = _InteractiveBuffer()

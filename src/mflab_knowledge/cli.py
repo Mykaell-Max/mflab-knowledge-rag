@@ -40,7 +40,10 @@ from mflab_knowledge.sync import sync_repository_branches
 
 class ConsoleReporter:
     _STYLES = {
+        "section": ("ETAPA", "1;36"),
         "info": ("INFO", "36"),
+        "detail": ("DETALHE", "2"),
+        "cache": ("CACHE", "1;34"),
         "success": ("OK", "1;32"),
         "warning": ("AVISO", "1;33"),
         "error": ("ERRO", "1;31"),
@@ -77,7 +80,18 @@ class ConsoleReporter:
         if not self.quiet or level == "error":
             label, style = self._STYLES.get(level, self._STYLES["info"])
             prefix = self._styled(f"[mflab:{label}]", style)
-            print(f"{prefix} {message}", file=sys.stderr, flush=True)
+            if level == "section":
+                print(file=sys.stderr)
+                rule = self._styled("=" * 72, style)
+                print(rule, file=sys.stderr)
+            lines = message.splitlines() or [""]
+            print(f"{prefix} {lines[0]}", file=sys.stderr)
+            continuation = " " * (len(f"[mflab:{label}]") + 1)
+            for line in lines[1:]:
+                print(f"{continuation}{line}", file=sys.stderr)
+            if level == "section":
+                print(rule, file=sys.stderr)
+            sys.stderr.flush()
 
     def success(self, message: str) -> None:
         self.log(message, "success")
@@ -90,6 +104,9 @@ class ConsoleReporter:
 
     def result(self, message: str) -> None:
         self.log(message, "result")
+
+    def section(self, message: str) -> None:
+        self.log(message, "section")
 
     def progress(self, current: int, total: int, path: str) -> None:
         if self.quiet:
@@ -119,9 +136,10 @@ class ConsoleReporter:
             bucket = percent // 10
             if bucket != self._last_bucket or current >= total:
                 self._last_bucket = bucket
+                short_path = path if len(path) <= 64 else f"...{path[-61:]}"
                 print(
                     f"{prefix} {self.progress_label} "
-                    f"{percent:3d}% ({current}/{total})",
+                    f"{percent:3d}% ({current}/{total}) {short_path}",
                     file=sys.stderr,
                     flush=True,
                 )
@@ -573,15 +591,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, ValueError) as exc:
             reporter.error(str(exc))
             return 1
-        result_level = "warning" if int(result["errors"]) else "result"
-        reporter.log(
-            f"Sincronização concluída: {result['branches']} branches, "
-            f"{result['unique_commits']} commits, "
-            f"{result['inventories_built']} inventários calculados, "
-            f"{result['inventories_reused']} reutilizados, "
-            f"{result['errors']} erros",
-            result_level,
-        )
         print(json.dumps(result, ensure_ascii=False))
         return 0
 
@@ -618,17 +627,6 @@ def main(argv: Sequence[str] | None = None) -> int:
         except (OSError, ValueError) as exc:
             reporter.error(str(exc))
             return 1
-        result_level = (
-            "warning"
-            if int(result["failed"]) or int(result["inventory_errors"])
-            else "result"
-        )
-        reporter.log(
-            f"Sincronização multi-repositório concluída: "
-            f"{result['succeeded']} concluídos, {result['warnings']} avisos, "
-            f"{result['failed']} falhas, {result['branches']} branches",
-            result_level,
-        )
         print(json.dumps(result, ensure_ascii=False))
         return 1 if int(result["failed"]) or int(result["inventory_errors"]) else 0
 

@@ -7,6 +7,7 @@ import json
 import re
 import shutil
 import tempfile
+import time
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
@@ -37,6 +38,23 @@ INVENTORY_POLICY_VERSION = "1"
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _format_duration(seconds: float) -> str:
+    total_seconds = max(0, int(round(seconds)))
+    minutes, seconds = divmod(total_seconds, 60)
+    hours, minutes = divmod(minutes, 60)
+    if hours:
+        return f"{hours}h {minutes:02d}min {seconds:02d}s"
+    if minutes:
+        return f"{minutes}min {seconds:02d}s"
+    return f"{seconds}s"
+
+
+def _counter_bar(current: int, total: int, *, width: int = 20) -> str:
+    percent = 100 if total == 0 else int(current * 100 / total)
+    filled = int(width * percent / 100)
+    return f"[{'#' * filled}{'-' * (width - filled)}] {current}/{total}"
 
 
 def _canonical_name(ref: str) -> str:
@@ -270,6 +288,7 @@ def sync_repository_branches(
     log: LogCallback | None = None,
     progress: ProgressCallback | None = None,
 ) -> dict[str, object]:
+    synchronization_started = time.monotonic()
     logger = log or (lambda _message, _level="info": None)
     destination = output_dir.expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
@@ -358,8 +377,9 @@ def sync_repository_branches(
     repository_identity = mirror.remote_url or str(mirror.source_path)
 
     for index, branch in enumerate(ordered_branches, start=1):
+        branch_started = time.monotonic()
         logger(
-            f"Branch {index}/{len(ordered_branches)}: "
+            f"Branches {_counter_bar(index, len(ordered_branches))}  "
             f"{branch.name} @ {branch.commit_sha[:12]}"
         )
         if branch.commit_sha in inventories_by_commit:
@@ -390,7 +410,7 @@ def sync_repository_branches(
                 logger(
                     f"Reutilizando inventário {branch.commit_sha[:12]} "
                     f"({profile}, {access_class})",
-                    "success",
+                    "cache",
                 )
             else:
                 if inventory_cache.exists():
@@ -399,13 +419,17 @@ def sync_repository_branches(
                         f"{branch.commit_sha[:12]}; recalculando",
                         "warning",
                     )
+                def branch_progress(current: int, total: int, path: str) -> None:
+                    if progress is not None:
+                        progress(current, total, f"{branch.name} :: {path}")
+
                 inventory = build_inventory(
                     source=snapshot.path,
                     project=project,
                     access_class=access_class,
                     profile=profile,
                     metadata_override=snapshot.metadata(),
-                    progress=progress,
+                    progress=branch_progress if progress is not None else None,
                 )
                 cache_status = "built"
                 inventories_built += 1
@@ -476,12 +500,20 @@ def sync_repository_branches(
             **relation,
         }
         entries.append(entry)
+        logger(
+            f"Branch concluída em "
+            f"{_format_duration(time.monotonic() - branch_started)}; "
+            f"{summary['indexable_files']} arquivos indexáveis; "
+            f"cache={cache_status}",
+            "detail",
+        )
 
     tree = _render_tree(project, entries)
     tree_path = destination / "branches.generated.txt"
     tree_path.write_text(tree, encoding="utf-8", newline="\n")
 
     total_errors = sum(int(entry["errors"]) for entry in entries)
+    elapsed_seconds = time.monotonic() - synchronization_started
     manifest: dict[str, object] = {
         "schema_version": "0.3",
         "generated_at": _utc_now(),
@@ -508,6 +540,7 @@ def sync_repository_branches(
             "inventories_built": inventories_built,
             "inventories_reused": inventories_reused,
             "errors": total_errors,
+            "duration_seconds": round(elapsed_seconds, 3),
         },
         "branches": entries,
     }
@@ -515,7 +548,15 @@ def sync_repository_branches(
     manifest_json_path = destination / "manifest.generated.json"
     write_yaml(manifest, manifest_path)
     write_json(manifest, manifest_json_path)
-    logger("Árvore de branches:\n" + tree.rstrip(), "result")
+    elapsed = _format_duration(elapsed_seconds)
+    logger(f"Árvore de branches gravada em {tree_path}", "result")
+    logger(
+        f"Repositório sincronizado em {elapsed}: {len(entries)} branches, "
+        f"{len(inventories_by_commit)} commits únicos, "
+        f"{inventories_built} inventários calculados, "
+        f"{inventories_reused} reutilizados, {total_errors} erros",
+        "warning" if total_errors else "result",
+    )
     return {
         "output_dir": str(destination),
         "manifest": str(manifest_path),
@@ -528,4 +569,5 @@ def sync_repository_branches(
         "inventories_built": inventories_built,
         "inventories_reused": inventories_reused,
         "errors": total_errors,
+        "duration_seconds": round(elapsed_seconds, 3),
     }
