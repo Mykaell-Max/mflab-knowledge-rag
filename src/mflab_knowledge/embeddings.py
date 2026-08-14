@@ -29,25 +29,16 @@ QUERY_PROMPT = (
     "relevant code, configuration, or documentation passages that answer it\n"
     "Query:"
 )
-CONTEXT_RRF_WEIGHT = 0.15
-_SOURCE_EXTENSIONS = {
-    ".c",
-    ".cc",
-    ".cpp",
-    ".cxx",
-    ".h",
-    ".hh",
-    ".hpp",
-    ".hxx",
-}
-_GENERIC_TITLES = {
-    "arquivo",
-    "file",
-    "header",
-    "preamble",
-    "preambulo",
-    "preâmbulo",
-    "section",
+CONTEXT_RRF_WEIGHT = 1.0
+_PAIRED_EXTENSIONS = {
+    ".c": (".h",),
+    ".cc": (".hh", ".hpp"),
+    ".cpp": (".hpp", ".h"),
+    ".cxx": (".hxx", ".hpp"),
+    ".h": (".c", ".cpp"),
+    ".hh": (".cc", ".cpp"),
+    ".hpp": (".cpp", ".cc", ".cxx"),
+    ".hxx": (".cxx", ".cpp"),
 }
 
 
@@ -469,130 +460,233 @@ def _diversify(
     return results
 
 
-def _test_bundle_root(path: str) -> str | None:
-    parts = PurePosixPath(path).parts
-    if len(parts) >= 2 and parts[0] == "tests":
-        return "/".join(parts[:2])
-    return None
+def _context_hints(
+    seeds: list[dict[str, object]],
+) -> tuple[dict[str, tuple[str, int, int]], dict[str, int]]:
+    paths: dict[str, tuple[str, int, int]] = {}
+    symbols: dict[str, int] = {}
+    bundle_paths: dict[str, set[str]] = {}
 
+    for seed in seeds:
+        raw_path = str(seed.get("path", ""))
+        parts = PurePosixPath(raw_path).parts
+        if len(parts) >= 2 and parts[0] == "tests":
+            root = "/".join(parts[:2])
+            bundle_paths.setdefault(root, set()).add(raw_path)
 
-def _title_symbols(result: dict[str, object]) -> set[str]:
-    title = str(result.get("title", ""))
-    symbols = {
-        value.casefold()
-        for value in re.findall(r"[^\W\d]\w{3,}", title, flags=re.UNICODE)
-    }
-    return {
-        value
-        for value in symbols
-        if len(value) >= 8 and value not in _GENERIC_TITLES
-    }
+    def add_path(path: PurePosixPath, reason: str, rank: int, strength: int) -> None:
+        value = path.as_posix()
+        current = paths.get(value)
+        option = (reason, rank, strength)
+        if current is None or (-strength, rank) < (-current[2], current[1]):
+            paths[value] = option
 
+    for source_rank, seed in enumerate(seeds, start=1):
+        raw_path = str(seed.get("path", ""))
+        if raw_path:
+            path = PurePosixPath(raw_path)
+            suffix = path.suffix.casefold()
+            for paired_suffix in _PAIRED_EXTENSIONS.get(suffix, ()):
+                add_path(
+                    path.with_suffix(paired_suffix),
+                    "paired_source",
+                    source_rank,
+                    5,
+                )
 
-def _bundle_role(path: str) -> int:
-    name = PurePosixPath(path).name.casefold()
-    if name in {"domains.json", "input.json"}:
-        return 3
-    if name.endswith(".json"):
-        return 2
-    return 1
+            parts = path.parts
+            if len(parts) >= 2 and parts[0] == "tests":
+                bundle_root = PurePosixPath(*parts[:2])
+                bundle_key = bundle_root.as_posix()
+                if len(bundle_paths.get(bundle_key, set())) >= 2:
+                    add_path(
+                        bundle_root / "domains.json",
+                        "test_bundle",
+                        source_rank,
+                        4,
+                    )
+                    if path.parent.name == "input":
+                        add_path(
+                            path.parent / "input.json",
+                            "test_bundle",
+                            source_rank,
+                            4,
+                        )
 
-
-def _context_relation(
-    source: dict[str, object],
-    candidate: dict[str, object],
-) -> tuple[int, str] | None:
-    source_path = str(source.get("path", ""))
-    candidate_path = str(candidate.get("path", ""))
-    if not source_path or not candidate_path or source_path == candidate_path:
-        return None
-
-    source_posix = PurePosixPath(source_path)
-    candidate_posix = PurePosixPath(candidate_path)
-    if (
-        source_posix.parent == candidate_posix.parent
-        and source_posix.stem == candidate_posix.stem
-        and source_posix.suffix.casefold() in _SOURCE_EXTENSIONS
-        and candidate_posix.suffix.casefold() in _SOURCE_EXTENSIONS
-    ):
-        return 5, "paired_source"
-
-    source_text = str(source.get("text", "")).casefold()
-    candidate_text = str(candidate.get("text", "")).casefold()
-    candidate_symbols = _title_symbols(candidate)
-    source_symbols = _title_symbols(source)
-    if any(symbol in source_text for symbol in candidate_symbols) or any(
-        symbol in candidate_text for symbol in source_symbols
-    ):
-        return 4, "symbol_reference"
-
-    source_bundle = _test_bundle_root(source_path)
-    if (
-        source_bundle is not None
-        and source_bundle == _test_bundle_root(candidate_path)
-    ):
-        return 3, "test_bundle"
-
-    if (
-        source_posix.parent == candidate_posix.parent
-        and source_posix.suffix.casefold() in _SOURCE_EXTENSIONS
-        and candidate_posix.suffix.casefold() in _SOURCE_EXTENSIONS
-    ):
-        return 1, "source_directory"
-    return None
-
-
-def _apply_context_expansion(
-    ranked: list[dict[str, object]],
-    *,
-    limit: int,
-    rrf_k: int,
-    weight: float = CONTEXT_RRF_WEIGHT,
-) -> list[dict[str, object]]:
-    if len(ranked) <= limit or weight <= 0:
-        return ranked
-    seeds = ranked[:limit]
-    related: list[tuple[int, int, int, float, dict[str, object], str]] = []
-    for candidate in ranked[limit:]:
-        best: tuple[int, int, str] | None = None
-        for source_rank, source in enumerate(seeds, start=1):
-            relation = _context_relation(source, candidate)
-            if relation is None:
+        searchable = f"{seed.get('title', '')}\n{seed.get('text', '')}"
+        for identifier in re.findall(r"\b[A-Za-z_][A-Za-z0-9_]*\b", searchable):
+            if len(identifier) < 10:
                 continue
-            strength, reason = relation
-            option = (strength, -source_rank, reason)
-            if best is None or option > best:
-                best = option
-        if best is None:
-            continue
-        strength, negative_source_rank, reason = best
-        source_rank = -negative_source_rank
-        related.append(
-            (
-                -strength,
-                source_rank,
-                -_bundle_role(str(candidate.get("path", ""))),
-                -float(candidate.get("rrf_score", 0.0)),
-                candidate,
-                reason,
-            )
-        )
-    related.sort(key=lambda value: value[:4])
-    for context_rank, value in enumerate(related, start=1):
-        _strength, source_rank, _role, _score, candidate, reason = value
-        candidate["context_rank"] = context_rank
+            if not any(char.islower() for char in identifier):
+                continue
+            if sum(char.isupper() for char in identifier) < 2:
+                continue
+            previous_rank = symbols.get(identifier)
+            if previous_rank is None or source_rank < previous_rank:
+                symbols[identifier] = source_rank
+
+    ordered_symbols = sorted(symbols, key=lambda value: (symbols[value], -len(value)))
+    return paths, {value: symbols[value] for value in ordered_symbols[:24]}
+
+
+CONTEXT_SEARCH_SQL = """
+SELECT
+    1.0 - (embedding.embedding <=> %(query_embedding)s) AS score,
+    chunk.chunk_id,
+    chunk.chunk_hash,
+    repository.project,
+    document.path,
+    chunk.title,
+    chunk.line_start,
+    chunk.line_end,
+    document.access_class,
+    preferred.branch,
+    preferred.commit_sha,
+    occurrences.items AS occurrences,
+    chunk.text
+FROM mflab_knowledge.chunk_embeddings AS embedding
+JOIN mflab_knowledge.chunks AS chunk ON chunk.chunk_id = embedding.chunk_id
+JOIN mflab_knowledge.documents AS document
+  ON document.document_id = chunk.document_id
+JOIN mflab_knowledge.repositories AS repository
+  ON repository.repository_id = document.repository_id
+JOIN LATERAL (
+    SELECT occurrence.branch, occurrence.commit_sha, occurrence.canonical
+    FROM mflab_knowledge.document_occurrences AS occurrence
+    WHERE occurrence.document_id = document.document_id
+      AND (%(branch)s::text IS NULL OR occurrence.branch = %(branch)s::text)
+    ORDER BY occurrence.canonical DESC, occurrence.branch NULLS LAST
+    LIMIT 1
+) AS preferred ON true
+JOIN LATERAL (
+    SELECT jsonb_agg(
+        jsonb_build_object(
+            'branch', occurrence.branch,
+            'commit_sha', occurrence.commit_sha,
+            'canonical', occurrence.canonical,
+            'requested_ref', occurrence.requested_ref
+        ) ORDER BY occurrence.canonical DESC, occurrence.branch
+    ) AS items
+    FROM mflab_knowledge.document_occurrences AS occurrence
+    WHERE occurrence.document_id = document.document_id
+      AND (%(branch)s::text IS NULL OR occurrence.branch = %(branch)s::text)
+) AS occurrences ON true
+WHERE embedding.model_id = %(profile)s
+  AND document.access_class = ANY(%(allowed_access)s::text[])
+  AND (%(project)s::text IS NULL OR repository.project = %(project)s::text)
+  AND (
+      %(path_prefix)s::text IS NULL
+      OR document.path LIKE %(path_prefix)s::text || '%%'
+  )
+  AND NOT (document.path = ANY(%(seed_paths)s::text[]))
+  AND (
+      document.path = ANY(%(exact_paths)s::text[])
+      OR EXISTS (
+          SELECT 1
+          FROM unnest(%(symbols)s::text[]) AS requested(symbol)
+          WHERE strpos(lower(chunk.title), lower(requested.symbol)) > 0
+             OR strpos(lower(chunk.text), lower(requested.symbol)) > 0
+      )
+  )
+ORDER BY embedding.embedding <=> %(query_embedding)s
+LIMIT 50
+"""
+
+
+def _contextual_search(
+    database_url: str,
+    embedder: LocalEmbedder,
+    *,
+    query: str,
+    seeds: list[dict[str, object]],
+    branch: str | None,
+    project: str | None,
+    path_prefix: str | None,
+    allowed_access: set[str],
+) -> list[dict[str, object]]:
+    path_hints, symbol_hints = _context_hints(seeds)
+    if not path_hints and not symbol_hints:
+        return []
+    query_embedding = embedder.encode_query(query)
+    _psycopg, dict_row = _driver()
+    with _connect(database_url, row_factory=dict_row) as connection:
+        embedder.register_vector(connection)
+        rows = connection.execute(
+            CONTEXT_SEARCH_SQL,
+            {
+                "query_embedding": query_embedding,
+                "profile": embedder.profile_id,
+                "branch": branch,
+                "project": project,
+                "path_prefix": path_prefix,
+                "allowed_access": sorted(allowed_access),
+                "seed_paths": sorted({str(seed.get("path", "")) for seed in seeds}),
+                "exact_paths": sorted(path_hints),
+                "symbols": list(symbol_hints),
+            },
+        ).fetchall()
+    candidates = _diversify(
+        _rows_to_results(rows),
+        limit=20,
+        max_per_path=1,
+        include_duplicate_content=False,
+    )
+    annotated: list[tuple[int, int, float, dict[str, object]]] = []
+    for candidate in candidates:
+        path = str(candidate.get("path", ""))
+        hint = path_hints.get(path)
+        if hint is not None:
+            reason, source_rank, strength = hint
+        else:
+            searchable = (
+                f"{candidate.get('title', '')}\n{candidate.get('text', '')}"
+            ).casefold()
+            matched = [
+                (rank, symbol)
+                for symbol, rank in symbol_hints.items()
+                if symbol.casefold() in searchable
+            ]
+            if not matched:
+                continue
+            source_rank, _symbol = min(matched)
+            reason = "symbol_reference"
+            strength = 4
         candidate["context_relation"] = reason
         candidate["context_source_rank"] = source_rank
-        candidate["rrf_score"] = float(candidate.get("rrf_score", 0.0)) + (
-            weight / (rrf_k + context_rank)
+        annotated.append(
+            (-strength, source_rank, -float(candidate.get("score", 0.0)), candidate)
         )
-    return sorted(
-        ranked,
-        key=lambda value: (
-            -float(value.get("rrf_score", 0.0)),
-            str(value.get("path", "")),
-        ),
-    )
+    annotated.sort(key=lambda value: value[:3])
+    selected: list[tuple[int, int, float, dict[str, object]]] = []
+    bundle_candidates = [
+        value
+        for value in annotated
+        if value[3].get("context_relation") == "test_bundle"
+    ]
+    if bundle_candidates:
+        selected.append(bundle_candidates[0])
+    used_relations = {
+        str(value[3].get("context_relation")) for value in selected
+    }
+    for value in annotated:
+        if value in selected:
+            continue
+        relation = str(value[3].get("context_relation"))
+        if relation in used_relations:
+            continue
+        selected.append(value)
+        used_relations.add(relation)
+        if len(selected) == 2:
+            break
+
+    results: list[dict[str, object]] = []
+    for context_rank, (_strength, _source_rank, _score, candidate) in enumerate(
+        selected,
+        start=1,
+    ):
+        candidate["context_rank"] = context_rank
+        results.append(candidate)
+    return results
 
 
 def hybrid_search(
@@ -609,6 +703,11 @@ def hybrid_search(
     include_duplicate_content: bool = False,
     rrf_k: int = 60,
 ) -> list[dict[str, object]]:
+    effective_access = allowed_access if allowed_access is not None else {"public"}
+    if not effective_access or not effective_access.issubset(
+        RETRIEVABLE_ACCESS_CLASSES
+    ):
+        raise ValueError("filtro de acesso inválido ou vazio")
     candidate_limit = min(100, max(limit * 10, 50))
     broad_per_path = min(100, max(max_per_path, 10))
     common = {
@@ -617,7 +716,7 @@ def hybrid_search(
         "branch": branch,
         "project": project,
         "path_prefix": path_prefix,
-        "allowed_access": allowed_access,
+        "allowed_access": effective_access,
         "max_per_path": broad_per_path,
         "include_duplicate_content": include_duplicate_content,
     }
@@ -640,7 +739,39 @@ def hybrid_search(
             str(value.get("path", "")),
         ),
     )
-    ranked = _apply_context_expansion(ranked, limit=limit, rrf_k=rrf_k)
+    seeds = _diversify(
+        ranked,
+        limit=limit,
+        max_per_path=max_per_path,
+        include_duplicate_content=include_duplicate_content,
+    )
+    contextual = _contextual_search(
+        database_url,
+        embedder,
+        query=query,
+        seeds=seeds,
+        branch=branch,
+        project=project,
+        path_prefix=path_prefix,
+        allowed_access=effective_access,
+    )
+    for context_rank, value in enumerate(contextual, start=1):
+        chunk_id = str(value["chunk_id"])
+        item = combined.setdefault(chunk_id, dict(value))
+        item["context_rank"] = context_rank
+        item["context_relation"] = value["context_relation"]
+        item["context_source_rank"] = value["context_source_rank"]
+        item["context_score"] = value["score"]
+        item["rrf_score"] = float(item.get("rrf_score", 0.0)) + (
+            CONTEXT_RRF_WEIGHT / (rrf_k + context_rank)
+        )
+    ranked = sorted(
+        combined.values(),
+        key=lambda value: (
+            -float(value.get("rrf_score", 0.0)),
+            str(value.get("path", "")),
+        ),
+    )
     for value in ranked:
         value["score"] = round(float(value["rrf_score"]), 6)
     return _diversify(
@@ -685,7 +816,7 @@ def embedding_status(database_url: str) -> dict[str, object]:
 def hybrid_fingerprint(database_url: str, embedder: LocalEmbedder) -> dict[str, object]:
     fingerprint = database_fingerprint(database_url)
     fingerprint["mode"] = "hybrid"
-    fingerprint["retrieval_algorithm"] = "context_rrf_v1"
+    fingerprint["retrieval_algorithm"] = "context_rrf_v2"
     fingerprint["context_rrf_weight"] = CONTEXT_RRF_WEIGHT
     fingerprint["embedding_model"] = embedder.model_id
     fingerprint["embedding_revision"] = embedder.revision

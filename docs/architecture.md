@@ -110,13 +110,13 @@ pgvector. Em seguida, RRF combina apenas as posições nos dois rankings, evitan
 comparar escalas de score incompatíveis. O resultado final volta a aplicar
 diversidade por arquivo e deduplicação por hash.
 
-Uma expansão contextual conservadora opera somente sobre esse conjunto de
-candidatos, que já foi filtrado por ACL, projeto e branch no SQL. Ela reconhece
-pares fonte/header, referências a identificadores específicos e arquivos do mesmo
-bundle em `tests/`. Os relacionados formam uma terceira lista RRF de peso menor;
-o resultado registra `context_relation`, `context_rank` e a posição da evidência
-que originou a relação. Nenhum caminho ou texto novo é inventado ou buscado fora
-do pool autorizado.
+Uma expansão contextual conservadora deriva hints explícitos dos primeiros
+candidatos: pares fonte/header, identificadores suficientemente específicos e
+arquivos estruturais do mesmo bundle em `tests/`. Uma segunda consulta vetorial
+busca somente esses hints e repete ACL, projeto, branch e prefixo de caminho no
+SQL. No máximo dois documentos formam a terceira lista RRF; o resultado registra
+`context_relation`, `context_rank` e a posição da evidência que originou a
+relação. Nenhum caminho ou texto é lido fora das fontes autorizadas.
 
 Para aumentar diversidade, o ranking piloto limita chunks por caminho, colapsa
 conteúdos idênticos e comprime o ganho de frequência lexical. Esses limites são

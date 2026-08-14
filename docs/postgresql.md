@@ -178,10 +178,10 @@ informar todos os vetores como reutilizados e não carregar o modelo na memória
 
 O objetivo é melhorar as perguntas conceituais sem regredir a suíte de símbolos
 exatos. O modo semântico usa distância cosseno exata; o modo híbrido combina os
-rankings lexical e vetorial por RRF. Uma terceira lista contextual promove,
-com peso menor, candidatos que já passaram pelos mesmos filtros SQL e pertencem
-ao mesmo bundle de teste, formam pares fonte/header ou referenciam um símbolo
-específico. Essa etapa reutiliza os embeddings existentes.
+rankings lexical e vetorial por RRF. Hints explícitos de pares fonte/header,
+símbolos específicos e bundles de teste alimentam uma terceira consulta sob os
+mesmos filtros SQL. No máximo dois documentos relacionados entram na fusão. Essa
+etapa reutiliza os embeddings existentes.
 
 ## 10. Limites desta etapa
 

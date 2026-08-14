@@ -140,15 +140,20 @@ class EmbeddingTests(unittest.TestCase):
                 "semantic_search",
                 return_value=semantic,
             ) as semantic_search:
-                results = embeddings.hybrid_search(
-                    "postgresql://unused",
-                    mock.Mock(),
-                    query="particles",
-                    limit=3,
-                    branch="master",
-                    project="MFSim-NG",
-                    allowed_access={"lab"},
-                )
+                with mock.patch.object(
+                    embeddings,
+                    "_contextual_search",
+                    return_value=[],
+                ):
+                    results = embeddings.hybrid_search(
+                        "postgresql://unused",
+                        mock.Mock(),
+                        query="particles",
+                        limit=3,
+                        branch="master",
+                        project="MFSim-NG",
+                        allowed_access={"lab"},
+                    )
         self.assertEqual(results[0]["chunk_id"], "shared")
         self.assertEqual(results[0]["lexical_rank"], 2)
         self.assertEqual(results[0]["semantic_rank"], 2)
@@ -158,81 +163,154 @@ class EmbeddingTests(unittest.TestCase):
             self.assertEqual(search_mock.call_args.kwargs["project"], "MFSim-NG")
             self.assertEqual(search_mock.call_args.kwargs["allowed_access"], {"lab"})
 
-    def test_context_expansion_promotes_referenced_symbol_from_candidate_pool(
-        self,
-    ) -> None:
-        ranked = []
-        for rank in range(1, 12):
-            value = _result(f"chunk-{rank}", f"src/file_{rank}.cpp", f"hash-{rank}")
-            value["text"] = "unrelated"
-            value["title"] = f"Symbol{rank}"
-            value["rrf_score"] = 1.0 / (60 + rank)
-            ranked.append(value)
-        ranked[0]["path"] = "src/dpm/common/dpm_particle.cpp"
-        ranked[0]["text"] = "return ParticleIDGenerator::generate();"
-        ranked[10]["path"] = "src/dpm/common/dpm_types.hpp"
-        ranked[10]["title"] = "ParticleIDGenerator"
+    def test_context_hints_are_explicit_and_bounded(self) -> None:
+        seeds = [
+            {
+                "path": "src/output/hdf5/hdf5_lag_output.cpp",
+                "title": "writeParticles",
+                "text": "ParticleIDGenerator::generate();",
+            },
+            {
+                "path": "tests/dpm_ram_1b/domain_0/input/dpm.json",
+                "title": "arquivo",
+                "text": "{}",
+            },
+            {
+                "path": "tests/dpm_ram_1b/domains.json",
+                "title": "arquivo",
+                "text": "{}",
+            },
+        ]
 
-        expanded = embeddings._apply_context_expansion(
-            ranked,
-            limit=10,
-            rrf_k=60,
-        )
+        paths, symbols = embeddings._context_hints(seeds)
 
-        promoted = next(
-            value for value in expanded if value["chunk_id"] == "chunk-11"
-        )
-        self.assertLess(expanded.index(promoted), 10)
-        self.assertEqual(promoted["context_relation"], "symbol_reference")
-        self.assertEqual(promoted["context_source_rank"], 1)
-
-    def test_context_expansion_promotes_companion_test_configuration(self) -> None:
-        ranked = []
-        for rank in range(1, 12):
-            value = _result(f"chunk-{rank}", f"src/file_{rank}.cpp", f"hash-{rank}")
-            value["text"] = "unrelated"
-            value["title"] = "arquivo"
-            value["rrf_score"] = 1.0 / (60 + rank)
-            ranked.append(value)
-        ranked[2]["path"] = "tests/dpm_ram_1b/domain_0/input/dpm.json"
-        ranked[10]["path"] = "tests/dpm_ram_1b/domain_0/input/input.json"
-
-        expanded = embeddings._apply_context_expansion(
-            ranked,
-            limit=10,
-            rrf_k=60,
-        )
-
-        promoted = next(
-            value for value in expanded if value["chunk_id"] == "chunk-11"
-        )
-        self.assertLess(expanded.index(promoted), 10)
-        self.assertEqual(promoted["context_relation"], "test_bundle")
-        self.assertEqual(promoted["context_source_rank"], 3)
-
-    def test_context_expansion_does_not_create_or_promote_unrelated_results(
-        self,
-    ) -> None:
-        ranked = []
-        for rank in range(1, 12):
-            value = _result(f"chunk-{rank}", f"src/area_{rank}/file.cpp", f"h-{rank}")
-            value["text"] = "unrelated"
-            value["title"] = "arquivo"
-            value["rrf_score"] = 1.0 / (60 + rank)
-            ranked.append(value)
-        original_ids = [str(value["chunk_id"]) for value in ranked]
-
-        expanded = embeddings._apply_context_expansion(
-            ranked,
-            limit=10,
-            rrf_k=60,
-        )
-
+        self.assertIn("src/output/hdf5/hdf5_lag_output.hpp", paths)
         self.assertEqual(
-            [str(value["chunk_id"]) for value in expanded],
-            original_ids,
+            paths["src/output/hdf5/hdf5_lag_output.hpp"][0],
+            "paired_source",
         )
-        self.assertTrue(all("context_rank" not in value for value in expanded))
+        self.assertIn("tests/dpm_ram_1b/domains.json", paths)
+        self.assertIn("tests/dpm_ram_1b/domain_0/input/input.json", paths)
+        self.assertEqual(symbols["ParticleIDGenerator"], 1)
+        self.assertLessEqual(len(symbols), 24)
+
+    def test_single_test_hit_does_not_expand_the_whole_bundle(self) -> None:
+        paths, _symbols = embeddings._context_hints(
+            [
+                {
+                    "path": "tests/dpm_ram_1b/domain_0/input/dpm.json",
+                    "title": "arquivo",
+                    "text": "{}",
+                }
+            ]
+        )
+
+        self.assertNotIn("tests/dpm_ram_1b/domains.json", paths)
+        self.assertNotIn(
+            "tests/dpm_ram_1b/domain_0/input/input.json",
+            paths,
+        )
+
+    def test_context_search_filters_before_returning_related_text(self) -> None:
+        row = {
+            "score": 0.8,
+            "chunk_id": "types",
+            "chunk_hash": "types-hash",
+            "project": "MFSim-NG",
+            "path": "src/dpm/common/dpm_types.hpp",
+            "title": "ParticleIDGenerator",
+            "line_start": 1,
+            "line_end": 20,
+            "access_class": "lab",
+            "branch": "diagnostic/dpm",
+            "commit_sha": "a" * 40,
+            "occurrences": [{"branch": "diagnostic/dpm"}],
+            "text": "class ParticleIDGenerator {};",
+        }
+        result_cursor = mock.MagicMock()
+        result_cursor.fetchall.return_value = [row]
+        connection = mock.MagicMock()
+        connection.execute.return_value = result_cursor
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+        embedder = mock.MagicMock()
+        embedder.profile_id = "profile"
+        embedder.encode_query.return_value = [0.0] * 1024
+        seeds = [
+            {
+                "path": "src/dpm/common/dpm_particle.cpp",
+                "title": "generateId",
+                "text": "ParticleIDGenerator::generate();",
+            }
+        ]
+
+        with mock.patch.object(embeddings, "_driver", return_value=(None, object())):
+            with mock.patch.object(embeddings, "_connect", return_value=context):
+                values = embeddings._contextual_search(
+                    "postgresql://unused",
+                    embedder,
+                    query="identificadores distribuídos",
+                    seeds=seeds,
+                    branch="diagnostic/dpm",
+                    project="MFSim-NG",
+                    path_prefix=None,
+                    allowed_access={"lab"},
+                )
+
+        sql, parameters = connection.execute.call_args.args
+        self.assertIn(
+            "document.access_class = ANY(%(allowed_access)s::text[])",
+            sql,
+        )
+        self.assertIn("occurrence.branch = %(branch)s::text", sql)
+        self.assertEqual(parameters["allowed_access"], ["lab"])
+        self.assertEqual(parameters["branch"], "diagnostic/dpm")
+        self.assertEqual(values[0]["context_relation"], "symbol_reference")
+        self.assertEqual(values[0]["context_source_rank"], 1)
+
+    def test_hybrid_promotes_at_most_two_explicit_context_results(self) -> None:
+        semantic = []
+        for rank in range(1, 11):
+            value = _result(f"semantic-{rank}", f"src/{rank}.cpp", f"h-{rank}")
+            value["text"] = "semantic"
+            value["title"] = f"Result{rank}"
+            value["score"] = 1.0 - rank / 100
+            semantic.append(value)
+        contextual = []
+        for rank in range(1, 4):
+            value = _result(f"context-{rank}", f"src/context-{rank}.hpp", f"c-{rank}")
+            value["text"] = "context"
+            value["title"] = f"Context{rank}"
+            value["score"] = 0.8
+            value["context_relation"] = "paired_source"
+            value["context_source_rank"] = rank
+            value["context_rank"] = rank
+            contextual.append(value)
+
+        with mock.patch.object(embeddings, "search_postgres", return_value=[]):
+            with mock.patch.object(
+                embeddings,
+                "semantic_search",
+                return_value=semantic,
+            ):
+                with mock.patch.object(
+                    embeddings,
+                    "_contextual_search",
+                    return_value=contextual[:2],
+                ):
+                    results = embeddings.hybrid_search(
+                        "postgresql://unused",
+                        mock.Mock(),
+                        query="contexto",
+                        limit=10,
+                        allowed_access={"lab"},
+                    )
+
+        promoted = [
+            value for value in results if "context_relation" in value
+        ]
+        self.assertEqual(len(promoted), 2)
+        self.assertTrue(all(value["path"].endswith(".hpp") for value in promoted))
 
     def test_vector_schema_has_fixed_dimension_and_no_approximate_index(self) -> None:
         schema = embeddings.initialize_vector_database.__globals__["_vector_schema_sql"]()
