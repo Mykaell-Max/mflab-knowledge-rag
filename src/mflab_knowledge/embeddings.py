@@ -465,6 +465,9 @@ def _context_hints(
     paths: dict[str, tuple[str, int, int]] = {}
     symbols: dict[str, int] = {}
     bundle_paths: dict[str, set[str]] = {}
+    seed_path_counts: Counter[str] = Counter(
+        str(seed.get("path", "")) for seed in seeds if seed.get("path")
+    )
 
     for seed in seeds:
         raw_path = str(seed.get("path", ""))
@@ -485,6 +488,15 @@ def _context_hints(
         if raw_path:
             path = PurePosixPath(raw_path)
             suffix = path.suffix.casefold()
+            if suffix in {".h", ".hh", ".hpp", ".hxx"} and seed_path_counts[
+                raw_path
+            ] >= 2:
+                add_path(
+                    path,
+                    "same_document",
+                    source_rank,
+                    6,
+                )
             for paired_suffix in _PAIRED_EXTENSIONS.get(suffix, ()):
                 add_path(
                     path.with_suffix(paired_suffix),
@@ -577,7 +589,7 @@ WHERE embedding.model_id = %(profile)s
       %(path_prefix)s::text IS NULL
       OR document.path LIKE %(path_prefix)s::text || '%%'
   )
-  AND NOT (document.path = ANY(%(seed_paths)s::text[]))
+  AND NOT (chunk.chunk_id = ANY(%(seed_chunk_ids)s::text[]))
   AND (
       document.path = ANY(%(exact_paths)s::text[])
       OR EXISTS (
@@ -620,7 +632,13 @@ def _contextual_search(
                 "project": project,
                 "path_prefix": path_prefix,
                 "allowed_access": sorted(allowed_access),
-                "seed_paths": sorted({str(seed.get("path", "")) for seed in seeds}),
+                "seed_chunk_ids": sorted(
+                    {
+                        str(seed.get("chunk_id", ""))
+                        for seed in seeds
+                        if seed.get("chunk_id")
+                    }
+                ),
                 "exact_paths": sorted(path_hints),
                 "symbols": list(symbol_hints),
             },
@@ -664,7 +682,16 @@ def _contextual_search(
         if value[3].get("context_relation") == "test_bundle"
     ]
     if bundle_candidates:
-        selected.append(bundle_candidates[0])
+        selected_bundles: set[str] = set()
+        for value in bundle_candidates:
+            parts = PurePosixPath(str(value[3].get("path", ""))).parts
+            bundle = "/".join(parts[:2]) if len(parts) >= 2 else ""
+            if bundle in selected_bundles:
+                continue
+            selected.append(value)
+            selected_bundles.add(bundle)
+            if len(selected) == 2:
+                break
     else:
         used_relations: set[str] = set()
         for value in annotated:
@@ -848,7 +875,7 @@ def embedding_status(database_url: str) -> dict[str, object]:
 def hybrid_fingerprint(database_url: str, embedder: LocalEmbedder) -> dict[str, object]:
     fingerprint = database_fingerprint(database_url)
     fingerprint["mode"] = "hybrid"
-    fingerprint["retrieval_algorithm"] = "context_interleave_v1"
+    fingerprint["retrieval_algorithm"] = "context_interleave_v2"
     fingerprint["embedding_model"] = embedder.model_id
     fingerprint["embedding_revision"] = embedder.revision
     fingerprint["embedding_profile"] = embedder.profile_id

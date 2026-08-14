@@ -353,6 +353,11 @@ originou cada hint, sem competir com ela. A consulta repete ACL, projeto, branch
 e caminho antes de retornar qualquer texto, e os metadados indicam quando e por
 que o reforço foi aplicado.
 
+Headers fortemente representados podem fornecer um terceiro chunk do mesmo
+documento, enquanto bundles concorrentes recebem no máximo um complemento por
+raiz de caso. Isso impede que um caso semelhante esconda a configuração do caso
+realmente consultado.
+
 ## Configuração multi-repositório
 
 O contrato inicial está em `repositories.example.toml`. Ele já descreve o

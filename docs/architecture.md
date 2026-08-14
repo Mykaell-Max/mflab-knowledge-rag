@@ -119,6 +119,12 @@ evidência que originou o hint, preservando a ordem do ranking principal. O
 resultado registra `context_relation`, `context_rank` e a posição da evidência.
 Nenhum caminho ou texto é lido fora das fontes autorizadas.
 
+Quando dois chunks de um mesmo header já estão entre as evidências iniciais, a
+consulta pode selecionar outro chunk desse documento (`same_document`), sem
+repetir os chunks usados como seed. Para bundles, no máximo um complemento de
+cada raiz `tests/<caso>` é escolhido, evitando que o caso mais bem ranqueado
+oculte outro bundle também sustentado por múltiplas evidências.
+
 Para aumentar diversidade, o ranking piloto limita chunks por caminho, colapsa
 conteúdos idênticos e comprime o ganho de frequência lexical. Esses limites são
 configuráveis para auditorias. Palavras de controle não são aceitas como símbolos

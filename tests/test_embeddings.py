@@ -180,6 +180,16 @@ class EmbeddingTests(unittest.TestCase):
                 "title": "arquivo",
                 "text": "{}",
             },
+            {
+                "path": "src/dpm/common/dpm_types.hpp",
+                "title": "getUniqueID",
+                "text": "ParticleID getUniqueID();",
+            },
+            {
+                "path": "src/dpm/common/dpm_types.hpp",
+                "title": "preâmbulo",
+                "text": "using ParticleID = long;",
+            },
         ]
 
         paths, symbols = embeddings._context_hints(seeds)
@@ -191,6 +201,10 @@ class EmbeddingTests(unittest.TestCase):
         )
         self.assertIn("tests/dpm_ram_1b/domains.json", paths)
         self.assertIn("tests/dpm_ram_1b/domain_0/input/input.json", paths)
+        self.assertEqual(
+            paths["src/dpm/common/dpm_types.hpp"][0],
+            "same_document",
+        )
         self.assertEqual(symbols["ParticleIDGenerator"], 1)
         self.assertLessEqual(len(symbols), 24)
 
@@ -263,10 +277,109 @@ class EmbeddingTests(unittest.TestCase):
             sql,
         )
         self.assertIn("occurrence.branch = %(branch)s::text", sql)
+        self.assertIn(
+            "chunk.chunk_id = ANY(%(seed_chunk_ids)s::text[])",
+            sql,
+        )
         self.assertEqual(parameters["allowed_access"], ["lab"])
         self.assertEqual(parameters["branch"], "diagnostic/dpm")
         self.assertEqual(values[0]["context_relation"], "symbol_reference")
         self.assertEqual(values[0]["context_source_rank"], 1)
+
+    def test_context_search_keeps_one_complement_per_test_bundle(self) -> None:
+        def bundle_row(chunk_id: str, path: str, score: float) -> dict[str, object]:
+            return {
+                "score": score,
+                "chunk_id": chunk_id,
+                "chunk_hash": f"{chunk_id}-hash",
+                "project": "MFSim-NG",
+                "path": path,
+                "title": "arquivo",
+                "line_start": 1,
+                "line_end": 20,
+                "access_class": "lab",
+                "branch": "diagnostic/dpm",
+                "commit_sha": "a" * 40,
+                "occurrences": [{"branch": "diagnostic/dpm"}],
+                "text": "{}",
+            }
+
+        rows = [
+            bundle_row(
+                "regular-input",
+                "tests/dpm_ram/domain_0/input/input.json",
+                0.95,
+            ),
+            bundle_row(
+                "regular-domains",
+                "tests/dpm_ram/domains.json",
+                0.90,
+            ),
+            bundle_row(
+                "billion-input",
+                "tests/dpm_ram_1b/domain_0/input/input.json",
+                0.85,
+            ),
+        ]
+        result_cursor = mock.MagicMock()
+        result_cursor.fetchall.return_value = rows
+        connection = mock.MagicMock()
+        connection.execute.return_value = result_cursor
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+        embedder = mock.MagicMock()
+        embedder.profile_id = "profile"
+        embedder.encode_query.return_value = [0.0] * 1024
+        seeds = [
+            {
+                "chunk_id": "regular-dpm",
+                "path": "tests/dpm_ram/domain_0/input/dpm.json",
+                "title": "arquivo",
+                "text": "{}",
+            },
+            {
+                "chunk_id": "billion-dpm",
+                "path": "tests/dpm_ram_1b/domain_0/input/dpm.json",
+                "title": "arquivo",
+                "text": "{}",
+            },
+            {
+                "chunk_id": "regular-seed-domains",
+                "path": "tests/dpm_ram/domains.json",
+                "title": "arquivo",
+                "text": "{}",
+            },
+            {
+                "chunk_id": "billion-seed-domains",
+                "path": "tests/dpm_ram_1b/domains.json",
+                "title": "arquivo",
+                "text": "{}",
+            },
+        ]
+
+        with mock.patch.object(embeddings, "_driver", return_value=(None, object())):
+            with mock.patch.object(embeddings, "_connect", return_value=context):
+                values = embeddings._contextual_search(
+                    "postgresql://unused",
+                    embedder,
+                    query="caso com um bilhao de particulas",
+                    seeds=seeds,
+                    branch="diagnostic/dpm",
+                    project="MFSim-NG",
+                    path_prefix=None,
+                    allowed_access={"lab"},
+                )
+
+        self.assertEqual(
+            [value["path"] for value in values],
+            [
+                "tests/dpm_ram/domain_0/input/input.json",
+                "tests/dpm_ram_1b/domain_0/input/input.json",
+            ],
+        )
+        self.assertTrue(
+            all(value["context_relation"] == "test_bundle" for value in values)
+        )
 
     def test_hybrid_promotes_at_most_two_explicit_context_results(self) -> None:
         semantic = []
