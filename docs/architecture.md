@@ -153,6 +153,13 @@ nome da branch padrão. O serviço persiste essa relação no mirror e registra 
 manifesto tanto a política quanto a branch efetivamente resolvida; não presume
 nomes como `master` ou `main`.
 
+Fetches de mirrors remotos possuem timeout configurável por fonte. O subprocesso
+Git é acompanhado incrementalmente: percentuais de enumeração, recebimento e
+resolução são encaminhados aos logs com limitação de frequência, enquanto um
+heartbeat confirma atividade mesmo quando o servidor permanece silencioso.
+Credenciais continuam somente no ambiente temporário do `askpass` e não fazem
+parte das linhas de comando ou mensagens.
+
 Para remotes HTTPS privados, as credenciais são lidas de variáveis de ambiente
 ou de `.env` local ignorado pelo Git. O token é limitado a `read_repository` e
 entregue ao Git por `askpass` temporário, nunca pela URL ou argumentos. Prompts

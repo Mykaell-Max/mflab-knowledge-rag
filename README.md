@@ -393,6 +393,12 @@ mirror para que o modo `--offline` continue reproduzível. Também é possível
 fixar qualquer ref, como `origin/trunk` ou `origin/release/current`, por
 repositório.
 
+`fetch_timeout_seconds` pode ser definido em `[defaults]` e sobrescrito em
+qualquer repositório. Durante downloads, o serviço força o progresso do Git,
+mostra as etapas e percentuais em incrementos de 5% e emite um heartbeat a cada
+15 segundos quando o servidor não fornece novos dados. Assim, operações grandes
+não parecem travadas e o limite efetivo fica registrado nos manifestos.
+
 Sincronize todos os repositórios habilitados com uma execução:
 
 ```bash

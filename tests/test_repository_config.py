@@ -21,6 +21,7 @@ profile = "generic"
 cache_root = "state/cache"
 inventory_root = "state/inventory"
 normalized_root = "state/data"
+fetch_timeout_seconds = 2400
 
 [[repositories]]
 id = "solver-next"
@@ -65,6 +66,7 @@ access_class = "pending"
                 "https://gitlab.example.invalid/tools/desktop-ui.git",
             )
             self.assertEqual(ui.source_kind, "remote_url")
+            self.assertEqual(ui.fetch_timeout_seconds, 2400)
             self.assertFalse(legacy.enabled)
             self.assertEqual(catalog.cache_root, (root / "state/cache").resolve())
             self.assertTrue(catalog.config_hash.startswith("sha256:"))
@@ -141,6 +143,10 @@ canonical_ref = "origin/trunk"
                 'source = "source"\n'
                 'canonical_ref = "remote_default"\n'
             ),
+            "bad_timeout": (
+                'source = "source"\n'
+                'fetch_timeout_seconds = 10\n'
+            ),
         }
         expected = {
             "missing": "exatamente uma origem",
@@ -148,6 +154,7 @@ canonical_ref = "origin/trunk"
             "credentials": "não pode conter credenciais",
             "local_scope": "local exige uma origem source",
             "local_default": "remote_default exige remote_url",
+            "bad_timeout": "entre 30 e 86400",
         }
         for name, source_options in cases.items():
             with self.subTest(name=name), tempfile.TemporaryDirectory() as temporary:

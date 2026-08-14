@@ -2,11 +2,15 @@ from __future__ import annotations
 
 import hashlib
 import os
+import queue
 import re
 import shutil
 import subprocess
 import tarfile
 import tempfile
+import threading
+import time
+from collections import deque
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Callable
@@ -243,7 +247,11 @@ def _refresh_mirror_from_remote(
     mirror: Path,
     remote_url: str,
     credentials: GitCredentials | None,
+    *,
+    timeout_seconds: int = 1800,
+    log: LogCallback | None = None,
 ) -> None:
+    logger = log or (lambda _message, _level="info": None)
     command = [
         "git",
         "-c",
@@ -251,6 +259,7 @@ def _refresh_mirror_from_remote(
         "--git-dir",
         str(mirror),
         "fetch",
+        "--progress",
         "--prune",
         "--no-tags",
         remote_url,
@@ -260,14 +269,151 @@ def _refresh_mirror_from_remote(
     if credentials is None:
         environment = os.environ.copy()
         environment["GIT_TERMINAL_PROMPT"] = "0"
-        _run(command, timeout=300, env=environment)
+        _run_git_with_progress(
+            command,
+            timeout_seconds=timeout_seconds,
+            env=environment,
+            log=logger,
+        )
         return
 
     environment, temporary = _askpass_environment(mirror.parent, credentials)
     try:
-        _run(command, timeout=300, env=environment)
+        _run_git_with_progress(
+            command,
+            timeout_seconds=timeout_seconds,
+            env=environment,
+            log=logger,
+        )
     finally:
         temporary.cleanup()
+
+
+def _run_git_with_progress(
+    command: list[str],
+    *,
+    timeout_seconds: int,
+    env: dict[str, str],
+    log: LogCallback,
+    heartbeat_seconds: int = 15,
+) -> None:
+    if timeout_seconds < 1:
+        raise ValueError("timeout do Git deve ser positivo")
+    try:
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env=env,
+            bufsize=1,
+        )
+    except FileNotFoundError as exc:
+        raise ValueError("Git não foi encontrado no PATH") from exc
+
+    assert process.stdout is not None
+    messages: queue.Queue[str | None] = queue.Queue()
+
+    def read_output() -> None:
+        current: list[str] = []
+        try:
+            while True:
+                character = process.stdout.read(1)
+                if not character:
+                    if current:
+                        messages.put("".join(current).strip())
+                    break
+                if character in {"\r", "\n"}:
+                    if current:
+                        messages.put("".join(current).strip())
+                        current.clear()
+                else:
+                    current.append(character)
+        finally:
+            messages.put(None)
+
+    reader = threading.Thread(target=read_output, daemon=True)
+    reader.start()
+    started = time.monotonic()
+    last_log = started
+    last_signature: tuple[str, int] | str | None = None
+    output_tail: deque[str] = deque(maxlen=20)
+    output_finished = False
+
+    log(
+        f"Git fetch iniciado; timeout configurado: {timeout_seconds}s",
+        "info",
+    )
+    while True:
+        now = time.monotonic()
+        elapsed = now - started
+        if elapsed >= timeout_seconds:
+            process.kill()
+            process.wait(timeout=10)
+            raise ValueError(
+                f"Git fetch excedeu o timeout configurado de {timeout_seconds}s"
+            )
+        try:
+            message = messages.get(timeout=min(1.0, timeout_seconds - elapsed))
+        except queue.Empty:
+            message = ""
+
+        if message is None:
+            output_finished = True
+        elif message:
+            output_tail.append(message)
+            signature, should_log = _git_progress_signature(
+                message,
+                previous=last_signature,
+            )
+            if should_log:
+                log(f"Git fetch: {_format_git_progress(message)}", "info")
+                last_log = time.monotonic()
+                last_signature = signature
+
+        now = time.monotonic()
+        return_code = process.poll()
+        if return_code is None and now - last_log >= heartbeat_seconds:
+            log(f"Git fetch ainda em andamento ({int(now - started)}s)", "info")
+            last_log = now
+
+        if return_code is not None and output_finished:
+            reader.join(timeout=1)
+            if return_code != 0:
+                detail = output_tail[-1] if output_tail else "erro desconhecido"
+                raise ValueError(f"Git fetch falhou: {detail}")
+            log(f"Git fetch concluído em {int(now - started)}s", "success")
+            return
+
+
+def _git_progress_signature(
+    message: str,
+    *,
+    previous: tuple[str, int] | str | None,
+) -> tuple[tuple[str, int] | str, bool]:
+    normalized = message.removeprefix("remote: ").strip()
+    percentage = re.search(r"(?:^|\s)(\d{1,3})%", normalized)
+    if percentage is not None:
+        value = min(int(percentage.group(1)), 100)
+        stage = normalized.split(":", 1)[0].strip()
+        bucket = value if value == 100 else (value // 5) * 5
+        signature = (stage, bucket)
+        return signature, signature != previous
+    return normalized, normalized != previous
+
+
+def _format_git_progress(message: str) -> str:
+    normalized = message.removeprefix("remote: ").strip()
+    percentage = re.search(r"(?:^|\s)(\d{1,3})%", normalized)
+    if percentage is None:
+        return normalized
+    value = min(int(percentage.group(1)), 100)
+    width = 20
+    filled = int(width * value / 100)
+    bar = "#" * filled + "-" * (width - filled)
+    return f"[{bar}] {value:3d}% {normalized}"
 
 
 def _extract_git_archive(archive: Path, destination: Path) -> None:
@@ -301,6 +447,7 @@ def prepare_repository_mirror(
     cache_dir: Path,
     refresh_remote: bool = False,
     credentials: GitCredentials | None = None,
+    fetch_timeout_seconds: int = 1800,
     log: LogCallback | None = None,
 ) -> RepositoryMirror:
     logger = log or (lambda _message, _level="info": None)
@@ -336,7 +483,13 @@ def prepare_repository_mirror(
             )
         else:
             logger(f"Atualizando branches diretamente do remote: {remote_url}")
-            _refresh_mirror_from_remote(mirror, remote_url, credentials)
+            _refresh_mirror_from_remote(
+                mirror,
+                remote_url,
+                credentials,
+                timeout_seconds=fetch_timeout_seconds,
+                log=logger,
+            )
     return RepositoryMirror(
         source_path=source_root,
         mirror_path=mirror,
@@ -351,6 +504,7 @@ def prepare_remote_repository_mirror(
     cache_dir: Path,
     refresh_remote: bool = True,
     credentials: GitCredentials | None = None,
+    fetch_timeout_seconds: int = 1800,
     log: LogCallback | None = None,
 ) -> RepositoryMirror:
     logger = log or (lambda _message, _level="info": None)
@@ -382,7 +536,13 @@ def prepare_remote_repository_mirror(
 
     if refresh_remote:
         logger(f"Atualizando branches diretamente do remote: {url}")
-        _refresh_mirror_from_remote(mirror, url, credentials)
+        _refresh_mirror_from_remote(
+            mirror,
+            url,
+            credentials,
+            timeout_seconds=fetch_timeout_seconds,
+            log=logger,
+        )
 
     return RepositoryMirror(
         source_path=mirror,

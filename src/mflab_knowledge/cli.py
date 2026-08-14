@@ -294,6 +294,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sync.add_argument("--cache-dir", default=Path("cache"), type=Path)
     sync.add_argument(
+        "--fetch-timeout-seconds",
+        type=int,
+        default=1800,
+        help="Limite do fetch remoto em segundos (padrão: 1800).",
+    )
+    sync.add_argument(
         "--env-file",
         default=Path(".env"),
         type=Path,
@@ -555,6 +561,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 access_class=args.access_class,
                 profile=args.profile,
                 cache_dir=args.cache_dir,
+                fetch_timeout_seconds=args.fetch_timeout_seconds,
                 output_dir=args.output_dir,
                 include_branches=tuple(args.include_branch),
                 exclude_branches=tuple(args.exclude_branch),

@@ -29,6 +29,7 @@ class RepositoryDefinition:
     include_branches: tuple[str, ...] = ()
     exclude_branches: tuple[str, ...] = ()
     remote_url: str | None = None
+    fetch_timeout_seconds: int = 1800
 
     @property
     def source_kind(self) -> str:
@@ -92,6 +93,14 @@ def _remote_url(value: object, field: str, record: str) -> str:
     raise ValueError(f"{record}.{field} não é uma URL Git suportada")
 
 
+def _fetch_timeout(value: object, field: str, record: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{record}.{field} deve ser um inteiro em segundos")
+    if not 30 <= value <= 86400:
+        raise ValueError(f"{record}.{field} deve estar entre 30 e 86400 segundos")
+    return value
+
+
 def load_repository_catalog(path: Path) -> RepositoryCatalog:
     config_file = path.expanduser().resolve()
     try:
@@ -121,6 +130,7 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
         "normalized_root",
         "include_branches",
         "exclude_branches",
+        "fetch_timeout_seconds",
     }
     unknown_defaults = sorted(set(defaults) - allowed_defaults)
     if unknown_defaults:
@@ -173,6 +183,11 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
         "exclude_branches",
         "defaults",
     )
+    default_fetch_timeout = _fetch_timeout(
+        defaults.get("fetch_timeout_seconds", 1800),
+        "fetch_timeout_seconds",
+        "defaults",
+    )
 
     raw_repositories = value.get("repositories")
     if not isinstance(raw_repositories, list) or not raw_repositories:
@@ -189,6 +204,7 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
         "profile",
         "include_branches",
         "exclude_branches",
+        "fetch_timeout_seconds",
     }
     repositories: list[RepositoryDefinition] = []
     seen_ids: set[str] = set()
@@ -282,6 +298,14 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
                 include_branches=include,
                 exclude_branches=exclude,
                 remote_url=remote_url,
+                fetch_timeout_seconds=_fetch_timeout(
+                    raw_repository.get(
+                        "fetch_timeout_seconds",
+                        default_fetch_timeout,
+                    ),
+                    "fetch_timeout_seconds",
+                    record,
+                ),
             )
         )
 

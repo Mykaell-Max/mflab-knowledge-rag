@@ -81,6 +81,8 @@ class ConsoleReporterTests(unittest.TestCase):
                 "test",
                 "--canonical-ref",
                 "origin/trunk",
+                "--fetch-timeout-seconds",
+                "2400",
                 "--color",
                 "always",
             ]
@@ -120,6 +122,7 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(sync.color, "always")
         self.assertEqual(sync.canonical_ref, "origin/trunk")
         self.assertEqual(sync.profile, "generic")
+        self.assertEqual(sync.fetch_timeout_seconds, 2400)
         self.assertEqual(sync_all.repository, ["solver-next"])
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")

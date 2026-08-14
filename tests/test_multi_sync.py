@@ -86,6 +86,10 @@ class MultiSyncTests(unittest.TestCase):
                 synchronize.call_args_list[1].kwargs["remote_url"],
                 "https://gitlab.example.invalid/group/second.git",
             )
+            self.assertEqual(
+                synchronize.call_args_list[1].kwargs["fetch_timeout_seconds"],
+                1800,
+            )
             self.assertEqual(result["succeeded"], 1)
             self.assertEqual(result["failed"], 1)
             self.assertEqual(result["branches"], 4)

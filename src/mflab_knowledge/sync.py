@@ -255,6 +255,7 @@ def sync_repository_branches(
     *,
     source: Path | None,
     remote_url: str | None = None,
+    fetch_timeout_seconds: int = 1800,
     project: str,
     canonical_ref: str,
     branch_scope: str,
@@ -282,6 +283,7 @@ def sync_repository_branches(
             cache_dir=cache_dir,
             refresh_remote=refresh_remote,
             credentials=credentials,
+            fetch_timeout_seconds=fetch_timeout_seconds,
             log=logger,
         )
     else:
@@ -292,6 +294,7 @@ def sync_repository_branches(
             cache_dir=cache_dir,
             refresh_remote=refresh_remote,
             credentials=credentials,
+            fetch_timeout_seconds=fetch_timeout_seconds,
             log=logger,
         )
     discovered_branches = list_repository_branches(mirror, scope=branch_scope)
@@ -490,6 +493,7 @@ def sync_repository_branches(
         "canonical_ref": canonical.requested_ref,
         "canonical_policy": canonical_ref,
         "branch_scope": branch_scope,
+        "fetch_timeout_seconds": fetch_timeout_seconds,
         "branch_filters": {
             "include": list(include_branches),
             "exclude": list(exclude_branches),

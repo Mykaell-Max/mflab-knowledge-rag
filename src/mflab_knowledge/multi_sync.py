@@ -78,6 +78,7 @@ def sync_all_repositories(
             result = sync_repository_branches(
                 source=repository.source,
                 remote_url=repository.remote_url,
+                fetch_timeout_seconds=repository.fetch_timeout_seconds,
                 project=repository.project,
                 canonical_ref=repository.canonical_ref,
                 branch_scope=repository.branch_scope,
@@ -112,6 +113,7 @@ def sync_all_repositories(
                     "profile": repository.profile,
                     "include_branches": list(repository.include_branches),
                     "exclude_branches": list(repository.exclude_branches),
+                    "fetch_timeout_seconds": repository.fetch_timeout_seconds,
                     **result,
                 }
             )
@@ -139,6 +141,7 @@ def sync_all_repositories(
                     "branch_scope": repository.branch_scope,
                     "access_class": repository.access_class,
                     "profile": repository.profile,
+                    "fetch_timeout_seconds": repository.fetch_timeout_seconds,
                     "error": str(exc),
                 }
             )

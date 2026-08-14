@@ -128,12 +128,15 @@ class RepositorySnapshotTests(unittest.TestCase):
             credentials = GitCredentials("mborges", "secret-token-value")
             captured: dict[str, object] = {}
 
-            def fake_run(command: list[str], **kwargs: object) -> str:
+            def fake_run(command: list[str], **kwargs: object) -> None:
                 captured["command"] = command
                 captured["env"] = kwargs.get("env")
-                return ""
 
-            with mock.patch.object(repository, "_run", side_effect=fake_run):
+            with mock.patch.object(
+                repository,
+                "_run_git_with_progress",
+                side_effect=fake_run,
+            ):
                 repository._refresh_mirror_from_remote(
                     mirror,
                     "https://gitlab.example.invalid/group/project.git",
@@ -147,6 +150,36 @@ class RepositorySnapshotTests(unittest.TestCase):
             self.assertNotIn(credentials.token, " ".join(command))
             self.assertEqual(environment["MFLAB_ASKPASS_TOKEN"], credentials.token)
             self.assertFalse(any(mirror.parent.glob(".mflab-askpass-*")))
+
+    def test_git_progress_is_grouped_in_five_percent_buckets(self) -> None:
+        first, first_log = repository._git_progress_signature(
+            "Receiving objects: 11% (11/100)",
+            previous=None,
+        )
+        same, same_log = repository._git_progress_signature(
+            "Receiving objects: 14% (14/100)",
+            previous=first,
+        )
+        next_bucket, next_log = repository._git_progress_signature(
+            "Receiving objects: 15% (15/100)",
+            previous=same,
+        )
+        complete, complete_log = repository._git_progress_signature(
+            "Receiving objects: 100% (100/100), done.",
+            previous=next_bucket,
+        )
+
+        self.assertTrue(first_log)
+        self.assertFalse(same_log)
+        self.assertTrue(next_log)
+        self.assertTrue(complete_log)
+        self.assertEqual(complete, ("Receiving objects", 100))
+        self.assertEqual(
+            repository._format_git_progress(
+                "remote: Receiving objects: 25% (25/100)"
+            ),
+            "[#####---------------]  25% Receiving objects: 25% (25/100)",
+        )
 
     def test_materializes_requested_branch_without_touching_source(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
