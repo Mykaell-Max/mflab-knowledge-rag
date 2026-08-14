@@ -729,6 +729,9 @@ def main(argv: Sequence[str] | None = None) -> int:
                     )
                     backend = hybrid_fingerprint(database_url, embedder)
                     backend["mode"] = args.mode
+                    if args.mode == "semantic":
+                        backend["retrieval_algorithm"] = "exact_cosine"
+                        backend.pop("context_rrf_weight", None)
                     selected_search = (
                         semantic_search
                         if args.mode == "semantic"

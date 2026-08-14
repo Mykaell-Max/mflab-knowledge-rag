@@ -8,7 +8,8 @@ acessa uma role PostgreSQL com o mesmo nome, sem senha e sem porta TCP exposta.
 
 ```bash
 sudo apt update
-sudo apt install -y postgresql postgresql-contrib postgresql-18-pgvector python3-venv
+sudo apt install -y postgresql postgresql-contrib postgresql-18-pgvector \
+  python3-venv python3-dev
 sudo systemctl enable --now postgresql
 sudo systemctl status postgresql --no-pager
 ```
@@ -53,6 +54,9 @@ Linux atual.
 
 O extra de embeddings baixa as bibliotecas e, na primeira inferência, os pesos
 do modelo público. Nenhum arquivo do MFSim-NG é enviado ao provedor do modelo.
+O pacote de headers deve corresponder exatamente ao Python do ambiente. Se o
+Python for 3.14 e a inferência CUDA reclamar de `Python.h`, instale
+`python3.14-dev`.
 
 ## 4. Criar o schema e carregar o corpus
 
@@ -174,7 +178,10 @@ informar todos os vetores como reutilizados e não carregar o modelo na memória
 
 O objetivo é melhorar as perguntas conceituais sem regredir a suíte de símbolos
 exatos. O modo semântico usa distância cosseno exata; o modo híbrido combina os
-rankings lexical e vetorial por RRF.
+rankings lexical e vetorial por RRF. Uma terceira lista contextual promove,
+com peso menor, candidatos que já passaram pelos mesmos filtros SQL e pertencem
+ao mesmo bundle de teste, formam pares fonte/header ou referenciam um símbolo
+específico. Essa etapa reutiliza os embeddings existentes.
 
 ## 10. Limites desta etapa
 

@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import hashlib
 import importlib
+import re
 from collections import Counter
+from pathlib import PurePosixPath
 from typing import Callable, Iterable
 
 from mflab_knowledge.database import (
@@ -27,6 +29,26 @@ QUERY_PROMPT = (
     "relevant code, configuration, or documentation passages that answer it\n"
     "Query:"
 )
+CONTEXT_RRF_WEIGHT = 0.15
+_SOURCE_EXTENSIONS = {
+    ".c",
+    ".cc",
+    ".cpp",
+    ".cxx",
+    ".h",
+    ".hh",
+    ".hpp",
+    ".hxx",
+}
+_GENERIC_TITLES = {
+    "arquivo",
+    "file",
+    "header",
+    "preamble",
+    "preambulo",
+    "preâmbulo",
+    "section",
+}
 
 
 def embedding_profile_id(
@@ -79,7 +101,10 @@ class LocalEmbedder:
             device=selected_device,
             truncate_dim=EMBEDDING_DIMENSIONS,
         )
-        dimensions = int(self.model.get_sentence_embedding_dimension())
+        dimension_getter = getattr(self.model, "get_embedding_dimension", None)
+        if dimension_getter is None:
+            dimension_getter = self.model.get_sentence_embedding_dimension
+        dimensions = int(dimension_getter())
         if dimensions != EMBEDDING_DIMENSIONS:
             raise ValueError(
                 f"modelo produziu {dimensions} dimensões; esperado "
@@ -444,6 +469,132 @@ def _diversify(
     return results
 
 
+def _test_bundle_root(path: str) -> str | None:
+    parts = PurePosixPath(path).parts
+    if len(parts) >= 2 and parts[0] == "tests":
+        return "/".join(parts[:2])
+    return None
+
+
+def _title_symbols(result: dict[str, object]) -> set[str]:
+    title = str(result.get("title", ""))
+    symbols = {
+        value.casefold()
+        for value in re.findall(r"[^\W\d]\w{3,}", title, flags=re.UNICODE)
+    }
+    return {
+        value
+        for value in symbols
+        if len(value) >= 8 and value not in _GENERIC_TITLES
+    }
+
+
+def _bundle_role(path: str) -> int:
+    name = PurePosixPath(path).name.casefold()
+    if name in {"domains.json", "input.json"}:
+        return 3
+    if name.endswith(".json"):
+        return 2
+    return 1
+
+
+def _context_relation(
+    source: dict[str, object],
+    candidate: dict[str, object],
+) -> tuple[int, str] | None:
+    source_path = str(source.get("path", ""))
+    candidate_path = str(candidate.get("path", ""))
+    if not source_path or not candidate_path or source_path == candidate_path:
+        return None
+
+    source_posix = PurePosixPath(source_path)
+    candidate_posix = PurePosixPath(candidate_path)
+    if (
+        source_posix.parent == candidate_posix.parent
+        and source_posix.stem == candidate_posix.stem
+        and source_posix.suffix.casefold() in _SOURCE_EXTENSIONS
+        and candidate_posix.suffix.casefold() in _SOURCE_EXTENSIONS
+    ):
+        return 5, "paired_source"
+
+    source_text = str(source.get("text", "")).casefold()
+    candidate_text = str(candidate.get("text", "")).casefold()
+    candidate_symbols = _title_symbols(candidate)
+    source_symbols = _title_symbols(source)
+    if any(symbol in source_text for symbol in candidate_symbols) or any(
+        symbol in candidate_text for symbol in source_symbols
+    ):
+        return 4, "symbol_reference"
+
+    source_bundle = _test_bundle_root(source_path)
+    if (
+        source_bundle is not None
+        and source_bundle == _test_bundle_root(candidate_path)
+    ):
+        return 3, "test_bundle"
+
+    if (
+        source_posix.parent == candidate_posix.parent
+        and source_posix.suffix.casefold() in _SOURCE_EXTENSIONS
+        and candidate_posix.suffix.casefold() in _SOURCE_EXTENSIONS
+    ):
+        return 1, "source_directory"
+    return None
+
+
+def _apply_context_expansion(
+    ranked: list[dict[str, object]],
+    *,
+    limit: int,
+    rrf_k: int,
+    weight: float = CONTEXT_RRF_WEIGHT,
+) -> list[dict[str, object]]:
+    if len(ranked) <= limit or weight <= 0:
+        return ranked
+    seeds = ranked[:limit]
+    related: list[tuple[int, int, int, float, dict[str, object], str]] = []
+    for candidate in ranked[limit:]:
+        best: tuple[int, int, str] | None = None
+        for source_rank, source in enumerate(seeds, start=1):
+            relation = _context_relation(source, candidate)
+            if relation is None:
+                continue
+            strength, reason = relation
+            option = (strength, -source_rank, reason)
+            if best is None or option > best:
+                best = option
+        if best is None:
+            continue
+        strength, negative_source_rank, reason = best
+        source_rank = -negative_source_rank
+        related.append(
+            (
+                -strength,
+                source_rank,
+                -_bundle_role(str(candidate.get("path", ""))),
+                -float(candidate.get("rrf_score", 0.0)),
+                candidate,
+                reason,
+            )
+        )
+    related.sort(key=lambda value: value[:4])
+    for context_rank, value in enumerate(related, start=1):
+        _strength, source_rank, _role, _score, candidate, reason = value
+        candidate["context_rank"] = context_rank
+        candidate["context_relation"] = reason
+        candidate["context_source_rank"] = source_rank
+        candidate["rrf_score"] = float(candidate.get("rrf_score", 0.0)) + (
+            weight / (rrf_k + context_rank)
+        )
+    return sorted(
+        ranked,
+        key=lambda value: (
+            -float(value.get("rrf_score", 0.0)),
+            str(value.get("path", "")),
+        ),
+    )
+
+
 def hybrid_search(
     database_url: str,
     embedder: LocalEmbedder,
@@ -458,7 +609,7 @@ def hybrid_search(
     include_duplicate_content: bool = False,
     rrf_k: int = 60,
 ) -> list[dict[str, object]]:
-    candidate_limit = min(100, max(limit * 5, 30))
+    candidate_limit = min(100, max(limit * 10, 50))
     broad_per_path = min(100, max(max_per_path, 10))
     common = {
         "query": query,
@@ -489,6 +640,7 @@ def hybrid_search(
             str(value.get("path", "")),
         ),
     )
+    ranked = _apply_context_expansion(ranked, limit=limit, rrf_k=rrf_k)
     for value in ranked:
         value["score"] = round(float(value["rrf_score"]), 6)
     return _diversify(
@@ -532,7 +684,9 @@ def embedding_status(database_url: str) -> dict[str, object]:
 
 def hybrid_fingerprint(database_url: str, embedder: LocalEmbedder) -> dict[str, object]:
     fingerprint = database_fingerprint(database_url)
-    fingerprint["mode"] = "hybrid_rrf"
+    fingerprint["mode"] = "hybrid"
+    fingerprint["retrieval_algorithm"] = "context_rrf_v1"
+    fingerprint["context_rrf_weight"] = CONTEXT_RRF_WEIGHT
     fingerprint["embedding_model"] = embedder.model_id
     fingerprint["embedding_revision"] = embedder.revision
     fingerprint["embedding_profile"] = embedder.profile_id

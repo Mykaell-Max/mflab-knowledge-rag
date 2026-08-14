@@ -345,6 +345,11 @@ recall por aproximação. A suíte conceitual em português fica em
 `evaluations/mfsim-ng-semantic-pilot.json`; instruções completas estão em
 [`docs/postgresql.md`](docs/postgresql.md).
 
+O modo híbrido também aplica expansão contextual com peso reduzido dentro do
+próprio pool autorizado: pares `.cpp`/`.hpp`, referências simbólicas específicas
+e arquivos complementares do mesmo caso em `tests/`. Os metadados do resultado
+indicam quando e por que esse reforço foi aplicado.
+
 ## Configuração multi-repositório
 
 O contrato inicial está em `repositories.example.toml`. Ele já descreve o
