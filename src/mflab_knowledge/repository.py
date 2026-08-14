@@ -707,16 +707,45 @@ def compare_branch_to_canonical(
     behind_text, ahead_text = counts.split()
     behind = int(behind_text)
     ahead = int(ahead_text)
-    merge_base = _run(
-        [
-            "git",
-            "--git-dir",
-            str(mirror.mirror_path),
-            "merge-base",
-            canonical_commit,
-            branch_commit,
-        ]
-    )
+    merge_base_command = [
+        "git",
+        "--git-dir",
+        str(mirror.mirror_path),
+        "merge-base",
+        canonical_commit,
+        branch_commit,
+    ]
+    try:
+        merge_base_result = subprocess.run(
+            merge_base_command,
+            check=False,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=30,
+        )
+    except FileNotFoundError as exc:
+        raise ValueError("Git não foi encontrado no PATH") from exc
+    except subprocess.TimeoutExpired as exc:
+        raise ValueError("tempo excedido ao comparar históricos Git") from exc
+
+    if merge_base_result.returncode == 1 and not merge_base_result.stdout.strip():
+        return {
+            "relation": "unrelated",
+            "ahead": ahead,
+            "behind": behind,
+            "merge_base": None,
+            "merged_into_canonical": False,
+        }
+    if merge_base_result.returncode != 0:
+        detail = (
+            merge_base_result.stderr.strip()
+            or merge_base_result.stdout.strip()
+            or "erro desconhecido"
+        )
+        raise ValueError(f"Git falhou ao comparar históricos: {detail}")
+    merge_base = merge_base_result.stdout.strip()
     ancestor = subprocess.run(
         [
             "git",

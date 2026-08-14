@@ -11,6 +11,7 @@ from unittest import mock
 from mflab_knowledge.credentials import GitCredentials
 from mflab_knowledge import repository
 from mflab_knowledge.repository import (
+    compare_branch_to_canonical,
     list_repository_branches,
     prepare_remote_repository_mirror,
     prepare_repository_mirror,
@@ -31,6 +32,50 @@ def _git(repository: Path, *arguments: str) -> str:
 
 @unittest.skipUnless(shutil.which("git"), "Git não está disponível")
 class RepositorySnapshotTests(unittest.TestCase):
+    def test_compares_unrelated_branch_histories_without_failing(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            source = root / "source"
+            cache = root / "cache"
+            source.mkdir()
+            subprocess.run(
+                ["git", "init", "-b", "trunk", str(source)],
+                check=True,
+                capture_output=True,
+                text=True,
+            )
+            _git(source, "config", "user.name", "History Test")
+            _git(source, "config", "user.email", "history@example.invalid")
+            (source / "canonical.txt").write_text("canonical\n", encoding="utf-8")
+            _git(source, "add", "canonical.txt")
+            _git(source, "commit", "-m", "canonical")
+            canonical_commit = _git(source, "rev-parse", "HEAD")
+
+            _git(source, "switch", "--orphan", "imported-history")
+            canonical_path = source / "canonical.txt"
+            if canonical_path.exists():
+                canonical_path.unlink()
+            (source / "imported.txt").write_text("imported\n", encoding="utf-8")
+            _git(source, "add", "imported.txt")
+            _git(source, "commit", "-m", "imported")
+            imported_commit = _git(source, "rev-parse", "HEAD")
+
+            mirror = prepare_repository_mirror(
+                source,
+                project="History Test",
+                cache_dir=cache,
+            )
+            relation = compare_branch_to_canonical(
+                mirror,
+                canonical_commit=canonical_commit,
+                branch_commit=imported_commit,
+            )
+
+            self.assertEqual(relation["relation"], "unrelated")
+            self.assertIsNone(relation["merge_base"])
+            self.assertFalse(relation["merged_into_canonical"])
+            self.assertEqual(relation["ahead"], 1)
+            self.assertEqual(relation["behind"], 1)
     @unittest.skipIf(
         os.name == "nt",
         "Git for Windows não pode iniciar upload-pack no sandbox local",

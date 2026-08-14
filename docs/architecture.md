@@ -171,6 +171,11 @@ A árvore usa os componentes do nome da branch para organização visual e calcu
 inventa uma relação de filiação entre branches, pois o Git não preserva
 formalmente de qual branch outra foi criada.
 
+Branches importadas ou criadas como históricos órfãos podem não possuir um
+ancestral comum com a canônica. Elas permanecem indexáveis com relação
+`unrelated` e `merge_base` nulo; essa condição válida do Git não interrompe a
+sincronização das demais branches.
+
 ## Sincronização futura
 
 1. Um webhook recebe eventos de push, issue, merge request e comentário.
