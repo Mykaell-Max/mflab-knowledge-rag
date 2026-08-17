@@ -580,6 +580,10 @@ def _rows_to_results(rows: Iterable[dict[str, object]]) -> list[dict[str, object
         result = dict(row)
         commit_sha = str(result.pop("commit_sha") or "?")
         selected_branch = str(result.pop("branch") or "?")
+        result["selected_occurrence"] = {
+            "branch": selected_branch,
+            "commit_sha": commit_sha,
+        }
         result["score"] = round(float(result["score"]), 4)
         result["citation"] = (
             f"{result.get('project')} {selected_branch}@{commit_sha[:12]} "

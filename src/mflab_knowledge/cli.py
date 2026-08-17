@@ -588,6 +588,15 @@ def build_parser() -> argparse.ArgumentParser:
         choices=("critical", "error", "warning", "info", "debug"),
         default="info",
     )
+    serve.add_argument(
+        "--generation-config",
+        default=Path("generation.toml"),
+        type=Path,
+        help=(
+            "Provedor LLM local compatível com OpenAI "
+            "(padrão: ./generation.toml)."
+        ),
+    )
     _add_retrieval_policy_option(serve)
     _add_embedding_options(serve)
     _add_database_options(serve)
@@ -1022,8 +1031,10 @@ def main(argv: Sequence[str] | None = None) -> int:
             allowed_access = set(args.allow_access or ("public", "lab"))
             settings = ApiSettings(
                 database_url=database_url,
+                env_file=args.env_file,
                 state_dir=args.state_dir,
                 retrieval_config=args.retrieval_config,
+                generation_config=args.generation_config,
                 allowed_access=frozenset(allowed_access),
                 embedding_model=args.embedding_model,
                 embedding_revision=args.embedding_revision,

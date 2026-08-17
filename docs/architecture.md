@@ -25,7 +25,10 @@ GitLab / clones / documentos autorizados
        recuperação híbrida + RRF
                   |
                   v
-       API RAG local com citações
+       contexto limitado + citações
+                  |
+                  v
+   gerador local configurável + API
 ```
 
 ## Isolamento de repositórios
@@ -220,7 +223,18 @@ resultados já filtrados, atribui identificadores locais de fonte e preserva
 citação, projeto, caminho, linhas e ocorrências. O pacote marca truncamentos e
 instrui o consumidor a tratar todo conteúdo recuperado como evidência não
 confiável. Essa etapa é independente do fornecedor do modelo; `/ask`, MCP e a
-interface deverão consumi-la em vez de remontar prompts por conta própria.
+interface devem consumi-la em vez de remontar prompts por conta própria.
+
+O gerador é definido por um arquivo local e acessado por um adaptador compatível
+com a API OpenAI. O código não conhece nomes de repositórios, branches, modelos
+ou produtos de inferência. Somente endpoints literais de loopback são aceitos;
+hosts externos, credenciais na URL, proxies e redirecionamentos são recusados.
+
+O endpoint `/ask` aplica ACL e filtros antes da geração, preserva a ocorrência
+selecionada de cada evidência e valida os identificadores `[S<n>]` mencionados
+na resposta. Escopos distintos são devolvidos separadamente e produzem um aviso
+explícito. Ausência de evidência causa abstenção sem inferência; ausência do
+gerador não afeta os endpoints de recuperação.
 
 ## Política para novas fontes
 

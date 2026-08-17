@@ -8,6 +8,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from mflab_knowledge import __version__
 from mflab_knowledge.api import RagApiService
+from mflab_knowledge.generation import (
+    GenerationNotConfiguredError,
+    GenerationUnavailableError,
+)
 
 
 class SearchRequest(BaseModel):
@@ -26,6 +30,11 @@ class SearchRequest(BaseModel):
 
 class ContextRequest(SearchRequest):
     max_context_characters: int = Field(default=24000, ge=1000, le=100000)
+
+
+class AskRequest(ContextRequest):
+    max_output_tokens: int | None = Field(default=None, ge=64, le=8192)
+    temperature: float | None = Field(default=None, ge=0, le=1)
 
 
 def create_app(service: RagApiService) -> FastAPI:
@@ -47,6 +56,7 @@ def create_app(service: RagApiService) -> FastAPI:
                 "/repositories",
                 "/search",
                 "/context",
+                "/ask",
             ],
         }
 
@@ -100,6 +110,22 @@ def create_app(service: RagApiService) -> FastAPI:
             raise HTTPException(
                 status_code=500,
                 detail="falha interna durante a montagem do contexto",
+            ) from None
+
+    @app.post("/ask")
+    def ask(request: AskRequest) -> dict[str, object]:
+        try:
+            return service.ask(**request.model_dump())
+        except GenerationNotConfiguredError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
+        except GenerationUnavailableError as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail="falha interna durante a geração da resposta",
             ) from None
 
     return app

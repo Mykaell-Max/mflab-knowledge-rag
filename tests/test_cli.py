@@ -166,6 +166,8 @@ class ConsoleReporterTests(unittest.TestCase):
                 "public",
                 "--device",
                 "cpu",
+                "--generation-config",
+                "local-generation.toml",
             ]
         )
         database = parser.parse_args(
@@ -207,6 +209,10 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(serve.port, 9000)
         self.assertEqual(serve.allow_access, ["public"])
         self.assertEqual(serve.device, "cpu")
+        self.assertEqual(
+            serve.generation_config,
+            Path("local-generation.toml"),
+        )
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
         self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))
@@ -288,6 +294,8 @@ class ConsoleReporterTests(unittest.TestCase):
                         "lab",
                         "--allow-access",
                         "project",
+                        "--generation-config",
+                        "runtime/generation.toml",
                         "--color",
                         "never",
                     ]
@@ -296,6 +304,10 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(status, 0)
         settings = run.call_args.args[0]
         self.assertEqual(settings.allowed_access, frozenset({"lab", "project"}))
+        self.assertEqual(
+            settings.generation_config,
+            Path("runtime/generation.toml"),
+        )
         self.assertEqual(run.call_args.kwargs["host"], "127.0.0.1")
         self.assertEqual(run.call_args.kwargs["port"], 9001)
 

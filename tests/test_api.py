@@ -5,10 +5,26 @@ from pathlib import Path
 from unittest import mock
 
 from mflab_knowledge import api
+from mflab_knowledge.generation import GenerationConfig
 
 
 class _Embedder:
     profile_id = "test-profile"
+
+
+class _Generator:
+    def __init__(self, answer: str = "Supported by [S1].") -> None:
+        self.answer = answer
+        self.calls: list[dict[str, object]] = []
+
+    def generate(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return {
+            "answer": self.answer,
+            "model": "local-test-model",
+            "finish_reason": "stop",
+            "usage": {"total_tokens": 20},
+        }
 
 
 class ApiServiceTests(unittest.TestCase):
@@ -168,6 +184,94 @@ class ApiServiceTests(unittest.TestCase):
 
         self.assertEqual(context["context_characters"], 1000)
         self.assertTrue(context["sources"][0]["text_truncated"])
+
+    def test_ask_validates_citations_and_reports_distinct_scopes(self) -> None:
+        generator = _Generator("Compare [S1] with [S2]; ignore [S99].")
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "project": "Solver A",
+                "selected_occurrence": {
+                    "branch": "trunk",
+                    "commit_sha": "a" * 40,
+                },
+                "path": "src/a.cpp",
+                "text": "first",
+            },
+            {
+                "source_id": "S2",
+                "project": "Solver B",
+                "selected_occurrence": {
+                    "branch": "dev/feature",
+                    "commit_sha": "b" * 40,
+                },
+                "path": "src/b.cpp",
+                "text": "second",
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "compare",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 11,
+                "truncated": False,
+                "sources": sources,
+            },
+        ):
+            result = service.ask(query="compare")
+
+        self.assertEqual(result["grounding_status"], "invalid_citations")
+        self.assertEqual(result["citations_used"], ["S1", "S2"])
+        self.assertEqual(result["invalid_citations"], ["S99"])
+        self.assertTrue(result["scope_warning"])
+        self.assertEqual(len(result["scopes"]), 2)
+        self.assertNotIn("text", result["sources"][0])
+        self.assertEqual(len(generator.calls), 1)
+
+    def test_ask_abstains_without_calling_generator_when_no_sources(self) -> None:
+        generator = _Generator()
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+            ),
+        )
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "unknown",
+                "mode": "lexical",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 0,
+                "source_count": 0,
+                "context_characters": 0,
+                "truncated": False,
+                "sources": [],
+            },
+        ):
+            result = service.ask(query="unknown", mode="lexical")
+
+        self.assertTrue(result["abstained"])
+        self.assertEqual(result["grounding_status"], "no_sources")
+        self.assertEqual(generator.calls, [])
 
 
 if __name__ == "__main__":

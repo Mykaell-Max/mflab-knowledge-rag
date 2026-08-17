@@ -147,6 +147,10 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(results[0]["citation"], (
             "MFSim-NG master@aaaaaaaaaaaa src/dpm.cpp:L10-L20"
         ))
+        self.assertEqual(
+            results[0]["selected_occurrence"],
+            {"branch": "master", "commit_sha": "a" * 40},
+        )
         self.assertNotIn("commit_sha", results[0])
 
     def test_postgres_search_rejects_pending_access(self) -> None:

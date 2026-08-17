@@ -22,3 +22,4 @@ logs/
 state/
 repositories.toml
 retrieval.toml
+generation.toml

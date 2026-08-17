@@ -2,9 +2,10 @@
 
 ## Escopo inicial
 
-O serviço HTTP oferece recuperação citável sobre o corpus PostgreSQL já
-indexado. Ele não atualiza fontes, não dispara indexação, não modifica os
-repositórios científicos e ainda não gera respostas com um LLM.
+O serviço HTTP oferece recuperação e geração citável sobre o corpus PostgreSQL
+já indexado. Ele não atualiza fontes, não dispara indexação e não modifica os
+repositórios científicos. A geração é opcional e ocorre somente por um servidor
+LLM local configurado separadamente.
 
 Por segurança, a versão sem autenticação aceita apenas `127.0.0.1`, `::1` ou
 `localhost`. A publicação na rede do laboratório exige primeiro identidade,
@@ -27,6 +28,20 @@ O processo usa `retrieval.toml` quando o arquivo existe. Outro arquivo pode ser
 selecionado com `--retrieval-config`. O teto padrão de acesso é `public` e `lab`;
 `--allow-access` pode ser repetido para definir outro teto operacional.
 
+Para habilitar `/ask`, copie o exemplo e informe o endpoint e o identificador do
+modelo que já estiver sendo servido localmente:
+
+```bash
+cp generation.example.toml generation.toml
+```
+
+`generation.toml` não é versionado. O adaptador aceita qualquer implementação
+compatível com `POST /v1/chat/completions`, mas rejeita hosts que não sejam
+literalmente `127.0.0.1` ou `::1`, URLs com credenciais e redirecionamentos. Se o
+servidor local exigir chave, use `MFLAB_LLM_API_KEY` no `.env`; a chave nunca
+entra no TOML nem nas respostas. Depois de alterar a configuração, reinicie a
+API.
+
 ## Endpoints
 
 ### `GET /health`
@@ -37,7 +52,8 @@ não está disponível e nunca inclui a URL ou a causa interna da conexão.
 ### `GET /status`
 
 Retorna contagens do banco, perfis de embeddings, estado da última indexação
-agendada e se o modelo já foi carregado no processo HTTP.
+agendada, se o modelo de embeddings já foi carregado e se um gerador local está
+configurado. Não retorna URL nem chave do provedor.
 
 ### `GET /repositories`
 
@@ -90,9 +106,40 @@ orçamento.
 
 O pacote inclui uma instrução estável para que o consumidor trate o conteúdo
 recuperado como evidência não confiável, nunca como comandos; cite afirmações
-com `[S1]`; preserve branch e commit; e declare insuficiência quando as fontes
-não sustentarem uma resposta. Essa instrução não substitui isolamento ou ACL,
-mas estabelece o contrato compartilhado do futuro `/ask` e MCP.
+com `[S1]`; preserve projeto, branch e commit; diferencie escopos misturados; e
+declare insuficiência quando as fontes não sustentarem uma resposta. Essa
+instrução não substitui isolamento ou ACL.
+
+### `POST /ask`
+
+Aceita os campos de `/context` e, opcionalmente, `max_output_tokens` (64 a
+8.192) e `temperature` (0 a 1). A recuperação e a ACL ocorrem antes de qualquer
+texto chegar ao gerador. Se nenhuma fonte for encontrada, o serviço se abstém
+sem chamar o modelo.
+
+```json
+{
+  "query": "how are distributed particle identifiers generated?",
+  "mode": "hybrid",
+  "limit": 10,
+  "project": "MFSim-NG",
+  "branch": "diagnostic/dpm",
+  "allowed_access": ["lab"],
+  "max_context_characters": 12000,
+  "max_output_tokens": 700
+}
+```
+
+A resposta inclui `answer`, `citations_used`, `invalid_citations`, `sources` e
+`scopes`. `grounding_status` vale `cited`, `missing_citations`,
+`invalid_citations` ou `no_sources`. `scope_warning` fica verdadeiro quando as
+fontes abrangem mais de uma combinação projeto/branch/commit; isso não bloqueia
+uma comparação intencional, mas impede que o cliente trate versões distintas
+como se fossem uma só. O texto integral das fontes não é repetido na resposta
+de `/ask`.
+
+Sem `generation.toml`, `/search` e `/context` continuam funcionando, enquanto
+`/ask` retorna `503` com uma orientação de configuração.
 
 ## Limites operacionais
 
@@ -100,6 +147,7 @@ mas estabelece o contrato compartilhado do futuro `/ask` e MCP.
 - resultados: de 1 a 50;
 - chunks por caminho: de 1 a 20;
 - contexto: de 1.000 a 100.000 caracteres de evidência;
+- saída gerada: de 64 a 8.192 tokens;
 - um worker HTTP por processo;
 - buscas que usam o modelo local são serializadas;
 - o corpo das requisições não é escrito nos logs de acesso do Uvicorn.
