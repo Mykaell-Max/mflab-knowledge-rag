@@ -215,6 +215,13 @@ reutilizada. O acesso a ela é serializado, preservando a GPU e evitando uma
 cópia por requisição. Esse contrato inicial favorece previsibilidade; fila,
 limites por usuário e concorrência medida entram junto da autenticação.
 
+Antes da geração, o montador de contexto aplica um orçamento total sobre os
+resultados já filtrados, atribui identificadores locais de fonte e preserva
+citação, projeto, caminho, linhas e ocorrências. O pacote marca truncamentos e
+instrui o consumidor a tratar todo conteúdo recuperado como evidência não
+confiável. Essa etapa é independente do fornecedor do modelo; `/ask`, MCP e a
+interface deverão consumi-la em vez de remontar prompts por conta própria.
+
 ## Política para novas fontes
 
 - Arquivo novo em projeto e branch autorizados: automático.

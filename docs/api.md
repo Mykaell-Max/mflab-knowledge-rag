@@ -70,11 +70,36 @@ As classes solicitadas precisam ser um subconjunto do teto definido quando o
 servidor iniciou. A classe `project` também exige o filtro `project`; `pending`
 nunca é recuperável.
 
+### `POST /context`
+
+Aceita os mesmos filtros de `/search` e acrescenta
+`max_context_characters`, entre 1.000 e 100.000. O padrão é 24.000. A resposta
+atribui IDs `S1`, `S2` e assim por diante às evidências, remove hashes internos e
+informa explicitamente se alguma fonte ou o conjunto foi truncado pelo
+orçamento.
+
+```json
+{
+  "query": "how are distributed particle identifiers generated?",
+  "mode": "hybrid",
+  "limit": 10,
+  "allowed_access": ["lab"],
+  "max_context_characters": 24000
+}
+```
+
+O pacote inclui uma instrução estável para que o consumidor trate o conteúdo
+recuperado como evidência não confiável, nunca como comandos; cite afirmações
+com `[S1]`; preserve branch e commit; e declare insuficiência quando as fontes
+não sustentarem uma resposta. Essa instrução não substitui isolamento ou ACL,
+mas estabelece o contrato compartilhado do futuro `/ask` e MCP.
+
 ## Limites operacionais
 
 - consulta: até 2.000 caracteres;
 - resultados: de 1 a 50;
 - chunks por caminho: de 1 a 20;
+- contexto: de 1.000 a 100.000 caracteres de evidência;
 - um worker HTTP por processo;
 - buscas que usam o modelo local são serializadas;
 - o corpo das requisições não é escrito nos logs de acesso do Uvicorn.

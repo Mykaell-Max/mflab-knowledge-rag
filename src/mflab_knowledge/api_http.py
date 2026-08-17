@@ -24,6 +24,10 @@ class SearchRequest(BaseModel):
     include_duplicate_content: bool = False
 
 
+class ContextRequest(SearchRequest):
+    max_context_characters: int = Field(default=24000, ge=1000, le=100000)
+
+
 def create_app(service: RagApiService) -> FastAPI:
     app = FastAPI(
         title="MFLab Knowledge RAG",
@@ -37,7 +41,13 @@ def create_app(service: RagApiService) -> FastAPI:
             "service": "mflab-knowledge-rag",
             "version": __version__,
             "docs": "/docs",
-            "endpoints": ["/health", "/status", "/repositories", "/search"],
+            "endpoints": [
+                "/health",
+                "/status",
+                "/repositories",
+                "/search",
+                "/context",
+            ],
         }
 
     @app.get("/health")
@@ -78,6 +88,18 @@ def create_app(service: RagApiService) -> FastAPI:
             raise HTTPException(
                 status_code=500,
                 detail="falha interna durante a recuperação",
+            ) from None
+
+    @app.post("/context")
+    def context(request: ContextRequest) -> dict[str, object]:
+        try:
+            return service.context(**request.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail="falha interna durante a montagem do contexto",
             ) from None
 
     return app

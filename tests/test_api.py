@@ -95,6 +95,80 @@ class ApiServiceTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "somente um endereço loopback"):
             api.run_api(self.settings(), host="0.0.0.0")
 
+    def test_context_assigns_source_ids_and_obeys_budget(self) -> None:
+        service = api.RagApiService(self.settings())
+        results = [
+            {
+                "chunk_id": "chunk-1",
+                "chunk_hash": "hash-1",
+                "citation": "Solver trunk@abc src/a.cpp:L1-L2",
+                "project": "Solver",
+                "path": "src/a.cpp",
+                "access_class": "lab",
+                "text": "A" * 700,
+                "score": 1.0,
+            },
+            {
+                "chunk_id": "chunk-2",
+                "chunk_hash": "hash-2",
+                "citation": "Solver trunk@abc src/b.cpp:L3-L4",
+                "project": "Solver",
+                "path": "src/b.cpp",
+                "access_class": "lab",
+                "text": "B" * 700,
+                "score": 0.9,
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "search",
+            return_value={
+                "query": "mechanism",
+                "mode": "hybrid",
+                "count": 2,
+                "results": results,
+            },
+        ):
+            context = service.context(
+                query="mechanism",
+                max_context_characters=1000,
+            )
+
+        self.assertEqual(context["source_count"], 1)
+        self.assertEqual(context["context_characters"], 700)
+        self.assertTrue(context["truncated"])
+        source = context["sources"][0]
+        self.assertEqual(source["source_id"], "S1")
+        self.assertNotIn("chunk_hash", source)
+        self.assertIn("untrusted evidence", context["instructions"])
+
+    def test_context_truncates_first_oversized_source_explicitly(self) -> None:
+        service = api.RagApiService(self.settings())
+        with mock.patch.object(
+            service,
+            "search",
+            return_value={
+                "query": "large",
+                "mode": "lexical",
+                "count": 1,
+                "results": [
+                    {
+                        "chunk_id": "large",
+                        "citation": "Solver trunk@abc file:L1-L100",
+                        "text": "x" * 1500,
+                    }
+                ],
+            },
+        ):
+            context = service.context(
+                query="large",
+                mode="lexical",
+                max_context_characters=1000,
+            )
+
+        self.assertEqual(context["context_characters"], 1000)
+        self.assertTrue(context["sources"][0]["text_truncated"])
+
 
 if __name__ == "__main__":
     unittest.main()

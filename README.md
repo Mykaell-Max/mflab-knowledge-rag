@@ -68,8 +68,10 @@ Inicie o processo de validação em primeiro plano:
 O processo não carrega o modelo na inicialização. A GPU só é ocupada na
 primeira chamada `semantic` ou `hybrid`, e a mesma instância do modelo é
 reutilizada nas consultas seguintes. Os endpoints iniciais são `/health`,
-`/status`, `/repositories` e `POST /search`; a documentação interativa fica em
-`/docs`. O contrato completo está em [`docs/api.md`](docs/api.md).
+`/status`, `/repositories`, `POST /search` e `POST /context`; a documentação
+interativa fica em `/docs`. `/context` transforma a recuperação em um pacote
+limitado e citável para futuros clientes LLM e MCP. O contrato completo está em
+[`docs/api.md`](docs/api.md).
 
 Enquanto não houver autenticação, o comando recusa endereços que não sejam
 loopback. As classes `public` e `lab` são o teto padrão do processo, e cada
