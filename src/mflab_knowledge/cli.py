@@ -36,6 +36,12 @@ from mflab_knowledge.normalize import normalize_manifest, search_chunks
 from mflab_knowledge.repository import prepare_repository_snapshot
 from mflab_knowledge.repository_config import load_repository_catalog
 from mflab_knowledge.retrieval import load_retrieval_policy
+from mflab_knowledge.service_runner import (
+    RunAlreadyActiveError,
+    RunStateRecorder,
+    read_last_run,
+    run_managed,
+)
 from mflab_knowledge.sync import sync_repository_branches
 
 
@@ -150,6 +156,39 @@ class ConsoleReporter:
                 )
 
 
+class _StateReporter:
+    def __init__(
+        self,
+        reporter: ConsoleReporter,
+        recorder: RunStateRecorder,
+    ) -> None:
+        self.reporter = reporter
+        self.recorder = recorder
+
+    def log(self, message: str, level: str = "info") -> None:
+        self.recorder.log(message, level)
+        self.reporter.log(message, level)
+
+    def progress(self, current: int, total: int, path: str) -> None:
+        self.recorder.progress(current, total, path)
+        self.reporter.progress(current, total, path)
+
+    def success(self, message: str) -> None:
+        self.log(message, "success")
+
+    def warning(self, message: str) -> None:
+        self.log(message, "warning")
+
+    def error(self, message: str) -> None:
+        self.log(message, "error")
+
+    def result(self, message: str) -> None:
+        self.log(message, "result")
+
+    def section(self, message: str) -> None:
+        self.log(message, "section")
+
+
 def _add_console_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--color",
@@ -234,6 +273,44 @@ def _add_retrieval_policy_option(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def _add_index_options(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--config",
+        default=Path("repositories.toml"),
+        type=Path,
+        help="Catálogo TOML de repositórios (padrão: ./repositories.toml).",
+    )
+    parser.add_argument(
+        "--repository",
+        action="append",
+        help="ID a processar; repita para selecionar vários.",
+    )
+    parser.add_argument(
+        "--env-file",
+        default=Path(".env"),
+        type=Path,
+        help="Credenciais Git e PostgreSQL locais (padrão: ./.env).",
+    )
+    parser.add_argument(
+        "--offline",
+        action="store_true",
+        help="Não consulta remotes; usa somente os mirrors existentes.",
+    )
+    parser.add_argument(
+        "--fail-fast",
+        action="store_true",
+        help="Interrompe o pipeline após a primeira falha.",
+    )
+    parser.add_argument(
+        "--no-embeddings",
+        action="store_true",
+        help="Executa sincronização, normalização e banco sem embeddings.",
+    )
+    _add_embedding_options(parser)
+    parser.add_argument("--batch-size", type=int, default=4)
+    _add_console_options(parser)
+
+
 def _safe_database_error(error: Exception, database_url: str | None) -> str:
     message = str(error)
     if database_url:
@@ -249,6 +326,58 @@ def _search_access(args: argparse.Namespace) -> set[str]:
     if "project" in allowed_access and args.project is None:
         raise ValueError("--allow-access project exige o filtro --project")
     return allowed_access
+
+
+def _execute_configured_index(
+    args: argparse.Namespace,
+    reporter: ConsoleReporter | _StateReporter,
+) -> dict[str, object]:
+    database_url: str | None = None
+    try:
+        catalog = load_repository_catalog(args.config)
+        selected_ids = set(args.repository) if args.repository else None
+        known_ids = {repository.id for repository in catalog.repositories}
+        if selected_ids is not None:
+            unknown = sorted(selected_ids - known_ids)
+            if unknown:
+                raise ValueError(
+                    "repositórios desconhecidos: " + ", ".join(unknown)
+                )
+        selected_repositories = [
+            repository
+            for repository in catalog.enabled
+            if selected_ids is None or repository.id in selected_ids
+        ]
+        needs_https_credentials = not args.offline and any(
+            repository_uses_https(repository)
+            for repository in selected_repositories
+        )
+        credentials = (
+            load_git_credentials(args.env_file)
+            if needs_https_credentials
+            else None
+        )
+        database_url = load_database_url(args.env_file)
+        if credentials is not None:
+            reporter.success("Credenciais HTTPS não interativas configuradas")
+        return index_all_repositories(
+            catalog=catalog,
+            database_url=database_url,
+            refresh_remote=not args.offline,
+            credentials=credentials,
+            repository_ids=selected_ids,
+            fail_fast=args.fail_fast,
+            include_embeddings=not args.no_embeddings,
+            embedding_model=args.embedding_model,
+            embedding_revision=args.embedding_revision,
+            device=args.device,
+            max_sequence_length=args.max_sequence_length,
+            batch_size=args.batch_size,
+            log=reporter.log,
+            progress=reporter.progress,
+        )
+    except Exception as exc:
+        raise ValueError(_safe_database_error(exc, database_url)) from exc
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -394,41 +523,42 @@ def build_parser() -> argparse.ArgumentParser:
         "index-all",
         help="Sincroniza, normaliza, carrega e gera embeddings incrementalmente.",
     )
-    index_all.add_argument(
-        "--config",
-        default=Path("repositories.toml"),
+    _add_index_options(index_all)
+
+    run_scheduled = subparsers.add_parser(
+        "run-scheduled",
+        help="Executa indexação não assistida com trava e estado persistente.",
+    )
+    _add_index_options(run_scheduled)
+    run_scheduled.add_argument(
+        "--state-dir",
+        default=Path("state"),
         type=Path,
-        help="Catálogo TOML de repositórios (padrão: ./repositories.toml).",
+        help="Estado operacional e histórico (padrão: ./state).",
     )
-    index_all.add_argument(
-        "--repository",
-        action="append",
-        help="ID a processar; repita para selecionar vários.",
-    )
-    index_all.add_argument(
-        "--env-file",
-        default=Path(".env"),
+    run_scheduled.add_argument(
+        "--lock-file",
         type=Path,
-        help="Credenciais Git e PostgreSQL locais (padrão: ./.env).",
+        help="Trava de processo (padrão: STATE_DIR/index.lock).",
     )
-    index_all.add_argument(
-        "--offline",
-        action="store_true",
-        help="Não consulta remotes; usa somente os mirrors existentes.",
+    run_scheduled.add_argument(
+        "--history-limit",
+        type=int,
+        default=50,
+        help="Quantidade de execuções mantidas no histórico (padrão: 50).",
     )
-    index_all.add_argument(
-        "--fail-fast",
-        action="store_true",
-        help="Interrompe o pipeline após a primeira falha.",
+
+    run_status = subparsers.add_parser(
+        "run-status",
+        help="Mostra o estado persistido da última indexação agendada.",
     )
-    index_all.add_argument(
-        "--no-embeddings",
-        action="store_true",
-        help="Executa sincronização, normalização e banco sem embeddings.",
+    run_status.add_argument(
+        "--state-dir",
+        default=Path("state"),
+        type=Path,
+        help="Estado operacional (padrão: ./state).",
     )
-    _add_embedding_options(index_all)
-    index_all.add_argument("--batch-size", type=int, default=4)
-    _add_console_options(index_all)
+    _add_console_options(run_status)
 
     normalize = subparsers.add_parser(
         "normalize",
@@ -687,55 +817,82 @@ def main(argv: Sequence[str] | None = None) -> int:
             progress_label="pipeline",
             verbose=args.verbose,
         )
-        database_url: str | None = None
         try:
-            catalog = load_repository_catalog(args.config)
-            selected_ids = set(args.repository) if args.repository else None
-            known_ids = {repository.id for repository in catalog.repositories}
-            if selected_ids is not None:
-                unknown = sorted(selected_ids - known_ids)
-                if unknown:
-                    raise ValueError(
-                        "repositórios desconhecidos: " + ", ".join(unknown)
-                    )
-            selected_repositories = [
-                repository
-                for repository in catalog.enabled
-                if selected_ids is None or repository.id in selected_ids
-            ]
-            needs_https_credentials = not args.offline and any(
-                repository_uses_https(repository)
-                for repository in selected_repositories
-            )
-            credentials = (
-                load_git_credentials(args.env_file)
-                if needs_https_credentials
-                else None
-            )
-            database_url = load_database_url(args.env_file)
-            if credentials is not None:
-                reporter.success("Credenciais HTTPS não interativas configuradas")
-            result = index_all_repositories(
-                catalog=catalog,
-                database_url=database_url,
-                refresh_remote=not args.offline,
-                credentials=credentials,
-                repository_ids=selected_ids,
-                fail_fast=args.fail_fast,
-                include_embeddings=not args.no_embeddings,
-                embedding_model=args.embedding_model,
-                embedding_revision=args.embedding_revision,
-                device=args.device,
-                max_sequence_length=args.max_sequence_length,
-                batch_size=args.batch_size,
-                log=reporter.log,
-                progress=reporter.progress,
-            )
+            result = _execute_configured_index(args, reporter)
         except Exception as exc:
-            reporter.error(_safe_database_error(exc, database_url))
+            reporter.error(str(exc))
             return 1
         print(json.dumps(result, ensure_ascii=False))
         return 1 if int(result["failed"]) or int(result["warnings"]) else 0
+
+    if args.command == "run-scheduled":
+        console = ConsoleReporter(
+            args.quiet,
+            args.color,
+            progress_label="pipeline",
+            verbose=args.verbose,
+        )
+        state_dir = args.state_dir.expanduser().resolve()
+        lock_file = (
+            args.lock_file.expanduser().resolve()
+            if args.lock_file is not None
+            else state_dir / "index.lock"
+        )
+        metadata: dict[str, object] = {
+            "command": "run-scheduled",
+            "config_file": str(args.config.expanduser().resolve()),
+            "repositories": sorted(set(args.repository or [])),
+            "all_enabled_repositories": not bool(args.repository),
+            "refresh_remote": not args.offline,
+            "include_embeddings": not args.no_embeddings,
+            "batch_size": args.batch_size,
+            "device": args.device,
+        }
+
+        def action(recorder: RunStateRecorder) -> dict[str, object]:
+            reporter = _StateReporter(console, recorder)
+            return _execute_configured_index(args, reporter)
+
+        try:
+            result = run_managed(
+                state_dir=state_dir,
+                lock_file=lock_file,
+                metadata=metadata,
+                action=action,
+                history_limit=args.history_limit,
+            )
+        except RunAlreadyActiveError as exc:
+            console.warning(str(exc))
+            print(
+                json.dumps(
+                    {"status": "skipped", "reason": "already_running"},
+                    ensure_ascii=False,
+                )
+            )
+            return 0
+        except Exception as exc:
+            console.error(str(exc))
+            return 1
+        print(json.dumps(result, ensure_ascii=False))
+        return 1 if result["status"] in {"warning", "failed"} else 0
+
+    if args.command == "run-status":
+        reporter = ConsoleReporter(args.quiet, args.color, verbose=args.verbose)
+        try:
+            result = read_last_run(args.state_dir)
+        except ValueError as exc:
+            reporter.error(str(exc))
+            return 1
+        status = str(result.get("status", "unknown"))
+        level = "result" if status == "success" else (
+            "warning" if status in {"running", "warning"} else "error"
+        )
+        reporter.log(
+            f"Última execução: {status}; run_id={result.get('run_id', '-')}",
+            level,
+        )
+        print(json.dumps(result, ensure_ascii=False, indent=2))
+        return 1 if status == "failed" else 0
 
     if args.command == "normalize":
         reporter = ConsoleReporter(

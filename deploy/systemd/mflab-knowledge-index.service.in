@@ -1,0 +1,29 @@
+[Unit]
+Description=MFLab Knowledge incremental repository indexer
+Documentation=https://github.com/Mykaell-Max/mflab-knowledge-rag
+Wants=network-online.target
+After=network-online.target postgresql.service
+ConditionPathExists="@CONFIG_FILE@"
+ConditionPathExists="@ENV_FILE@"
+
+[Service]
+Type=oneshot
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+WorkingDirectory="@PROJECT_DIR@"
+Environment=PYTHONUNBUFFERED=1
+ExecStart="@PYTHON@" -m mflab_knowledge run-scheduled --config "@CONFIG_FILE@" --env-file "@ENV_FILE@" --state-dir "@STATE_DIR@" --batch-size @BATCH_SIZE@ --color never
+UMask=0077
+Nice=10
+IOSchedulingClass=best-effort
+IOSchedulingPriority=6
+TimeoutStartSec=infinity
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+LockPersonality=true

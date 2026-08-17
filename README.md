@@ -9,7 +9,7 @@ O projeto é separado do MFSim-NG: ele lê um clone ou snapshot fornecido por ca
 O piloto somente leitura já cobre inventário, sincronização multi-repositório
 e multi-branch,
 normalização, persistência no PostgreSQL e recuperação lexical,
-semântica e híbrida.
+semântica e híbrida, além da execução incremental agendada por `systemd`.
 Ele:
 
 - descobre arquivos automaticamente;
@@ -452,6 +452,29 @@ retoma somente os chunks ainda ausentes, sem abrir uma conexão por minibatch.
 serviço deve omitir `--no-embeddings`, para manter o RAG integralmente
 atualizado.
 
+### Execução automática no servidor
+
+O comando `run-scheduled` envolve o mesmo pipeline com trava contra concorrência,
+estado atômico da última execução, histórico limitado e progresso persistente.
+No servidor Linux, as unidades `systemd` podem ser geradas e instaladas sem
+caminhos fixos:
+
+```bash
+./scripts/install-systemd.sh \
+  --project-dir "$PWD" \
+  --user "$USER" \
+  --group "$(id -gn)" \
+  --interval 5min \
+  --batch-size 4 \
+  --run-now
+```
+
+O timer consulta os remotes depois de cada intervalo, reutiliza todo conteúdo
+inalterado e processa somente branches, documentos, chunks e embeddings novos.
+Não é necessário manter um terminal aberto. Instalação, estado, logs, retomada
+e comandos administrativos estão descritos em
+[`docs/operations.md`](docs/operations.md).
+
 Um repositório `pending` não pode ser habilitado. Antes de ativá-lo, confirme
 caminho, branch canônica, perfil e autorização de acesso.
 
@@ -473,8 +496,6 @@ As regras serão transformadas em política configurável depois que o inventár
 1. Executar e ampliar as suítes lexical e semântica com perguntas reais.
 2. Substituir âncoras heurísticas por parsing estrutural de código e casos.
 3. Expor `/search`, `/ask`, `/sources/{id}` e `/index/status`.
-4. Normalizar, carregar e calcular embeddings incrementalmente a partir do
-   manifesto agregado multi-repositório.
-5. Receber webhooks do GitLab e manter reconciliação agendada.
+4. Receber webhooks do GitLab como aceleração da reconciliação agendada.
 
 As decisões gerais e os limites de segurança estão documentados no `HANDOFF.md` do projeto de continuidade que originou este repositório.

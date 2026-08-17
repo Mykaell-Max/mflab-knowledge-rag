@@ -1,0 +1,12 @@
+[Unit]
+Description=Schedule MFLab Knowledge incremental indexing
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=@INTERVAL@
+AccuracySec=30s
+RandomizedDelaySec=30s
+Unit=mflab-knowledge-index.service
+
+[Install]
+WantedBy=timers.target

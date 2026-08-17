@@ -2,12 +2,14 @@ from __future__ import annotations
 
 import io
 import os
+import tempfile
 import unittest
-from contextlib import redirect_stderr
+from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from unittest import mock
 
-from mflab_knowledge.cli import ConsoleReporter, build_parser
+from mflab_knowledge.cli import ConsoleReporter, build_parser, main
+from mflab_knowledge.service_runner import RunAlreadyActiveError
 
 
 class _InteractiveBuffer(io.StringIO):
@@ -139,6 +141,22 @@ class ConsoleReporterTests(unittest.TestCase):
                 "8",
             ]
         )
+        scheduled = parser.parse_args(
+            [
+                "run-scheduled",
+                "--config",
+                "repositories.toml",
+                "--state-dir",
+                "runtime/state",
+                "--history-limit",
+                "75",
+                "--color",
+                "never",
+            ]
+        )
+        run_status = parser.parse_args(
+            ["run-status", "--state-dir", "runtime/state"]
+        )
         database = parser.parse_args(
             [
                 "db-search",
@@ -170,6 +188,10 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertTrue(index_all.offline)
         self.assertTrue(index_all.no_embeddings)
         self.assertEqual(index_all.batch_size, 8)
+        self.assertEqual(scheduled.state_dir, Path("runtime/state"))
+        self.assertEqual(scheduled.history_limit, 75)
+        self.assertFalse(scheduled.offline)
+        self.assertEqual(run_status.state_dir, Path("runtime/state"))
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
         self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))
@@ -187,6 +209,54 @@ class ConsoleReporterTests(unittest.TestCase):
                         "test",
                     ]
                 )
+
+    def test_scheduled_command_uses_default_lock_and_reports_success(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            state_dir = Path(temporary) / "state"
+            output = io.StringIO()
+            with mock.patch(
+                "mflab_knowledge.cli.run_managed",
+                return_value={
+                    "status": "success",
+                    "run_id": "run-1",
+                    "failed": 0,
+                    "warnings": 0,
+                },
+            ) as managed:
+                with redirect_stdout(output):
+                    status = main(
+                        [
+                            "run-scheduled",
+                            "--state-dir",
+                            str(state_dir),
+                            "--color",
+                            "never",
+                        ]
+                    )
+
+            self.assertEqual(status, 0)
+            self.assertIn('"status": "success"', output.getvalue())
+            self.assertEqual(
+                managed.call_args.kwargs["lock_file"],
+                state_dir.resolve() / "index.lock",
+            )
+            self.assertTrue(
+                managed.call_args.kwargs["metadata"]["refresh_remote"]
+            )
+
+    def test_scheduled_command_treats_active_run_as_safe_skip(self) -> None:
+        output = io.StringIO()
+        errors = io.StringIO()
+        with mock.patch(
+            "mflab_knowledge.cli.run_managed",
+            side_effect=RunAlreadyActiveError("ocupado"),
+        ):
+            with redirect_stdout(output), redirect_stderr(errors):
+                status = main(["run-scheduled", "--color", "never"])
+
+        self.assertEqual(status, 0)
+        self.assertIn('"reason": "already_running"', output.getvalue())
+        self.assertIn("ocupado", errors.getvalue())
 
 
 if __name__ == "__main__":
