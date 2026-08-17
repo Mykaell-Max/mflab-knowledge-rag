@@ -346,46 +346,58 @@ def _run_git_with_progress(
         f"Git fetch iniciado; timeout configurado: {timeout_seconds}s",
         "info",
     )
-    while True:
-        now = time.monotonic()
-        elapsed = now - started
-        if elapsed >= timeout_seconds:
+    try:
+        while True:
+            now = time.monotonic()
+            elapsed = now - started
+            if elapsed >= timeout_seconds:
+                process.kill()
+                process.wait(timeout=10)
+                raise ValueError(
+                    f"Git fetch excedeu o timeout configurado de {timeout_seconds}s"
+                )
+            try:
+                message = messages.get(timeout=min(1.0, timeout_seconds - elapsed))
+            except queue.Empty:
+                message = ""
+
+            if message is None:
+                output_finished = True
+            elif message:
+                output_tail.append(message)
+                signature, should_log = _git_progress_signature(
+                    message,
+                    previous=last_signature,
+                )
+                if should_log:
+                    log(f"Git fetch: {_format_git_progress(message)}", "info")
+                    last_log = time.monotonic()
+                    last_signature = signature
+
+            now = time.monotonic()
+            return_code = process.poll()
+            if return_code is None and now - last_log >= heartbeat_seconds:
+                log(
+                    f"Git fetch ainda em andamento ({int(now - started)}s)",
+                    "info",
+                )
+                last_log = now
+
+            if return_code is not None and output_finished:
+                if return_code != 0:
+                    detail = output_tail[-1] if output_tail else "erro desconhecido"
+                    raise ValueError(f"Git fetch falhou: {detail}")
+                log(f"Git fetch concluído em {int(now - started)}s", "success")
+                return
+    finally:
+        if process.poll() is None:
             process.kill()
-            process.wait(timeout=10)
-            raise ValueError(
-                f"Git fetch excedeu o timeout configurado de {timeout_seconds}s"
-            )
-        try:
-            message = messages.get(timeout=min(1.0, timeout_seconds - elapsed))
-        except queue.Empty:
-            message = ""
-
-        if message is None:
-            output_finished = True
-        elif message:
-            output_tail.append(message)
-            signature, should_log = _git_progress_signature(
-                message,
-                previous=last_signature,
-            )
-            if should_log:
-                log(f"Git fetch: {_format_git_progress(message)}", "info")
-                last_log = time.monotonic()
-                last_signature = signature
-
-        now = time.monotonic()
-        return_code = process.poll()
-        if return_code is None and now - last_log >= heartbeat_seconds:
-            log(f"Git fetch ainda em andamento ({int(now - started)}s)", "info")
-            last_log = now
-
-        if return_code is not None and output_finished:
-            reader.join(timeout=1)
-            if return_code != 0:
-                detail = output_tail[-1] if output_tail else "erro desconhecido"
-                raise ValueError(f"Git fetch falhou: {detail}")
-            log(f"Git fetch concluído em {int(now - started)}s", "success")
-            return
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                pass
+        reader.join(timeout=2)
+        process.stdout.close()
 
 
 def _git_progress_signature(

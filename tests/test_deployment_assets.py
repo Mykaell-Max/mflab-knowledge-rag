@@ -35,6 +35,9 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("@", rendered)
         self.assertIn("run-scheduled", rendered)
         self.assertIn("OnUnitInactiveSec=5min", rendered)
+        self.assertIn("ConditionPathExists=@CONFIG_FILE@", service)
+        self.assertIn("WorkingDirectory=@PROJECT_DIR@", service)
+        self.assertNotIn('ConditionPathExists="', service)
         self.assertIn("systemd-analyze verify", installer)
         for forbidden in ("/home/max", "mfsim-ng", "mfsim-cmake"):
             self.assertNotIn(forbidden, service.casefold())

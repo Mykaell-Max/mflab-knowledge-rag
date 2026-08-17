@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import io
 import os
 import shutil
 import subprocess
@@ -32,6 +33,24 @@ def _git(repository: Path, *arguments: str) -> str:
 
 @unittest.skipUnless(shutil.which("git"), "Git não está disponível")
 class RepositorySnapshotTests(unittest.TestCase):
+    def test_git_progress_closes_subprocess_output(self) -> None:
+        process = mock.MagicMock()
+        process.stdout = io.StringIO("git version test\n")
+        process.poll.return_value = 0
+
+        with mock.patch(
+            "mflab_knowledge.repository.subprocess.Popen",
+            return_value=process,
+        ):
+            repository._run_git_with_progress(
+                ["git", "--version"],
+                timeout_seconds=10,
+                env={},
+                log=lambda _message, _level="info": None,
+            )
+
+        self.assertTrue(process.stdout.closed)
+
     def test_compares_unrelated_branch_histories_without_failing(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
