@@ -10,6 +10,8 @@ O piloto somente leitura já cobre inventário, sincronização multi-repositór
 e multi-branch,
 normalização, persistência no PostgreSQL e recuperação lexical,
 semântica e híbrida, além da execução incremental agendada por `systemd`.
+Uma API HTTP local expõe o estado e a recuperação citável sem duplicar o
+pipeline.
 Ele:
 
 - descobre arquivos automaticamente;
@@ -26,10 +28,12 @@ Ele:
 - calcula embeddings incrementais com modelo local e armazena-os no pgvector;
 - combina os rankings lexical e semântico por Reciprocal Rank Fusion (RRF);
 - executa as mesmas suítes versionadas de regressão em cada modo.
+- serve saúde, estado, cobertura por repositório e busca por HTTP em loopback;
 - aplica branch canônica, escopo e filtros independentes por repositório,
   declarados em TOML e registrados por hash no manifesto agregado.
 
-A API RAG e os metadados colaborativos do GitLab ainda serão adicionados.
+Respostas geradas por um LLM e os metadados colaborativos do GitLab ainda serão
+adicionados.
 
 ## Requisitos
 
@@ -38,8 +42,38 @@ A API RAG e os metadados colaborativos do GitLab ainda serão adicionados.
 - Git disponível no `PATH` para detectar branch e commit de clones reais.
 - PostgreSQL local e o extra opcional `postgres` para os comandos `db-*`;
 - pgvector e o extra `embeddings` somente para busca semântica/híbrida.
+- FastAPI/Uvicorn pelo extra `service` somente para o serviço HTTP.
 
 O inventário inicial não instala bibliotecas e não precisa acessar a rede.
+
+## API RAG local
+
+Instale o transporte HTTP junto dos backends já utilizados:
+
+```bash
+python3 -m pip install -e '.[postgres,embeddings,service]'
+```
+
+Inicie o processo de validação em primeiro plano:
+
+```bash
+.venv/bin/python -m mflab_knowledge serve \
+  --env-file .env \
+  --state-dir state \
+  --host 127.0.0.1 \
+  --port 8765 \
+  --color always
+```
+
+O processo não carrega o modelo na inicialização. A GPU só é ocupada na
+primeira chamada `semantic` ou `hybrid`, e a mesma instância do modelo é
+reutilizada nas consultas seguintes. Os endpoints iniciais são `/health`,
+`/status`, `/repositories` e `POST /search`; a documentação interativa fica em
+`/docs`. O contrato completo está em [`docs/api.md`](docs/api.md).
+
+Enquanto não houver autenticação, o comando recusa endereços que não sejam
+loopback. As classes `public` e `lab` são o teto padrão do processo, e cada
+requisição pode apenas restringir esse conjunto, nunca ampliá-lo.
 
 ## Uso no computador do laboratório
 

@@ -197,6 +197,24 @@ opcionalmente limitado ao repositório afetado, em vez de reimplementar as etapa
 
 O webhook apenas indica que algo mudou. A fonte canônica continua sendo o GitLab consultado com credenciais somente leitura.
 
+## Serviço de recuperação
+
+A API HTTP é uma camada fina e somente leitura sobre as mesmas funções de
+estado e recuperação usadas pelo CLI. Ela não conhece nomes de repositórios,
+projetos, branches, caminhos ou símbolos. Esses valores continuam vindo do banco
+e dos filtros da requisição.
+
+O processo define um teto de classes de acesso no startup. Uma requisição pode
+selecionar somente um subconjunto desse teto, e o predicado de ACL continua sendo
+aplicado no PostgreSQL antes do retorno do texto. Sem autenticação, o servidor
+aceita exclusivamente endereços loopback.
+
+Buscas lexicais não inicializam o runtime de embeddings. Na primeira busca
+semântica ou híbrida, uma única instância local do modelo é carregada e
+reutilizada. O acesso a ela é serializado, preservando a GPU e evitando uma
+cópia por requisição. Esse contrato inicial favorece previsibilidade; fila,
+limites por usuário e concorrência medida entram junto da autenticação.
+
 ## Política para novas fontes
 
 - Arquivo novo em projeto e branch autorizados: automático.

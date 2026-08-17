@@ -613,6 +613,124 @@ def database_status(database_url: str) -> dict[str, object]:
     return result
 
 
+def repository_status(
+    database_url: str,
+    *,
+    embedding_profile: str | None = None,
+    allowed_access: set[str] | None = None,
+) -> list[dict[str, object]]:
+    """Return repository-level coverage without exposing document contents."""
+
+    effective_access = allowed_access if allowed_access is not None else {"public"}
+    if not effective_access or not effective_access.issubset(
+        RETRIEVABLE_ACCESS_CLASSES
+    ):
+        raise ValueError("filtro de acesso inválido ou vazio")
+    _psycopg, dict_row = _driver()
+    with _connect(database_url, row_factory=dict_row) as connection:
+        rows = connection.execute(
+            """
+            WITH document_stats AS (
+                SELECT repository_id, count(*) AS documents
+                FROM mflab_knowledge.documents
+                WHERE access_class = ANY(%(allowed_access)s::text[])
+                GROUP BY repository_id
+            ), occurrence_stats AS (
+                SELECT
+                    document.repository_id,
+                    count(*) AS occurrences,
+                    count(DISTINCT occurrence.branch)
+                        FILTER (WHERE occurrence.branch IS NOT NULL) AS branches,
+                    array_agg(DISTINCT occurrence.branch ORDER BY occurrence.branch)
+                        FILTER (
+                            WHERE occurrence.canonical
+                              AND occurrence.branch IS NOT NULL
+                        ) AS canonical_branches
+                FROM mflab_knowledge.documents AS document
+                JOIN mflab_knowledge.document_occurrences AS occurrence
+                  ON occurrence.document_id = document.document_id
+                WHERE document.access_class = ANY(%(allowed_access)s::text[])
+                GROUP BY document.repository_id
+            ), chunk_stats AS (
+                SELECT
+                    document.repository_id,
+                    count(*) AS chunks,
+                    count(*) FILTER (
+                        WHERE EXISTS (
+                            SELECT 1
+                            FROM mflab_knowledge.chunk_embeddings AS embedding
+                            WHERE embedding.chunk_id = chunk.chunk_id
+                              AND (
+                                  %(embedding_profile)s::text IS NULL
+                                  OR embedding.model_id =
+                                      %(embedding_profile)s::text
+                              )
+                        )
+                    ) AS embedded_chunks
+                FROM mflab_knowledge.documents AS document
+                JOIN mflab_knowledge.chunks AS chunk
+                  ON chunk.document_id = document.document_id
+                WHERE document.access_class = ANY(%(allowed_access)s::text[])
+                GROUP BY document.repository_id
+            ), latest_ingestion AS (
+                SELECT DISTINCT ON (repository_id)
+                    repository_id,
+                    completed_at
+                FROM mflab_knowledge.ingestion_runs
+                ORDER BY repository_id, run_id DESC
+            )
+            SELECT
+                repository.repository_id,
+                repository.project,
+                coalesce(document_stats.documents, 0) AS documents,
+                coalesce(occurrence_stats.occurrences, 0) AS occurrences,
+                coalesce(occurrence_stats.branches, 0) AS branches,
+                coalesce(occurrence_stats.canonical_branches, ARRAY[]::text[])
+                    AS canonical_branches,
+                coalesce(chunk_stats.chunks, 0) AS chunks,
+                coalesce(chunk_stats.embedded_chunks, 0) AS embedded_chunks,
+                latest_ingestion.completed_at AS last_ingestion
+            FROM mflab_knowledge.repositories AS repository
+            LEFT JOIN document_stats
+              ON document_stats.repository_id = repository.repository_id
+            LEFT JOIN occurrence_stats
+              ON occurrence_stats.repository_id = repository.repository_id
+            LEFT JOIN chunk_stats
+              ON chunk_stats.repository_id = repository.repository_id
+            LEFT JOIN latest_ingestion
+              ON latest_ingestion.repository_id = repository.repository_id
+            WHERE EXISTS (
+                SELECT 1
+                FROM mflab_knowledge.documents AS visible_document
+                WHERE visible_document.repository_id = repository.repository_id
+                  AND visible_document.access_class =
+                      ANY(%(allowed_access)s::text[])
+            )
+            ORDER BY repository.project, repository.repository_id
+            """,
+            {
+                "embedding_profile": embedding_profile,
+                "allowed_access": sorted(effective_access),
+            },
+        ).fetchall()
+
+    results: list[dict[str, object]] = []
+    for row in rows:
+        value = dict(row)
+        if value["last_ingestion"] is not None:
+            value["last_ingestion"] = value["last_ingestion"].isoformat()
+        value["canonical_branches"] = list(value["canonical_branches"] or [])
+        chunks = int(value["chunks"])
+        embedded = int(value["embedded_chunks"])
+        value["embedding_coverage"] = (
+            round(embedded / chunks, 6) if chunks else 0.0
+        )
+        value["embedding_profile"] = embedding_profile
+        value["allowed_access"] = sorted(effective_access)
+        results.append(value)
+    return results
+
+
 def database_fingerprint(database_url: str) -> dict[str, object]:
     _psycopg, dict_row = _driver()
     with _connect(database_url, row_factory=dict_row) as connection:

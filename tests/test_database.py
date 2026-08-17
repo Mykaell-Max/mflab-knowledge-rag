@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -155,6 +156,59 @@ class DatabaseTests(unittest.TestCase):
                 query="DPMManager",
                 allowed_access={"pending"},
             )
+
+    def test_repository_status_reports_branch_and_embedding_coverage(self) -> None:
+        class StatusConnection:
+            def __enter__(self) -> StatusConnection:
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+            def execute(
+                self,
+                sql: str,
+                parameters: dict[str, object],
+            ) -> _Result:
+                self.sql = sql
+                self.parameters = parameters
+                return _Result(
+                    [
+                        {
+                            "repository_id": "solver-a1",
+                            "project": "Solver",
+                            "documents": 20,
+                            "occurrences": 35,
+                            "branches": 4,
+                            "canonical_branches": ["trunk"],
+                            "chunks": 100,
+                            "embedded_chunks": 75,
+                            "last_ingestion": datetime(
+                                2026, 8, 17, tzinfo=timezone.utc
+                            ),
+                        }
+                    ]
+                )
+
+        connection = StatusConnection()
+        with mock.patch.object(database, "_driver", return_value=(object(), object())):
+            with mock.patch.object(database, "_connect", return_value=connection):
+                results = database.repository_status(
+                    "postgresql://not-logged",
+                    embedding_profile="profile-1",
+                    allowed_access={"public", "lab"},
+                )
+
+        self.assertIn("count(DISTINCT occurrence.branch)", connection.sql)
+        self.assertIn("access_class = ANY(%(allowed_access)s::text[])", connection.sql)
+        self.assertEqual(results[0]["canonical_branches"], ["trunk"])
+        self.assertEqual(results[0]["embedding_coverage"], 0.75)
+        self.assertEqual(results[0]["embedding_profile"], "profile-1")
+        self.assertEqual(connection.parameters["embedding_profile"], "profile-1")
+        self.assertEqual(connection.parameters["allowed_access"], ["lab", "public"])
+        self.assertEqual(
+            results[0]["last_ingestion"], "2026-08-17T00:00:00+00:00"
+        )
 
 
 if __name__ == "__main__":

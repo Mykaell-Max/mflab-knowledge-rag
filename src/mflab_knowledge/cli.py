@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Sequence
 from urllib.parse import urlsplit
 
+from mflab_knowledge.api import ApiSettings, run_api
 from mflab_knowledge.credentials import load_database_url, load_git_credentials
 from mflab_knowledge.database import (
     database_fingerprint,
@@ -560,6 +561,37 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_console_options(run_status)
 
+    serve = subparsers.add_parser(
+        "serve",
+        help="Inicia a API RAG local e somente leitura.",
+    )
+    serve.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Endereço loopback local (padrão: 127.0.0.1).",
+    )
+    serve.add_argument("--port", type=int, default=8765)
+    serve.add_argument(
+        "--state-dir",
+        default=Path("state"),
+        type=Path,
+        help="Estado do indexador exibido pela API (padrão: ./state).",
+    )
+    serve.add_argument(
+        "--allow-access",
+        action="append",
+        choices=("public", "lab", "project", "restricted"),
+        help="Classe máxima liberada pela API; padrão: public e lab.",
+    )
+    serve.add_argument(
+        "--log-level",
+        choices=("critical", "error", "warning", "info", "debug"),
+        default="info",
+    )
+    _add_retrieval_policy_option(serve)
+    _add_embedding_options(serve)
+    _add_database_options(serve)
+
     normalize = subparsers.add_parser(
         "normalize",
         help="Normaliza catálogos sincronizados em documentos e chunks JSONL.",
@@ -976,6 +1008,50 @@ def main(argv: Sequence[str] | None = None) -> int:
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 1 if failures else 0
+
+    if args.command == "serve":
+        reporter = ConsoleReporter(
+            args.quiet,
+            args.color,
+            progress_label="API",
+            verbose=args.verbose,
+        )
+        database_url: str | None = None
+        try:
+            database_url = load_database_url(args.env_file)
+            allowed_access = set(args.allow_access or ("public", "lab"))
+            settings = ApiSettings(
+                database_url=database_url,
+                state_dir=args.state_dir,
+                retrieval_config=args.retrieval_config,
+                allowed_access=frozenset(allowed_access),
+                embedding_model=args.embedding_model,
+                embedding_revision=args.embedding_revision,
+                device=args.device,
+                max_sequence_length=args.max_sequence_length,
+            )
+            reporter.section("SERVIÇO HTTP LOCAL")
+            reporter.log(
+                f"Escutando em http://{args.host}:{args.port}; "
+                f"documentação em /docs",
+                "info",
+            )
+            reporter.log(
+                "O modelo de embeddings será carregado na primeira busca "
+                "semantic ou hybrid",
+                "info",
+            )
+            run_api(
+                settings,
+                host=args.host,
+                port=args.port,
+                log_level=args.log_level,
+                log=reporter.log,
+            )
+            return 0
+        except Exception as exc:
+            reporter.error(_safe_database_error(exc, database_url))
+            return 1
 
     if args.command in {
         "db-init",

@@ -157,6 +157,17 @@ class ConsoleReporterTests(unittest.TestCase):
         run_status = parser.parse_args(
             ["run-status", "--state-dir", "runtime/state"]
         )
+        serve = parser.parse_args(
+            [
+                "serve",
+                "--port",
+                "9000",
+                "--allow-access",
+                "public",
+                "--device",
+                "cpu",
+            ]
+        )
         database = parser.parse_args(
             [
                 "db-search",
@@ -192,6 +203,10 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(scheduled.history_limit, 75)
         self.assertFalse(scheduled.offline)
         self.assertEqual(run_status.state_dir, Path("runtime/state"))
+        self.assertEqual(serve.host, "127.0.0.1")
+        self.assertEqual(serve.port, 9000)
+        self.assertEqual(serve.allow_access, ["public"])
+        self.assertEqual(serve.device, "cpu")
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
         self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))
@@ -257,6 +272,32 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(status, 0)
         self.assertIn('"reason": "already_running"', output.getvalue())
         self.assertIn("ocupado", errors.getvalue())
+
+    def test_serve_builds_loopback_service_settings(self) -> None:
+        with mock.patch(
+            "mflab_knowledge.cli.load_database_url",
+            return_value="postgresql:///mflab_knowledge",
+        ):
+            with mock.patch("mflab_knowledge.cli.run_api") as run:
+                status = main(
+                    [
+                        "serve",
+                        "--port",
+                        "9001",
+                        "--allow-access",
+                        "lab",
+                        "--allow-access",
+                        "project",
+                        "--color",
+                        "never",
+                    ]
+                )
+
+        self.assertEqual(status, 0)
+        settings = run.call_args.args[0]
+        self.assertEqual(settings.allowed_access, frozenset({"lab", "project"}))
+        self.assertEqual(run.call_args.kwargs["host"], "127.0.0.1")
+        self.assertEqual(run.call_args.kwargs["port"], 9001)
 
 
 if __name__ == "__main__":
