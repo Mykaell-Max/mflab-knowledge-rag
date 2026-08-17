@@ -80,6 +80,61 @@ class EmbeddingTests(unittest.TestCase):
         self.assertEqual(missing_parameters[1], ["repository-a", "repository-b"])
         self.assertEqual(reused_parameters[1], ["repository-a", "repository-b"])
 
+    def test_embed_groups_minibatches_into_transactional_checkpoints(self) -> None:
+        missing = [
+            {
+                "chunk_id": f"chunk-{index}",
+                "project": "Project",
+                "path": f"src/file-{index}.cpp",
+                "format": "cpp",
+                "title": "symbol",
+                "text": "content",
+            }
+            for index in range(5)
+        ]
+        connection = mock.MagicMock()
+        cursor = connection.cursor.return_value
+        cursor.fetchall.return_value = missing
+        connection.execute.return_value.fetchone.return_value = {
+            "embeddings_count": 7
+        }
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+        embedder = mock.MagicMock()
+        embedder.profile_id = "profile"
+        embedder.model_id = "model"
+        embedder.revision = "revision"
+        embedder.max_sequence_length = 4096
+        embedder.device = "cpu"
+        embedder.encode_documents.side_effect = lambda texts, batch_size: [
+            [0.0] * 1024 for _text in texts
+        ]
+
+        with mock.patch.object(embeddings, "initialize_vector_database"):
+            with mock.patch.object(embeddings, "_driver", return_value=(None, object())):
+                with mock.patch.object(
+                    embeddings,
+                    "_connect",
+                    return_value=context,
+                ) as connect:
+                    with mock.patch.object(
+                        embeddings,
+                        "LocalEmbedder",
+                        return_value=embedder,
+                    ):
+                        result = embeddings.embed_database(
+                            "postgresql://unused",
+                            batch_size=2,
+                            checkpoint_size=4,
+                        )
+
+        self.assertEqual(embedder.encode_documents.call_count, 3)
+        self.assertEqual(cursor.executemany.call_count, 2)
+        self.assertEqual(connect.call_count, 5)
+        self.assertEqual(result["embedded"], 5)
+        self.assertEqual(result["reused"], 7)
+        self.assertEqual(result["checkpoints"], 2)
+
     def test_semantic_search_reads_available_count_from_dict_row(self) -> None:
         available = mock.MagicMock()
         available.fetchone.return_value = {"embeddings_count": 1}

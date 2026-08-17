@@ -443,6 +443,10 @@ permanecem simultaneamente no banco. Falhas são isoladas por repositório e o
 resultado auditável fica em `data/repositories/index-all.generated.yaml`, sem a
 URL do banco ou credenciais.
 
+Embeddings novos são persistidos em checkpoints transacionais de tamanho
+limitado. Uma interrupção preserva checkpoints anteriores e a execução seguinte
+retoma somente os chunks ainda ausentes, sem abrir uma conexão por minibatch.
+
 `--repository ID` restringe um teste, `--offline` usa os mirrors existentes e
 `--no-embeddings` valida somente até a carga no banco. A operação normal do
 serviço deve omitir `--no-embeddings`, para manter o RAG integralmente

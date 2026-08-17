@@ -25,6 +25,7 @@ DEFAULT_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B"
 DEFAULT_EMBEDDING_REVISION = "84c1ea74ee30f1c5e0e4bb16ef369b39cf05a9ba"
 EMBEDDING_DIMENSIONS = 1024
 DEFAULT_MAX_SEQUENCE_LENGTH = 4096
+DEFAULT_EMBEDDING_CHECKPOINT_SIZE = 1024
 QUERY_PROMPT = (
     "Instruct: Given a technical question about scientific software, retrieve "
     "relevant code, configuration, or documentation passages that answer it\n"
@@ -164,6 +165,7 @@ def embed_database(
     device: str = "auto",
     max_sequence_length: int = DEFAULT_MAX_SEQUENCE_LENGTH,
     batch_size: int = 4,
+    checkpoint_size: int = DEFAULT_EMBEDDING_CHECKPOINT_SIZE,
     initialize_vector_backend: bool = True,
     repository_ids: set[str] | None = None,
     log: LogCallback | None = None,
@@ -171,6 +173,9 @@ def embed_database(
 ) -> dict[str, object]:
     if batch_size < 1 or batch_size > 256:
         raise ValueError("batch_size deve estar entre 1 e 256")
+    if checkpoint_size < 1 or checkpoint_size > 16384:
+        raise ValueError("checkpoint_size deve estar entre 1 e 16384")
+    effective_checkpoint_size = max(batch_size, checkpoint_size)
     logger = log or (lambda _message, _level="info": None)
     if initialize_vector_backend:
         initialize_vector_database(database_url, log=logger)
@@ -248,6 +253,7 @@ def embed_database(
             "embedded": 0,
             "reused": reused,
             "total": reused,
+            "checkpoints": 0,
         }
 
     embedder = LocalEmbedder(
@@ -282,12 +288,33 @@ def embed_database(
             ),
         )
     embedded = 0
-    for start in range(0, total, batch_size):
-        batch = missing[start : start + batch_size]
-        vectors = embedder.encode_documents(
-            [_embedding_text(row) for row in batch],
-            batch_size=batch_size,
-        )
+    checkpoints = 0
+    logger(
+        f"Processando {total} embeddings pendentes em checkpoints de até "
+        f"{effective_checkpoint_size}",
+        "info",
+    )
+    for checkpoint_start in range(0, total, effective_checkpoint_size):
+        checkpoint = missing[
+            checkpoint_start : checkpoint_start + effective_checkpoint_size
+        ]
+        checkpoint_rows: list[tuple[object, ...]] = []
+        for batch_start in range(0, len(checkpoint), batch_size):
+            batch = checkpoint[batch_start : batch_start + batch_size]
+            vectors = embedder.encode_documents(
+                [_embedding_text(row) for row in batch],
+                batch_size=batch_size,
+            )
+            checkpoint_rows.extend(
+                (row["chunk_id"], embedder.profile_id, vector)
+                for row, vector in zip(batch, vectors, strict=True)
+            )
+            if progress is not None:
+                progress(
+                    checkpoint_start + batch_start + len(batch),
+                    total,
+                    str(batch[-1]["path"]),
+                )
         with _connect(database_url) as connection:
             embedder.register_vector(connection)
             connection.cursor().executemany(
@@ -299,14 +326,10 @@ def embed_database(
                     embedding = EXCLUDED.embedding,
                     updated_at = now()
                 """,
-                [
-                    (row["chunk_id"], embedder.profile_id, vector)
-                    for row, vector in zip(batch, vectors, strict=True)
-                ],
+                checkpoint_rows,
             )
-        embedded += len(batch)
-        if progress is not None:
-            progress(embedded, total, str(batch[-1]["path"]))
+        embedded += len(checkpoint)
+        checkpoints += 1
 
     with _connect(database_url) as connection:
         connection.execute(
@@ -330,6 +353,7 @@ def embed_database(
         "embedded": embedded,
         "reused": reused,
         "total": embedded + reused,
+        "checkpoints": checkpoints,
     }
 
 
