@@ -1,0 +1,31 @@
+[Unit]
+Description=MFLab Knowledge local read-only RAG API
+Documentation=https://github.com/Mykaell-Max/mflab-knowledge-rag
+Wants=network-online.target
+After=network-online.target postgresql.service
+ConditionPathExists=@PYTHON@
+ConditionPathExists=@ENV_FILE@
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+WorkingDirectory=@PROJECT_DIR@
+Environment=PYTHONUNBUFFERED=1
+ExecStart="@PYTHON@" -m mflab_knowledge serve --env-file "@ENV_FILE@" --state-dir "@STATE_DIR@" --host 127.0.0.1 --port @PORT@ --color never
+Restart=on-failure
+RestartSec=5s
+TimeoutStopSec=60s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

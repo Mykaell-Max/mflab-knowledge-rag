@@ -75,6 +75,20 @@ Enquanto não houver autenticação, o comando recusa endereços que não sejam
 loopback. As classes `public` e `lab` são o teto padrão do processo, e cada
 requisição pode apenas restringir esse conjunto, nunca ampliá-lo.
 
+Depois da validação em primeiro plano, instale a API como serviço permanente:
+
+```bash
+./scripts/install-api-systemd.sh \
+  --project-dir "$PWD" \
+  --user "$USER" \
+  --group "$(id -gn)" \
+  --port 8765
+```
+
+O instalador renderiza e verifica uma unidade genérica, protege `.env`, inicia o
+processo, consulta `/health` e encerra com erro se a API não ficar saudável. A
+unidade reinicia após falhas e no boot, sem depender de um terminal aberto.
+
 ## Uso no computador do laboratório
 
 Crie um ambiente e instale o projeto localmente:

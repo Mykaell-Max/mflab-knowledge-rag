@@ -81,3 +81,32 @@ nunca é recuperável.
 
 A interface OpenAPI/Swagger está disponível em `http://127.0.0.1:8765/docs`
 durante a execução.
+
+## Serviço permanente
+
+Após validar o processo em primeiro plano, instale a unidade `systemd`:
+
+```bash
+./scripts/install-api-systemd.sh \
+  --project-dir "$PWD" \
+  --user "$USER" \
+  --group "$(id -gn)" \
+  --port 8765
+```
+
+O instalador verifica dependências, placeholders e sintaxe da unidade antes de
+usar `sudo`. Em seguida, habilita e reinicia `mflab-knowledge-api.service`,
+espera `/health` responder e mostra o estado final. Uma reinstalação com outra
+porta substitui somente essa unidade e reinicia a API.
+
+Comandos administrativos:
+
+```bash
+systemctl status mflab-knowledge-api.service --no-pager
+journalctl -u mflab-knowledge-api.service --since today
+sudo systemctl restart mflab-knowledge-api.service
+```
+
+O serviço continua preso a `127.0.0.1`. Acesso por outra máquina deverá passar
+posteriormente por um proxy autenticado; mudar apenas a porta não altera essa
+restrição.

@@ -82,9 +82,33 @@ ser solicitada com:
 sudo systemctl start mflab-knowledge-index.service
 ```
 
-Para alterar intervalo, usuário ou batch, execute novamente o instalador. Ele
-substitui somente as duas unidades pertencentes ao MFLab Knowledge e recarrega o
-`systemd`.
+## API RAG permanente
+
+A API usa uma unidade separada do indexador. O timer pode atualizar o banco
+enquanto o processo HTTP permanece disponível; cada consulta abre conexões
+curtas e enxerga as transações já confirmadas.
+
+```bash
+./scripts/install-api-systemd.sh \
+  --project-dir "$PWD" \
+  --user "$USER" \
+  --group "$(id -gn)" \
+  --port 8765
+```
+
+O serviço é habilitado no boot, reinicia após falhas e escuta somente em
+`127.0.0.1`. O instalador verifica `/health` depois do restart. Inspeção:
+
+```bash
+systemctl status mflab-knowledge-api.service --no-pager
+journalctl -u mflab-knowledge-api.service --since today
+curl --fail http://127.0.0.1:8765/health
+```
+
+Para alterar intervalo, usuário ou batch do indexador, execute novamente
+`install-systemd.sh`. Para alterar a porta da API, execute novamente
+`install-api-systemd.sh`. Cada instalador substitui somente as unidades sob sua
+responsabilidade e recarrega o `systemd`.
 
 ## Arquivos e permissões
 

@@ -44,6 +44,38 @@ class DeploymentAssetTests(unittest.TestCase):
             self.assertNotIn(forbidden, timer.casefold())
             self.assertNotIn(forbidden, installer.casefold())
 
+    def test_api_systemd_assets_are_loopback_only_and_generic(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        service = (
+            root / "deploy/systemd/mflab-knowledge-api.service.in"
+        ).read_text(encoding="utf-8")
+        installer = (root / "scripts/install-api-systemd.sh").read_text(
+            encoding="utf-8"
+        )
+        replacements = {
+            "@PROJECT_DIR@": "/srv/mflab-knowledge-rag",
+            "@SERVICE_USER@": "knowledge",
+            "@SERVICE_GROUP@": "knowledge",
+            "@PYTHON@": "/srv/mflab-knowledge-rag/.venv/bin/python",
+            "@ENV_FILE@": "/srv/mflab-knowledge-rag/.env",
+            "@STATE_DIR@": "/srv/mflab-knowledge-rag/state",
+            "@PORT@": "8765",
+        }
+        rendered = service
+        for placeholder, value in replacements.items():
+            rendered = rendered.replace(placeholder, value)
+
+        self.assertNotIn("@", rendered)
+        self.assertIn("--host 127.0.0.1", rendered)
+        self.assertIn("Restart=on-failure", rendered)
+        self.assertIn("ConditionPathExists=@PYTHON@", service)
+        self.assertNotIn('ConditionPathExists="', service)
+        self.assertIn("systemd-analyze verify", installer)
+        self.assertIn("/health", installer)
+        for forbidden in ("/home/max", "mfsim-ng", "mfsim-cmake"):
+            self.assertNotIn(forbidden, service.casefold())
+            self.assertNotIn(forbidden, installer.casefold())
+
 
 if __name__ == "__main__":
     unittest.main()
