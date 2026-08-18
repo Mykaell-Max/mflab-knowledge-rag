@@ -1,10 +1,11 @@
 from __future__ import annotations
 
 import importlib
+import hmac
 import ipaddress
 import threading
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable
 
@@ -67,12 +68,15 @@ class ApiSettings:
     embedding_revision: str = DEFAULT_EMBEDDING_REVISION
     device: str = "auto"
     max_sequence_length: int = DEFAULT_MAX_SEQUENCE_LENGTH
+    api_key: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.allowed_access or not self.allowed_access.issubset(
             RETRIEVABLE_ACCESS_CLASSES
         ):
             raise ValueError("classes de acesso do serviço inválidas ou vazias")
+        if self.api_key is not None and len(self.api_key) < 32:
+            raise ValueError("api_key deve possuir pelo menos 32 caracteres")
 
 
 class RagApiService:
@@ -167,6 +171,12 @@ class RagApiService:
                 "model_loaded": self.model_loaded,
             },
             "generation": self.generation_status(),
+            "authentication": {
+                "configured": self.settings.api_key is not None,
+                "mode": (
+                    "shared_bearer" if self.settings.api_key is not None else "none"
+                ),
+            },
         }
 
     def generation_status(self) -> dict[str, object]:
@@ -469,18 +479,41 @@ class RagApiService:
         }
 
 
-def _validate_loopback_host(host: str) -> None:
+def _is_loopback_host(host: str) -> bool:
     if host.casefold() == "localhost":
-        return
+        return True
     try:
         address = ipaddress.ip_address(host)
-    except ValueError as exc:
+    except ValueError:
+        return False
+    return address.is_loopback
+
+
+def api_request_authorized(
+    expected_key: str | None,
+    authorization: str | None,
+    *,
+    client_host: str | None = None,
+) -> bool:
+    # Local automation remains usable without distributing the LAN credential.
+    if client_host is not None and _is_loopback_host(client_host):
+        return True
+    if expected_key is None:
+        return True
+    if not authorization or not authorization.startswith("Bearer "):
+        return False
+    supplied = authorization[7:].strip()
+    return bool(supplied) and hmac.compare_digest(
+        expected_key.encode("utf-8"),
+        supplied.encode("utf-8"),
+    )
+
+
+def _validate_api_host(host: str, api_key: str | None) -> None:
+    if not _is_loopback_host(host) and api_key is None:
         raise ValueError(
-            "o serviço sem autenticação aceita somente um endereço loopback"
-        ) from exc
-    if not address.is_loopback:
-        raise ValueError(
-            "o serviço sem autenticação aceita somente um endereço loopback"
+            "bind fora do loopback exige MFLAB_API_KEY com pelo menos "
+            "32 caracteres"
         )
 
 
@@ -492,7 +525,7 @@ def run_api(
     log_level: str = "info",
     log: LogCallback | None = None,
 ) -> None:
-    _validate_loopback_host(host)
+    _validate_api_host(host, settings.api_key)
     if port < 1024 or port > 65535:
         raise ValueError("port deve estar entre 1024 e 65535")
     try:

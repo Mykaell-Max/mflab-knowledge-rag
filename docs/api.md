@@ -8,8 +8,9 @@ repositórios científicos. A geração é opcional e ocorre somente por um serv
 LLM local configurado separadamente.
 
 Por segurança, a versão sem autenticação aceita apenas `127.0.0.1`, `::1` ou
-`localhost`. A publicação na rede do laboratório exige primeiro identidade,
-autorização e auditoria.
+`localhost`. A demonstração na rede do laboratório pode usar uma chave Bearer
+compartilhada forte; identidade individual, HTTPS, grupos e auditoria continuam
+obrigatórios antes de um uso institucional.
 
 ## Execução
 
@@ -27,6 +28,32 @@ autorização e auditoria.
 O processo usa `retrieval.toml` quando o arquivo existe. Outro arquivo pode ser
 selecionado com `--retrieval-config`. O teto padrão de acesso é `public` e `lab`;
 `--allow-access` pode ser repetido para definir outro teto operacional.
+
+## Interface web e acesso pela LAN
+
+A interface responsiva é servida em `/ui` pela mesma origem da API. Ela mostra
+saúde, contagens, repositórios, branches canônicas, cobertura vetorial e a última
+execução do indexador, além de oferecer busca e perguntas citadas. Nenhum nome
+de repositório ou branch está fixado na interface: os filtros vêm de
+`/repositories`.
+
+O modo seguro padrão continua loopback. Para preparar a chave sem exibi-la:
+
+```bash
+.venv/bin/python -m mflab_knowledge api-key-init --env-file .env
+```
+
+Ao usar `--host 0.0.0.0`, `MFLAB_API_KEY` passa a ser obrigatória. Requisições
+vindas de fora do loopback devem enviar `Authorization: Bearer <chave>`; `/health`
+e os arquivos estáticos da tela permanecem públicos para permitir diagnóstico e
+carregamento. A chave é digitada na tela e guardada apenas em `sessionStorage`,
+portanto desaparece quando a sessão do navegador é encerrada. Não a coloque em
+URL, bookmark, log ou arquivo versionado.
+
+Chamadas originadas no próprio servidor são aceitas sem a chave, preservando o
+timer, as avaliações e os comandos administrativos existentes. Essa exceção
+pressupõe acesso direto ao Uvicorn; um proxy reverso exigirá uma política própria
+e não deve ser introduzido sem revisar a fronteira de confiança.
 
 Para habilitar `/ask`, copie o exemplo e informe o endpoint e o identificador do
 modelo que já estiver sendo servido localmente:
@@ -154,8 +181,10 @@ Sem `generation.toml`, `/search` e `/context` continuam funcionando, enquanto
 - buscas que usam o modelo local são serializadas;
 - o corpo das requisições não é escrito nos logs de acesso do Uvicorn.
 
-A interface OpenAPI/Swagger está disponível em `http://127.0.0.1:8765/docs`
-durante a execução.
+A interface de consulta está disponível em `http://127.0.0.1:8765/ui`. A
+interface OpenAPI/Swagger fica em `http://127.0.0.1:8765/docs` durante a
+execução; quando a chave está configurada, os endpoints administrativos fora do
+loopback exigem o Bearer.
 
 ## Servidor LLM permanente
 
@@ -222,6 +251,21 @@ usar `sudo`. Em seguida, habilita e reinicia `mflab-knowledge-api.service`,
 espera `/health` responder e mostra o estado final. Uma reinstalação com outra
 porta substitui somente essa unidade e reinicia a API.
 
+Para habilitar a demonstração na LAN:
+
+```bash
+./scripts/install-api-systemd.sh \
+  --project-dir "$PWD" \
+  --user "$USER" \
+  --group "$(id -gn)" \
+  --host 0.0.0.0 \
+  --port 8765
+```
+
+O instalador gera a chave somente se ela ainda não existir. A porta deve ser
+liberada no firewall apenas para a sub-rede confiável do laboratório. O segredo
+compartilhado serve para o piloto demonstrável, não como autenticação definitiva.
+
 Comandos administrativos:
 
 ```bash
@@ -230,9 +274,8 @@ journalctl -u mflab-knowledge-api.service --since today
 sudo systemctl restart mflab-knowledge-api.service
 ```
 
-O serviço continua preso a `127.0.0.1`. Acesso por outra máquina deverá passar
-posteriormente por um proxy autenticado; mudar apenas a porta não altera essa
-restrição.
+Sem `--host`, o serviço continua preso a `127.0.0.1`. Mudar apenas a porta não
+altera essa restrição.
 
 ## Avaliação ponta a ponta
 

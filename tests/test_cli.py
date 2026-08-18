@@ -157,6 +157,9 @@ class ConsoleReporterTests(unittest.TestCase):
         run_status = parser.parse_args(
             ["run-status", "--state-dir", "runtime/state"]
         )
+        api_key_init = parser.parse_args(
+            ["api-key-init", "--env-file", "secrets.env", "--color", "never"]
+        )
         serve = parser.parse_args(
             [
                 "serve",
@@ -215,6 +218,7 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(scheduled.history_limit, 75)
         self.assertFalse(scheduled.offline)
         self.assertEqual(run_status.state_dir, Path("runtime/state"))
+        self.assertEqual(api_key_init.env_file, Path("secrets.env"))
         self.assertEqual(serve.host, "127.0.0.1")
         self.assertEqual(serve.port, 9000)
         self.assertEqual(serve.allow_access, ["public"])

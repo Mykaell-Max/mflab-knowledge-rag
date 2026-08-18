@@ -5,6 +5,7 @@ PROJECT_DIR="$(pwd -P)"
 SERVICE_USER="$(id -un)"
 SERVICE_GROUP="$(id -gn)"
 PORT="8765"
+HOST="127.0.0.1"
 
 usage() {
   printf '%s\n' \
@@ -13,7 +14,8 @@ usage() {
     "  --project-dir DIR   Raiz do projeto (padrão: diretório atual)" \
     "  --user USUARIO      Usuário Linux do serviço (padrão: atual)" \
     "  --group GRUPO       Grupo Linux do serviço (padrão: atual)" \
-    "  --port PORTA        Porta loopback, 1024 a 65535 (padrão: 8765)" \
+    "  --host ENDERECO     Bind da API (padrão seguro: 127.0.0.1)" \
+    "  --port PORTA        Porta, 1024 a 65535 (padrão: 8765)" \
     "  --help              Mostra esta ajuda"
 }
 
@@ -33,6 +35,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --port)
       PORT="${2:?--port exige um valor}"
+      shift 2
+      ;;
+    --host)
+      HOST="${2:?--host exige um endereço}"
       shift 2
       ;;
     --help|-h)
@@ -66,6 +72,10 @@ if ! [[ "$SERVICE_GROUP" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]; then
 fi
 if ! [[ "$PORT" =~ ^[0-9]+$ ]] || [ "$PORT" -lt 1024 ] || [ "$PORT" -gt 65535 ]; then
   printf 'Porta deve estar entre 1024 e 65535.\n' >&2
+  exit 2
+fi
+if ! [[ "$HOST" =~ ^[a-zA-Z0-9.:-]+$ ]]; then
+  printf 'Endereço de bind inválido: %s\n' "$HOST" >&2
   exit 2
 fi
 
@@ -106,6 +116,21 @@ trap cleanup EXIT
 
 SERVICE_OUTPUT="$TEMP_DIR/mflab-knowledge-api.service"
 
+IS_LOOPBACK="$("$PYTHON" -c '
+import ipaddress, sys
+value = sys.argv[1]
+try:
+    loopback = value.casefold() == "localhost" or ipaddress.ip_address(value).is_loopback
+except ValueError:
+    loopback = False
+print("true" if loopback else "false")
+' "$HOST")"
+
+if [ "$IS_LOOPBACK" != "true" ]; then
+  "$PYTHON" -m mflab_knowledge api-key-init \
+    --env-file "$ENV_FILE" --color never >/dev/null
+fi
+
 sed \
   -e "s|@PROJECT_DIR@|$(escape_sed_replacement "$PROJECT_DIR")|g" \
   -e "s|@SERVICE_USER@|$(escape_sed_replacement "$SERVICE_USER")|g" \
@@ -113,6 +138,7 @@ sed \
   -e "s|@PYTHON@|$(escape_sed_replacement "$PYTHON")|g" \
   -e "s|@ENV_FILE@|$(escape_sed_replacement "$ENV_FILE")|g" \
   -e "s|@STATE_DIR@|$(escape_sed_replacement "$STATE_DIR")|g" \
+  -e "s|@HOST@|$(escape_sed_replacement "$HOST")|g" \
   -e "s|@PORT@|$PORT|g" \
   "$SERVICE_TEMPLATE" >"$SERVICE_OUTPUT"
 
@@ -166,7 +192,15 @@ fi
 printf '\nAPI instalada com sucesso.\n'
 printf 'Projeto:  %s\n' "$PROJECT_DIR"
 printf 'Usuário:  %s:%s\n' "$SERVICE_USER" "$SERVICE_GROUP"
-printf 'Endpoint: http://127.0.0.1:%s\n' "$PORT"
-printf 'Docs:     http://127.0.0.1:%s/docs\n' "$PORT"
+printf 'Bind:     %s:%s\n' "$HOST" "$PORT"
+printf 'Interface local: http://127.0.0.1:%s/ui\n' "$PORT"
+if [ "$IS_LOOPBACK" != "true" ]; then
+  LAN_IP="$(hostname -I 2>/dev/null | awk '{print $1}')"
+  if [ -n "$LAN_IP" ]; then
+    printf 'Interface LAN:   http://%s:%s/ui\n' "$LAN_IP" "$PORT"
+  fi
+  printf 'Autenticação: chave compartilhada configurada em %s\n' "$ENV_FILE"
+  printf 'A liberação no firewall deve ser limitada à rede confiável do laboratório.\n'
+fi
 printf '\nEstado do serviço:\n'
 "${SUDO[@]}" systemctl status mflab-knowledge-api.service --no-pager

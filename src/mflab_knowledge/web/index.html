@@ -1,0 +1,225 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="dark">
+    <title>MFLab Knowledge</title>
+    <meta name="description" content="Busca técnica e respostas citáveis do MFLab.">
+    <link rel="stylesheet" href="/ui/app.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Ir para o conteúdo</a>
+
+    <div class="shell">
+      <aside class="sidebar" aria-label="Navegação principal">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">MF</span>
+          <span>
+            <strong>MFLab</strong>
+            <small>Knowledge RAG</small>
+          </span>
+        </div>
+
+        <nav class="nav-list">
+          <button class="nav-item active" data-view="overview" type="button">
+            <span aria-hidden="true">01</span> Visão geral
+          </button>
+          <button class="nav-item" data-view="search" type="button">
+            <span aria-hidden="true">02</span> Buscar
+          </button>
+          <button class="nav-item" data-view="ask" type="button">
+            <span aria-hidden="true">03</span> Perguntar
+          </button>
+        </nav>
+
+        <div class="sidebar-note">
+          <span class="pulse" aria-hidden="true"></span>
+          <span>
+            <strong>Execução local</strong>
+            <small>Dados mantidos no laboratório</small>
+          </span>
+        </div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">ECOSSISTEMA DE CONHECIMENTO</p>
+            <h1 id="view-title">Visão geral</h1>
+          </div>
+          <div class="topbar-actions">
+            <span id="health-badge" class="status-badge pending">Verificando</span>
+            <button id="auth-button" class="button secondary" type="button">
+              Acesso
+            </button>
+          </div>
+        </header>
+
+        <main id="main-content" tabindex="-1">
+          <section id="view-overview" class="view active" aria-labelledby="view-title">
+            <div class="hero-panel">
+              <div>
+                <p class="eyebrow">CONHECIMENTO TÉCNICO, COM PROVENIÊNCIA</p>
+                <h2>O estado do laboratório em uma única superfície.</h2>
+                <p>
+                  Acompanhe o índice, consulte implementações e obtenha respostas
+                  sustentadas por branch, commit, arquivo e linhas.
+                </p>
+              </div>
+              <button class="button primary" data-go="ask" type="button">
+                Fazer uma pergunta
+              </button>
+            </div>
+
+            <div class="metric-grid" aria-label="Métricas do serviço">
+              <article class="metric-card">
+                <span>Repositórios</span>
+                <strong id="metric-repositories">—</strong>
+                <small>fontes habilitadas</small>
+              </article>
+              <article class="metric-card">
+                <span>Chunks</span>
+                <strong id="metric-chunks">—</strong>
+                <small>trechos citáveis</small>
+              </article>
+              <article class="metric-card">
+                <span>Embeddings</span>
+                <strong id="metric-coverage">—</strong>
+                <small>cobertura vetorial</small>
+              </article>
+              <article class="metric-card">
+                <span>Indexador</span>
+                <strong id="metric-indexer">—</strong>
+                <small id="metric-indexer-detail">última execução</small>
+              </article>
+            </div>
+
+            <div class="service-strip" aria-label="Componentes do serviço">
+              <div><span class="service-dot ok"></span><strong>PostgreSQL</strong><small id="database-state">Verificando</small></div>
+              <div><span class="service-dot"></span><strong>Embeddings</strong><small id="embedding-state">Verificando</small></div>
+              <div><span class="service-dot"></span><strong>Gerador local</strong><small id="generation-state">Verificando</small></div>
+              <div><span class="service-dot"></span><strong>Acesso</strong><small id="authentication-state">Verificando</small></div>
+            </div>
+
+            <div class="content-grid">
+              <section class="panel repositories-panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">FONTES</p>
+                    <h2>Repositórios indexados</h2>
+                  </div>
+                  <button id="refresh-button" class="text-button" type="button">
+                    Atualizar
+                  </button>
+                </div>
+                <div id="repository-list" class="repository-list loading-block">
+                  Carregando repositórios…
+                </div>
+              </section>
+
+              <section class="panel run-panel">
+                <div class="panel-heading">
+                  <div>
+                    <p class="eyebrow">AUTOMAÇÃO</p>
+                    <h2>Última indexação</h2>
+                  </div>
+                </div>
+                <div id="run-summary" class="run-summary loading-block">
+                  Carregando estado…
+                </div>
+              </section>
+            </div>
+          </section>
+
+          <section id="view-search" class="view" aria-labelledby="view-title">
+            <div class="page-intro">
+              <p class="eyebrow">RECUPERAÇÃO HÍBRIDA</p>
+              <h2>Encontre código e documentação com precisão.</h2>
+              <p>Use termos exatos ou descreva o mecanismo procurado.</p>
+            </div>
+
+            <form id="search-form" class="query-panel">
+              <label class="query-box">
+                <span class="sr-only">Consulta</span>
+                <input id="search-query" name="query" required maxlength="2000"
+                  placeholder="Ex.: onde a equação de Poisson é resolvida?">
+                <button class="button primary" type="submit">Buscar</button>
+              </label>
+              <div class="filter-row">
+                <label>
+                  <span>Projeto</span>
+                  <select id="search-project"><option value="">Todos</option></select>
+                </label>
+                <label>
+                  <span>Branch</span>
+                  <select id="search-branch"><option value="">Todas</option></select>
+                </label>
+                <label>
+                  <span>Modo</span>
+                  <select id="search-mode">
+                    <option value="hybrid">Híbrido</option>
+                    <option value="lexical">Lexical</option>
+                    <option value="semantic">Semântico</option>
+                  </select>
+                </label>
+              </div>
+            </form>
+            <div id="search-feedback" class="feedback" aria-live="polite"></div>
+            <div id="search-results" class="result-list"></div>
+          </section>
+
+          <section id="view-ask" class="view" aria-labelledby="view-title">
+            <div class="page-intro">
+              <p class="eyebrow">ASSISTENTE CITÁVEL</p>
+              <h2>Pergunte ao conhecimento indexado.</h2>
+              <p>A resposta preserva os escopos e apresenta as fontes utilizadas.</p>
+            </div>
+
+            <form id="ask-form" class="query-panel">
+              <label class="query-box ask-box">
+                <span class="sr-only">Pergunta</span>
+                <textarea id="ask-query" name="query" required maxlength="2000"
+                  rows="4" placeholder="Descreva a dúvida técnica…"></textarea>
+                <button class="button primary" type="submit">Perguntar</button>
+              </label>
+              <div class="filter-row">
+                <label>
+                  <span>Projeto</span>
+                  <select id="ask-project"><option value="">Todos</option></select>
+                </label>
+                <label>
+                  <span>Branch</span>
+                  <select id="ask-branch"><option value="">Todas</option></select>
+                </label>
+              </div>
+            </form>
+            <div id="ask-feedback" class="feedback" aria-live="polite"></div>
+            <article id="answer-card" class="answer-card hidden"></article>
+            <div id="answer-sources" class="result-list"></div>
+          </section>
+        </main>
+      </div>
+    </div>
+
+    <div id="auth-overlay" class="auth-overlay hidden" role="dialog"
+      aria-modal="true" aria-labelledby="auth-title">
+      <form id="auth-form" class="auth-card">
+        <span class="brand-mark large" aria-hidden="true">MF</span>
+        <p class="eyebrow">ACESSO AO LABORATÓRIO</p>
+        <h2 id="auth-title">Informe a chave de acesso</h2>
+        <p>A chave permanece apenas nesta aba e não é gravada no navegador.</p>
+        <label>
+          <span>Chave da API</span>
+          <input id="api-key" type="password" autocomplete="off" required
+            minlength="32" placeholder="Cole a chave fornecida pelo laboratório">
+        </label>
+        <p id="auth-error" class="error-text" aria-live="polite"></p>
+        <button class="button primary full" type="submit">Entrar</button>
+      </form>
+    </div>
+
+    <div id="global-feedback" class="toast hidden" aria-live="assertive"></div>
+    <script src="/ui/app.js" defer></script>
+  </body>
+</html>

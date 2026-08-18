@@ -32,7 +32,8 @@ Ele:
 - calcula embeddings incrementais com modelo local e armazena-os no pgvector;
 - combina os rankings lexical e semântico por Reciprocal Rank Fusion (RRF);
 - executa as mesmas suítes versionadas de regressão em cada modo.
-- serve saúde, estado, cobertura por repositório e busca por HTTP em loopback;
+- serve saúde, estado, cobertura por repositório, busca e interface web pela
+  mesma API;
 - avalia respostas reais da API, cobertura de citações, abstinência, latência e
   pico opcional de GPU por uma suíte JSON versionada;
 - aplica branch canônica, escopo e filtros independentes por repositório,
@@ -77,13 +78,15 @@ O processo não carrega o modelo na inicialização. A GPU só é ocupada na
 primeira chamada `semantic` ou `hybrid`, e a mesma instância do modelo é
 reutilizada nas consultas seguintes. Os endpoints iniciais são `/health`,
 `/status`, `/repositories`, `POST /search`, `POST /context` e `POST /ask`; a
-documentação interativa fica em `/docs`. `/context` transforma a recuperação em
+documentação interativa fica em `/docs` e a interface em `/ui`. `/context` transforma a recuperação em
 um pacote limitado e citável, e `/ask` o envia somente a um gerador local
 configurado. O contrato completo está em
 [`docs/api.md`](docs/api.md).
 
-Enquanto não houver autenticação, o comando recusa endereços que não sejam
-loopback. As classes `public` e `lab` são o teto padrão do processo, e cada
+Sem uma `MFLAB_API_KEY` forte, o comando recusa endereços que não sejam
+loopback. Em acesso direto pela LAN, a API exige a chave como Bearer; chamadas
+do próprio servidor continuam disponíveis para a automação local. A interface
+mantém a chave apenas na sessão do navegador. As classes `public` e `lab` são o teto padrão do processo, e cada
 requisição pode apenas restringir esse conjunto, nunca ampliá-lo.
 
 Depois da validação em primeiro plano, instale a API como serviço permanente:
@@ -99,6 +102,9 @@ Depois da validação em primeiro plano, instale a API como serviço permanente:
 O instalador renderiza e verifica uma unidade genérica, protege `.env`, inicia o
 processo, consulta `/health` e encerra com erro se a API não ficar saudável. A
 unidade reinicia após falhas e no boot, sem depender de um terminal aberto.
+Para uma demonstração na rede confiável do laboratório, repita a instalação com
+`--host 0.0.0.0`. O instalador cria e preserva a chave forte em `.env`; qualquer
+regra de firewall deve limitar a porta à sub-rede confiável.
 
 O servidor OpenAI-compatible local também pode ser instalado separadamente
 como serviço. O runtime, o snapshot e o nome publicado são argumentos locais;

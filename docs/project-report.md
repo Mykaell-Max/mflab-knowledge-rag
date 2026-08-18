@@ -127,6 +127,11 @@ média de citações de 100%. Também foram validadas a busca canônica do MFSim
 CMake, a preservação de proveniência, a abstenção sem evidência e a rejeição de
 um endpoint externo de geração.
 
+A avaliação híbrida específica do MFSim CMake passou em três de três casos e
+seis de seis expectativas, com recall de 100% e MRR 1,000. Sua avaliação de
+respostas passou em quatro de quatro casos, incluindo abstenção sem evidência,
+com cobertura média de citações de 100%.
+
 ## Situação atual
 
 O piloto já dispõe de um indexador multi-repositório e multi-branch, banco
@@ -137,22 +142,16 @@ caminho. As configurações locais e as credenciais permanecem fora do Git, e o
 token utilizado para leitura do GitLab não possui permissão de escrita nos
 repositórios.
 
-A indexação do MFSim CMake foi validada quanto à cobertura e à proveniência, mas
-ainda não possui uma suíte científica de recuperação e respostas com a mesma
-profundidade da suíte criada para o MFSim-NG. Também continua sendo utilizado um
-parsing parcialmente heurístico para identificar símbolos e seções do código.
+A indexação do MFSim CMake foi validada quanto à cobertura, proveniência,
+recuperação híbrida e respostas citadas. Também foi criada uma primeira
+interface web integrada à API, com estado operacional, catálogo dinâmico, busca
+e perguntas. O bind de rede é opcional e protegido por uma chave compartilhada
+forte; o modo padrão continua restrito ao próprio servidor. Ainda é utilizado
+um parsing parcialmente heurístico para identificar símbolos e seções do código.
 
 ## Etapas futuras
 
-Como próxima etapa, será criada uma suíte de avaliação específica para o MFSim
-CMake. Serão selecionadas perguntas reais, em português e inglês, e as fontes
-esperadas serão verificadas diretamente no código. Serão avaliadas a recuperação
-lexical, a recuperação conceitual, as respostas com citações, a preservação da
-branch e do commit, a ausência de mistura com o MFSim-NG e a abstenção quando a
-evidência não estiver disponível. Os dados científicos do gabarito permanecerão
-em arquivos de avaliação, sem serem incorporados às regras do motor.
-
-Em seguida, serão ampliadas as avaliações que envolvem múltiplos repositórios e
+Serão ampliadas as avaliações que envolvem múltiplos repositórios e
 múltiplas branches. Serão incluídos casos capazes de detectar respostas que
 combinem silenciosamente versões incompatíveis. As métricas de recuperação e de
 resposta serão mantidas como critérios de regressão antes da implantação de cada
@@ -165,18 +164,13 @@ relações entre símbolos sem depender de nomes específicos do MFSim. Casos de
 simulação também poderão ser representados como conjuntos estruturados de
 configurações, geometrias, UDFs e requisitos de execução.
 
-Antes que a API seja disponibilizada para outros usuários da rede, será
-implementada autenticação e será definida uma política de acesso por usuário ou
-grupo. O serviço de busca continuará separado do indexador e do servidor de
-modelo. Limites de requisições, filas, auditoria e concorrência serão avaliados
-com base no uso real da estação.
-
-Posteriormente, será criado um painel web para consulta e operação. O painel
-deverá mostrar saúde dos serviços, repositórios configurados, branches,
-quantidade de documentos e embeddings, execuções em andamento, progresso,
-falhas, próximas atualizações, histórico, requisições e fontes utilizadas nas
-respostas. Também deverá permitir busca e chat com citações sem exigir o uso do
-terminal.
+A interface inicial será validada nos computadores da rede do laboratório. O
+segredo compartilhado será substituído por autenticação individual antes do uso
+institucional, junto de HTTPS, política por usuário ou grupo e auditoria. O
+painel será ampliado com histórico detalhado, requisições, próximas atualizações
+e controles operacionais. O serviço de busca continuará separado do indexador e
+do servidor de modelo; limites, filas e concorrência serão medidos com base no
+uso real da estação.
 
 Conectores adicionais poderão ser desenvolvidos para issues, merge requests,
 comentários, documentos técnicos, artigos, teses, relatórios e apresentações,
@@ -200,4 +194,3 @@ recebendo respostas acompanhadas por fontes verificáveis. O sistema permanecer�
 atualizável, auditável e independente de um único modelo ou interface, sem
 substituir a revisão técnica nem transformar respostas geradas em fonte de
 verdade.
-

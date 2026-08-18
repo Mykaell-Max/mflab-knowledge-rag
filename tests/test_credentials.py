@@ -8,6 +8,8 @@ from unittest import mock
 
 from mflab_knowledge.credentials import (
     GitCredentials,
+    ensure_api_key,
+    load_api_key,
     load_database_url,
     load_git_credentials,
 )
@@ -97,6 +99,50 @@ class CredentialTests(unittest.TestCase):
             content = env_file.read_text(encoding="utf-8")
             self.assertEqual(content.count("MFLAB_DATABASE_URL="), 1)
             self.assertNotIn("postgresql://", content)
+
+    def test_api_key_is_generated_once_and_preserved(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            env_file.write_text(
+                "MFLAB_GIT_USERNAME=max\nMFLAB_GIT_READ_TOKEN=token\n",
+                encoding="utf-8",
+            )
+            with mock.patch.dict(os.environ, {"MFLAB_API_KEY": ""}, clear=False):
+                self.assertTrue(ensure_api_key(env_file))
+                first = load_api_key(env_file)
+                self.assertFalse(ensure_api_key(env_file))
+                second = load_api_key(env_file)
+
+            self.assertIsNotNone(first)
+            self.assertGreaterEqual(len(first or ""), 32)
+            self.assertEqual(first, second)
+            self.assertEqual(
+                env_file.read_text(encoding="utf-8").count("MFLAB_API_KEY="),
+                1,
+            )
+
+    def test_api_key_rejects_short_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            env_file.write_text("MFLAB_API_KEY=short\n", encoding="utf-8")
+            with mock.patch.dict(os.environ, {"MFLAB_API_KEY": ""}, clear=False):
+                with self.assertRaisesRegex(ValueError, "32 caracteres"):
+                    load_api_key(env_file)
+
+    def test_api_key_initializer_writes_file_even_if_process_has_a_key(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            env_file.write_text("MFLAB_API_KEY=\n", encoding="utf-8")
+            with mock.patch.dict(
+                os.environ,
+                {"MFLAB_API_KEY": "environment-key-that-is-long-enough-123456"},
+                clear=False,
+            ):
+                self.assertTrue(ensure_api_key(env_file))
+
+            file_key = env_file.read_text(encoding="utf-8").split("=", 1)[1].strip()
+            self.assertGreaterEqual(len(file_key), 32)
+            self.assertNotEqual(file_key, os.environ.get("MFLAB_API_KEY"))
 
 
 if __name__ == "__main__":

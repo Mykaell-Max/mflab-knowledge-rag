@@ -13,7 +13,12 @@ from mflab_knowledge.api_evaluate import (
     evaluate_answer_suite,
     sample_nvidia_gpu,
 )
-from mflab_knowledge.credentials import load_database_url, load_git_credentials
+from mflab_knowledge.credentials import (
+    ensure_api_key,
+    load_api_key,
+    load_database_url,
+    load_git_credentials,
+)
 from mflab_knowledge.database import (
     database_fingerprint,
     database_status,
@@ -633,6 +638,18 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_console_options(run_status)
 
+    api_key_init = subparsers.add_parser(
+        "api-key-init",
+        help="Cria uma chave forte para acesso autenticado pela rede local.",
+    )
+    api_key_init.add_argument(
+        "--env-file",
+        default=Path(".env"),
+        type=Path,
+        help="Arquivo local protegido (padrão: ./.env).",
+    )
+    _add_console_options(api_key_init)
+
     serve = subparsers.add_parser(
         "serve",
         help="Inicia a API RAG local e somente leitura.",
@@ -640,7 +657,10 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument(
         "--host",
         default="127.0.0.1",
-        help="Endereço loopback local (padrão: 127.0.0.1).",
+        help=(
+            "Endereço de bind; fora do loopback exige MFLAB_API_KEY "
+            "(padrão: 127.0.0.1)."
+        ),
     )
     serve.add_argument("--port", type=int, default=8765)
     serve.add_argument(
@@ -1032,6 +1052,29 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(json.dumps(result, ensure_ascii=False, indent=2))
         return 1 if status == "failed" else 0
 
+    if args.command == "api-key-init":
+        reporter = ConsoleReporter(args.quiet, args.color, verbose=args.verbose)
+        try:
+            created = ensure_api_key(args.env_file)
+        except (OSError, ValueError) as exc:
+            reporter.error(str(exc))
+            return 1
+        if created:
+            reporter.success("Chave forte da API criada no arquivo local protegido")
+        else:
+            reporter.success("Chave da API já estava configurada; valor preservado")
+        print(
+            json.dumps(
+                {
+                    "configured": True,
+                    "created": created,
+                    "env_file": str(args.env_file.expanduser().resolve()),
+                },
+                ensure_ascii=False,
+            )
+        )
+        return 0
+
     if args.command == "normalize":
         reporter = ConsoleReporter(
             args.quiet,
@@ -1183,6 +1226,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 embedding_revision=args.embedding_revision,
                 device=args.device,
                 max_sequence_length=args.max_sequence_length,
+                api_key=load_api_key(args.env_file, optional=True),
             )
             reporter.section("SERVIÇO HTTP LOCAL")
             reporter.log(

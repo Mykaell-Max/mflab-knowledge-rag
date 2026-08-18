@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import secrets
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -12,6 +13,9 @@ MFLAB_GIT_READ_TOKEN=
 
 # Conexão local com o PostgreSQL. Mantenha a senha somente neste arquivo.
 MFLAB_DATABASE_URL=
+
+# Chave compartilhada exigida somente quando a API é exposta fora do loopback.
+MFLAB_API_KEY=
 """
 
 
@@ -44,6 +48,7 @@ def _read_env_file(path: Path) -> dict[str, str]:
             "MFLAB_GIT_USERNAME",
             "MFLAB_GIT_READ_TOKEN",
             "MFLAB_DATABASE_URL",
+            "MFLAB_API_KEY",
         }:
             values[name] = _unquote(value)
     return values
@@ -142,3 +147,64 @@ def load_database_url(env_file: Path) -> str:
     if not database_url.startswith(("postgresql://", "postgres://")):
         raise ValueError("MFLAB_DATABASE_URL deve usar postgresql://")
     return database_url
+
+
+def load_api_key(env_file: Path, *, optional: bool = False) -> str | None:
+    """Load the shared LAN API key without logging or exporting it."""
+
+    path = env_file.expanduser().resolve()
+    api_key = os.environ.get("MFLAB_API_KEY", "").strip()
+    if not api_key and path.exists():
+        _protect_env_file(path)
+        api_key = _read_env_file(path).get("MFLAB_API_KEY", "").strip()
+    if not api_key:
+        if optional:
+            return None
+        raise ValueError(
+            f"chave da API não configurada em {path}: preencha MFLAB_API_KEY"
+        )
+    if "\n" in api_key or "\r" in api_key:
+        raise ValueError("MFLAB_API_KEY contém quebra de linha inválida")
+    if len(api_key) < 32:
+        raise ValueError("MFLAB_API_KEY deve possuir pelo menos 32 caracteres")
+    return api_key
+
+
+def ensure_api_key(env_file: Path) -> bool:
+    """Create a strong API key when absent. Return True only when created."""
+
+    path = env_file.expanduser().resolve()
+    if not path.exists():
+        _create_env_file(path)
+    _protect_env_file(path)
+    configured = _read_env_file(path).get("MFLAB_API_KEY", "").strip()
+    if configured:
+        if "\n" in configured or "\r" in configured:
+            raise ValueError("MFLAB_API_KEY contém quebra de linha inválida")
+        if len(configured) < 32:
+            raise ValueError("MFLAB_API_KEY deve possuir pelo menos 32 caracteres")
+        return False
+    content = path.read_text(encoding="utf-8")
+    generated = secrets.token_urlsafe(48)
+    if "MFLAB_API_KEY=" in content:
+        lines = content.splitlines()
+        replaced = False
+        for index, line in enumerate(lines):
+            if line.strip().startswith("MFLAB_API_KEY="):
+                lines[index] = f"MFLAB_API_KEY={generated}"
+                replaced = True
+                break
+        if not replaced:
+            lines.append(f"MFLAB_API_KEY={generated}")
+        updated = "\n".join(lines) + "\n"
+    else:
+        separator = "" if not content or content.endswith("\n") else "\n"
+        updated = (
+            content
+            + separator
+            + "\n# Chave compartilhada da API na rede local.\n"
+            + f"MFLAB_API_KEY={generated}\n"
+        )
+    path.write_text(updated, encoding="utf-8", newline="\n")
+    _protect_env_file(path)
+    return True

@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **18 de agosto de 2026**, na versão **0.27.1**. Antes de
+> Estado atualizado em **18 de agosto de 2026**, na versão candidata **0.28.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -104,6 +104,10 @@ treinamento.
   escopos.
 - API local com `/health`, `/status`, `/repositories`, `/search`, `/context` e
   `/ask`.
+- Interface web integrada em `/ui`, com painel operacional, busca, perguntas e
+  fontes, preenchida dinamicamente pela API.
+- Bind LAN opt-in protegido por chave Bearer forte criada em `.env`; loopback
+  continua sendo o padrão e a automação local não precisa distribuir a chave.
 
 ### 4.4 Operação automática
 
@@ -128,7 +132,8 @@ Ambiente do piloto:
 
 Serviços locais:
 
-- RAG API: `127.0.0.1:8765`;
+- RAG API: `127.0.0.1:8765` na instalação validada; a versão 0.28.0 acrescenta
+  bind LAN opt-in ainda pendente de validação integrada na Morgoth;
 - vLLM: `127.0.0.1:8000`;
 - indexação: `mflab-knowledge-index.service` e timer associado;
 - API: `mflab-knowledge-api.service`;
@@ -240,36 +245,32 @@ Caminhos usados durante o piloto:
 
 - A reconciliação a cada cinco minutos atende o piloto; webhooks podem ser
   revisitados apenas se a latência se tornar um problema real.
-- O painel web é desejável, mas não deve interromper a validação da qualidade do
-  corpus e da recuperação.
-- A próxima validação científica deve cobrir o MFSim CMake, pois sua indexação e
-  busca básica passaram, mas ainda não existe uma suíte de respostas equivalente
-  à do MFSim-NG.
+- O painel web inicial foi integrado depois da validação científica dos dois
+  corpora; ele consome os contratos existentes e não conhece projetos fixos.
+- A suíte híbrida e a suíte de respostas do MFSim CMake já passaram integralmente.
 - Gabaritos específicos de cada projeto não são hardcode do motor. Eles são
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
 
 O piloto de recuperação e respostas dos dois repositórios foi validado. A
-próxima entrega deve tornar o resultado demonstrável sem expor o conteúdo do
-laboratório de forma anônima.
-
-Implementar uma primeira interface web servida localmente pela própria aplicação,
-precedida por autenticação obrigatória para qualquer bind fora do loopback. A
-primeira versão deve oferecer:
+interface web inicial e a autenticação compartilhada foram implementadas no
+workspace e passaram nos testes unitários. A próxima ação é validar a versão
+0.28.0 na Morgoth, reinstalando apenas a unidade da API com bind LAN opt-in e
+confirmando:
 
 1. saúde da API, banco, modelo e indexador;
 2. repositórios, branches, documentos, chunks e cobertura de embeddings;
 3. busca com filtros de projeto, branch e modo;
-4. chat por `/ask`, com citações e abertura das fontes;
+4. chat por `/ask`, com citações e apresentação das fontes;
 5. progresso e resultado da última indexação;
 6. layout responsivo para demonstração em outros computadores do laboratório.
 
-O modo padrão deve continuar em `127.0.0.1`. A exposição à rede local precisa
-ser opt-in, exigir segredo local forte e servir interface e API na mesma origem,
-evitando CORS e armazenamento persistente do segredo no navegador. Um segredo
-compartilhado atende apenas à demonstração inicial; usuários individuais, HTTPS,
-grupos e auditoria serão necessários antes do uso institucional.
+O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in, exige
+segredo local forte e serve interface e API na mesma origem, evitando CORS e
+armazenamento persistente do segredo no navegador. Um segredo compartilhado
+atende apenas à demonstração inicial; usuários individuais, HTTPS, grupos e
+auditoria serão necessários antes do uso institucional.
 
 Depois da interface demonstrável, a ordem recomendada é:
 

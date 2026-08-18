@@ -12,7 +12,7 @@ User=@SERVICE_USER@
 Group=@SERVICE_GROUP@
 WorkingDirectory=@PROJECT_DIR@
 Environment=PYTHONUNBUFFERED=1
-ExecStart="@PYTHON@" -m mflab_knowledge serve --env-file "@ENV_FILE@" --state-dir "@STATE_DIR@" --host 127.0.0.1 --port @PORT@ --color never
+ExecStart="@PYTHON@" -m mflab_knowledge serve --env-file "@ENV_FILE@" --state-dir "@STATE_DIR@" --host @HOST@ --port @PORT@ --color never
 Restart=on-failure
 RestartSec=5s
 TimeoutStopSec=60s

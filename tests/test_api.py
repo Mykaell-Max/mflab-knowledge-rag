@@ -108,8 +108,55 @@ class ApiServiceTests(unittest.TestCase):
         )
 
     def test_non_loopback_host_is_rejected_before_importing_server(self) -> None:
-        with self.assertRaisesRegex(ValueError, "somente um endereço loopback"):
+        with self.assertRaisesRegex(ValueError, "exige MFLAB_API_KEY"):
             api.run_api(self.settings(), host="0.0.0.0")
+
+    def test_non_loopback_host_is_allowed_with_a_strong_key(self) -> None:
+        settings = api.ApiSettings(
+            database_url="postgresql:///test",
+            api_key="a" * 48,
+        )
+        with mock.patch.object(api.importlib, "import_module", side_effect=ImportError):
+            with self.assertRaisesRegex(ValueError, "suporte HTTP"):
+                api.run_api(settings, host="0.0.0.0")
+
+    def test_bearer_authentication_preserves_local_automation(self) -> None:
+        secret = "a" * 48
+        self.assertTrue(
+            api.api_request_authorized(secret, None, client_host="127.0.0.1")
+        )
+        self.assertFalse(
+            api.api_request_authorized(secret, None, client_host="192.168.1.20")
+        )
+        self.assertFalse(
+            api.api_request_authorized(
+                secret,
+                "Bearer wrong",
+                client_host="192.168.1.20",
+            )
+        )
+        self.assertFalse(
+            api.api_request_authorized(
+                secret,
+                "Bearer chave-inválida",
+                client_host="192.168.1.20",
+            )
+        )
+        self.assertTrue(
+            api.api_request_authorized(
+                secret,
+                f"Bearer {secret}",
+                client_host="192.168.1.20",
+            )
+        )
+
+    def test_api_key_is_not_exposed_by_settings_repr(self) -> None:
+        secret = "never-print-this-value-12345678901234567890"
+        settings = api.ApiSettings(
+            database_url="postgresql:///test",
+            api_key=secret,
+        )
+        self.assertNotIn(secret, repr(settings))
 
     def test_context_assigns_source_ids_and_obeys_budget(self) -> None:
         service = api.RagApiService(self.settings())

@@ -112,6 +112,13 @@ journalctl -u mflab-knowledge-api.service --since today
 curl --fail http://127.0.0.1:8765/health
 ```
 
+Para a demonstração pela LAN, reinstale somente essa unidade com
+`--host 0.0.0.0`. O instalador cria uma `MFLAB_API_KEY` forte em `.env` se
+necessário e mostra a URL de `/ui`, sem imprimir o segredo. Restringir a porta à
+sub-rede confiável no firewall continua sendo uma etapa da máquina, não do
+template genérico. A autenticação compartilhada é transitória; o uso
+institucional requer usuários individuais, HTTPS e auditoria.
+
 Para alterar intervalo, usuário, batch ou dispositivo do indexador, execute novamente
 `install-systemd.sh`. Para alterar a porta da API, execute novamente
 `install-api-systemd.sh`. Cada instalador substitui somente as unidades sob sua

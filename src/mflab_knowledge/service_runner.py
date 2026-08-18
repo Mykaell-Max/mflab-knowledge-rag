@@ -249,7 +249,7 @@ class RunStateRecorder:
         self.state["error"] = error
         self._persist()
         self._archive(self.state)
-        self._prune_history()
+        self._prune_history(keep_run_id=str(self.state.get("run_id", "")))
         return dict(self.state)
 
     def _persist(self) -> None:
@@ -273,10 +273,13 @@ class RunStateRecorder:
         previous["error"] = "execução anterior terminou sem estado final"
         self._archive(previous)
 
-    def _prune_history(self) -> None:
+    def _prune_history(self, *, keep_run_id: str = "") -> None:
         entries = sorted(
             self.history_dir.glob("*.json"),
-            key=lambda path: path.stat().st_mtime,
+            key=lambda path: (
+                path.stem == keep_run_id,
+                path.stat().st_mtime_ns,
+            ),
             reverse=True,
         )
         for obsolete in entries[self.history_limit :]:

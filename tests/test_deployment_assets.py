@@ -47,7 +47,7 @@ class DeploymentAssetTests(unittest.TestCase):
             self.assertNotIn(forbidden, timer.casefold())
             self.assertNotIn(forbidden, installer.casefold())
 
-    def test_api_systemd_assets_are_loopback_only_and_generic(self) -> None:
+    def test_api_systemd_assets_support_authenticated_lan_and_are_generic(self) -> None:
         root = Path(__file__).resolve().parents[1]
         service = (
             root / "deploy/systemd/mflab-knowledge-api.service.in"
@@ -62,6 +62,7 @@ class DeploymentAssetTests(unittest.TestCase):
             "@PYTHON@": "/srv/mflab-knowledge-rag/.venv/bin/python",
             "@ENV_FILE@": "/srv/mflab-knowledge-rag/.env",
             "@STATE_DIR@": "/srv/mflab-knowledge-rag/state",
+            "@HOST@": "127.0.0.1",
             "@PORT@": "8765",
         }
         rendered = service
@@ -75,9 +76,33 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn('ConditionPathExists="', service)
         self.assertIn("systemd-analyze verify", installer)
         self.assertIn("/health", installer)
+        self.assertIn("--host", installer)
+        self.assertIn("api-key-init", installer)
         for forbidden in ("/home/max", "mfsim-ng", "mfsim-cmake"):
             self.assertNotIn(forbidden, service.casefold())
             self.assertNotIn(forbidden, installer.casefold())
+
+    def test_browser_interface_is_packaged_without_repository_hardcoding(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        html = (root / "src/mflab_knowledge/web/index.html").read_text(
+            encoding="utf-8"
+        )
+        css = (root / "src/mflab_knowledge/web/app.css").read_text(
+            encoding="utf-8"
+        )
+        javascript = (root / "src/mflab_knowledge/web/app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn("MFLab Knowledge", html)
+        self.assertIn('src="/ui/app.js"', html)
+        self.assertIn("sessionStorage", javascript)
+        self.assertIn('api("/repositories")', javascript)
+        self.assertIn("--accent", css)
+        for forbidden in ("mfsim-ng", "mfsim-cmake", "/home/max"):
+            self.assertNotIn(forbidden, html.casefold())
+            self.assertNotIn(forbidden, css.casefold())
+            self.assertNotIn(forbidden, javascript.casefold())
 
     def test_llm_systemd_assets_are_loopback_only_and_generic(self) -> None:
         root = Path(__file__).resolve().parents[1]

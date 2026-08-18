@@ -228,7 +228,15 @@ e dos filtros da requisição.
 O processo define um teto de classes de acesso no startup. Uma requisição pode
 selecionar somente um subconjunto desse teto, e o predicado de ACL continua sendo
 aplicado no PostgreSQL antes do retorno do texto. Sem autenticação, o servidor
-aceita exclusivamente endereços loopback.
+aceita exclusivamente endereços loopback. Um bind direto na LAN é opt-in e
+depende de chave Bearer forte local; requisições originadas no próprio servidor
+permanecem liberadas para não distribuir esse segredo à automação interna.
+
+A interface web é um cliente estático da mesma API e descobre repositórios e
+branches pelo banco. Interface e endpoints compartilham a mesma origem, sem
+CORS. A chave da demonstração fica somente na sessão da aba. Essa fronteira é
+adequada ao piloto em uma rede confiável, mas não substitui identidade
+individual, TLS, grupos e auditoria.
 
 Buscas lexicais não inicializam o runtime de embeddings. Na primeira busca
 semântica ou híbrida, uma única instância local do modelo é carregada e
