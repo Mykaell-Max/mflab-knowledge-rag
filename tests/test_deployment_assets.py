@@ -107,6 +107,7 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertIn("--served-model-name", service)
         self.assertIn("--default-chat-template-kwargs", service)
         self.assertIn("--model-path", installer)
+        self.assertIn('realpath -s "$VLLM_PYTHON"', installer)
         self.assertIn("systemd-analyze verify", installer)
         self.assertIn("/health", installer)
         for forbidden in (

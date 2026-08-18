@@ -119,7 +119,9 @@ done
 [ -n "$SERVED_MODEL" ] || fail "Informe --served-model-name."
 
 PROJECT_DIR="$(realpath "$PROJECT_DIR")"
-VLLM_PYTHON="$(realpath "$VLLM_PYTHON")"
+# Preserve the virtualenv entry point. Resolving its final symlink can select
+# the base interpreter and silently discard the vLLM environment.
+VLLM_PYTHON="$(realpath -s "$VLLM_PYTHON")"
 MODEL_PATH="$(realpath "$MODEL_PATH")"
 
 reject_unsafe_path() {
