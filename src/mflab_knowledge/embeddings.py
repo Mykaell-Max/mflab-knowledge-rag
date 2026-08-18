@@ -1007,7 +1007,12 @@ def hybrid_search(
         max_per_path=max_per_path,
         include_duplicate_content=include_duplicate_content,
     )
-    seeds = baseline[:limit]
+    reserved_context_slots = min(
+        active_policy.max_context_results,
+        max(0, limit - 1),
+    )
+    protected_baseline_count = max(0, limit - reserved_context_slots)
+    seeds = baseline[:protected_baseline_count]
     contextual = _contextual_search(
         database_url,
         embedder,
@@ -1070,7 +1075,7 @@ def hybrid_fingerprint(
     active_policy = retrieval_policy or RetrievalPolicy()
     fingerprint = database_fingerprint(database_url)
     fingerprint["mode"] = "hybrid"
-    fingerprint["retrieval_algorithm"] = "structural_context_v4"
+    fingerprint["retrieval_algorithm"] = "structural_context_v5"
     fingerprint["retrieval_policy"] = active_policy.fingerprint()
     fingerprint["embedding_model"] = embedder.model_id
     fingerprint["embedding_revision"] = embedder.revision

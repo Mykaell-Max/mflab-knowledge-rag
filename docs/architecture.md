@@ -137,6 +137,12 @@ complemento. O resultado registra `context_relation`, `context_group`,
 `context_rank` e a posição da evidência. Nenhum caminho ou texto é lido fora das
 fontes autorizadas.
 
+O horizonte usado para derivar relações reserva antecipadamente o número máximo
+de vagas contextuais configurado. Assim, somente a parte do ranking-base que
+continuaria presente após todas as promoções é tratada como já representada;
+pares localizados na cauda que seria deslocada permanecem elegíveis para
+promoção. O cálculo depende apenas do limite da consulta e da política local.
+
 Os limites e formatos que podem formar bundles são carregados de uma política
 TOML local e incorporados ao fingerprint da recuperação. Assim, clientes CLI,
 API e MCP podem compartilhar a mesma política auditável quando o processo se

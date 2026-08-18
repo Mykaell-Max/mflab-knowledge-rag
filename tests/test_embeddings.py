@@ -713,6 +713,77 @@ class EmbeddingTests(unittest.TestCase):
         self.assertEqual(results[0]["chunk_id"], "semantic-1")
         self.assertEqual(results[1]["chunk_id"], "context-1")
 
+    def test_hybrid_can_promote_a_pair_from_the_unprotected_tail(self) -> None:
+        baseline = []
+        header = _result("writer-header", "src/output/writer.hpp", "header")
+        header["title"] = "ParallelWriter"
+        header["text"] = "class ParallelWriter {};"
+        header["score"] = 1.0
+        baseline.append(header)
+        for rank in range(2, 10):
+            value = _result(
+                f"other-{rank}",
+                f"src/other/{rank}.cpp",
+                f"other-hash-{rank}",
+            )
+            value["title"] = f"Other{rank}"
+            value["text"] = "unrelated"
+            value["score"] = 1.0 - rank / 100
+            baseline.append(value)
+        source = _result("writer-source", "src/output/writer.cpp", "source")
+        source["title"] = "ParallelWriter::write"
+        source["text"] = "void ParallelWriter::write() {}"
+        source["score"] = 0.8
+        baseline.append(source)
+
+        captured_seeds: list[dict[str, object]] = []
+
+        def contextual(
+            _database_url: str,
+            _embedder: object,
+            **kwargs: object,
+        ) -> list[dict[str, object]]:
+            seeds = kwargs["seeds"]
+            assert isinstance(seeds, list)
+            captured_seeds.extend(seeds)
+            paths, _directories, _symbols = embeddings._context_hints(seeds)
+            self.assertIn("src/output/writer.cpp", paths)
+            promoted = dict(source)
+            promoted["context_relation"] = "paired_source"
+            promoted["context_source_rank"] = 1
+            promoted["context_rank"] = 1
+            return [promoted]
+
+        with mock.patch.object(embeddings, "search_postgres", return_value=[]):
+            with mock.patch.object(
+                embeddings,
+                "semantic_search",
+                return_value=baseline,
+            ):
+                with mock.patch.object(
+                    embeddings,
+                    "_contextual_search",
+                    side_effect=contextual,
+                ):
+                    results = embeddings.hybrid_search(
+                        "postgresql://unused",
+                        mock.Mock(),
+                        query="parallel writer",
+                        limit=10,
+                        allowed_access={"lab"},
+                    )
+
+        self.assertEqual(len(captured_seeds), 8)
+        self.assertNotIn(
+            "writer-source",
+            [value["chunk_id"] for value in captured_seeds],
+        )
+        self.assertEqual(results[1]["chunk_id"], "writer-source")
+        self.assertEqual(
+            [value["chunk_id"] for value in results].count("writer-source"),
+            1,
+        )
+
     def test_interleave_keeps_adjacent_chunk_within_path_limit(self) -> None:
         baseline = [
             _result("particle-a", "src/model/particle.cpp", "a"),
