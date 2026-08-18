@@ -242,6 +242,12 @@ estrutural, motivo de término, escopos, caminhos obrigatórios e limites de
 latência. O monitor opcional consulta `nvidia-smi` durante cada requisição e
 registra picos; sua ausência não impede a avaliação funcional.
 
+Além das expectativas científicas declaradas, o avaliador verifica
+automaticamente o contrato dos filtros enviados em cada caso. Toda fonte
+devolvida deve respeitar o projeto, a branch, o prefixo de caminho e as classes
+de acesso solicitadas. Essa verificação é genérica e detecta mistura indevida
+entre repositórios ou versões sem conhecer nomes de projetos no motor.
+
 ```bash
 .venv/bin/python -m mflab_knowledge api-evaluate \
   --suite evaluations/mfsim-ng-answer-pilot.json \

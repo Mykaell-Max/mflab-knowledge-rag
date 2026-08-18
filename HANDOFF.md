@@ -2,9 +2,9 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **18 de agosto de 2026**, na versão **0.27.0** e no
-> commit `2d52759`. Antes de agir, confirme o estado atual com `git status` e
-> `git log -1 --oneline`, pois o repositório pode ter avançado.
+> Estado atualizado em **18 de agosto de 2026**, na versão **0.27.1**. Antes de
+> agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
+> repositório pode ter avançado.
 
 ## 1. Instrução para uma nova conversa
 
@@ -173,6 +173,8 @@ consultado pela API e pelos manifestos gerados, não presumido pelo código.
 - Regressão de símbolos passou em 5/5 casos.
 - Avaliação ponta a ponta de `/ask` para o MFSim-NG passou em 4/4 casos, com
   cobertura média de citações de 100%.
+- O avaliador ponta a ponta confirma automaticamente que todas as fontes
+  respeitam os filtros de projeto, branch, prefixo de caminho e classe de acesso.
 - Falta de evidência indexada produz abstenção em vez de resposta inventada.
 - Endpoint externo de geração é rejeitado; o modelo autorizado é local.
 - O timer e os serviços permanecem ativos sem exigir terminal aberto.

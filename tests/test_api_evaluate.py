@@ -80,7 +80,17 @@ class ApiEvaluateTests(unittest.TestCase):
                             "uncited_previews": [],
                         },
                         "scope_warning": False,
-                        "sources": [{"path": "src/solver.cpp"}],
+                        "sources": [
+                            {
+                                "project": "Generic Solver",
+                                "path": "src/solver.cpp",
+                                "access_class": "lab",
+                                "selected_occurrence": {
+                                    "branch": "trunk",
+                                    "commit_sha": "a" * 40,
+                                },
+                            }
+                        ],
                     },
                     {
                         "answer": None,
@@ -131,6 +141,64 @@ class ApiEvaluateTests(unittest.TestCase):
             self.assertEqual(report["summary"]["peak_gpu_memory_used_mib"], 100.0)
             self.assertNotIn("expectations", payloads[0])
             self.assertTrue(output.exists())
+
+    def test_fails_when_sources_escape_request_filters(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite = self._suite(
+                root,
+                [
+                    {
+                        "id": "scope-isolation",
+                        "query": "Explain the solver",
+                        "project": "Solver A",
+                        "branch": "trunk",
+                        "path_prefix": "src/core",
+                        "allowed_access": ["lab"],
+                        "expectations": {
+                            "abstained": False,
+                            "min_sources": 1,
+                        },
+                    }
+                ],
+            )
+            response = {
+                "answer": "Evidence [S1].",
+                "abstained": False,
+                "grounding_status": "cited",
+                "citations_used": ["S1"],
+                "invalid_citations": [],
+                "citation_coverage": {"coverage": 1.0},
+                "sources": [
+                    {
+                        "project": "Solver B",
+                        "path": "src/other/file.cpp",
+                        "access_class": "restricted",
+                        "selected_occurrence": {
+                            "branch": "dev",
+                            "commit_sha": "b" * 40,
+                        },
+                    }
+                ],
+            }
+            report = evaluate_answer_suite(
+                suite_path=suite,
+                request=lambda _payload, _timeout: response,
+                metric_sampler=None,
+            )
+
+        self.assertEqual(report["summary"]["cases_failed"], 1)
+        checks = {
+            check["name"]: check
+            for check in report["cases"][0]["checks"]
+        }
+        for name in (
+            "source_project_filter",
+            "source_branch_filter",
+            "source_path_prefix_filter",
+            "source_access_filter",
+        ):
+            self.assertFalse(checks[name]["passed"])
 
     def test_reports_failed_checks_without_hiding_response(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

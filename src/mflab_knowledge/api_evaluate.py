@@ -391,6 +391,99 @@ def _evaluate_expectations(
     return checks
 
 
+def _source_value(source: object, key: str) -> object:
+    if not isinstance(source, dict):
+        return None
+    return source.get(key)
+
+
+def _source_branch(source: object) -> object:
+    occurrence = _source_value(source, "selected_occurrence")
+    return occurrence.get("branch") if isinstance(occurrence, dict) else None
+
+
+def _path_is_within(path: object, prefix: str) -> bool:
+    value = str(path or "").strip("/")
+    normalized = prefix.strip("/")
+    return value == normalized or value.startswith(f"{normalized}/")
+
+
+def _evaluate_filter_contract(
+    response: dict[str, object],
+    payload: dict[str, object],
+) -> list[dict[str, object]]:
+    """Verify that /ask did not return sources outside requested filters."""
+
+    raw_sources = response.get("sources")
+    sources = raw_sources if isinstance(raw_sources, list) else []
+    checks: list[dict[str, object]] = []
+
+    expected_project = payload.get("project")
+    if isinstance(expected_project, str):
+        actual = sorted(
+            {str(_source_value(source, "project")) for source in sources}
+        )
+        _check(
+            checks,
+            "source_project_filter",
+            expected_project,
+            actual,
+            all(
+                _source_value(source, "project") == expected_project
+                for source in sources
+            ),
+        )
+
+    expected_branch = payload.get("branch")
+    if isinstance(expected_branch, str):
+        actual = sorted({str(_source_branch(source)) for source in sources})
+        _check(
+            checks,
+            "source_branch_filter",
+            expected_branch,
+            actual,
+            all(
+                _source_branch(source) == expected_branch
+                for source in sources
+            ),
+        )
+
+    expected_prefix = payload.get("path_prefix")
+    if isinstance(expected_prefix, str):
+        actual = sorted(
+            {str(_source_value(source, "path")) for source in sources}
+        )
+        _check(
+            checks,
+            "source_path_prefix_filter",
+            expected_prefix,
+            actual,
+            all(
+                _path_is_within(_source_value(source, "path"), expected_prefix)
+                for source in sources
+            ),
+        )
+
+    expected_access = payload.get("allowed_access")
+    if isinstance(expected_access, list):
+        allowed = {str(value) for value in expected_access}
+        actual = sorted(
+            {str(_source_value(source, "access_class")) for source in sources}
+        )
+        _check(
+            checks,
+            "source_access_filter",
+            sorted(allowed),
+            actual,
+            all(
+                _source_value(source, "access_class") in allowed
+                for source in sources
+            ),
+        )
+
+    return checks
+
+
 def evaluate_answer_suite(
     *,
     suite_path: Path,
@@ -453,6 +546,7 @@ def evaluate_answer_suite(
             expectations,
             client_duration=client_duration,
         )
+        checks.extend(_evaluate_filter_contract(response, payload))
         passed = all(bool(check["passed"]) for check in checks)
         evaluated.append(
             {
