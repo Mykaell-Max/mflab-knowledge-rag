@@ -175,6 +175,13 @@ consultado pela API e pelos manifestos gerados, não presumido pelo código.
   cobertura média de citações de 100%.
 - O avaliador ponta a ponta confirma automaticamente que todas as fontes
   respeitam os filtros de projeto, branch, prefixo de caminho e classe de acesso.
+- A suíte híbrida do MFSim CMake passou em 3/3 casos e 6/6 expectativas, com
+  recall de 100% e MRR 1,000.
+- A avaliação de respostas do MFSim CMake passou em 4/4 casos, incluindo
+  abstenção, com cobertura média de citações de 100% e todas as fontes restritas
+  a `MFSim CMake master@3cdbff4811a9`.
+- O pico observado nessa avaliação foi 12.969 MiB de VRAM, restando
+  aproximadamente 2.879 MiB na RTX 5060 Ti.
 - Falta de evidência indexada produz abstenção em vez de resposta inventada.
 - Endpoint externo de geração é rejeitado; o modelo autorizado é local.
 - O timer e os serviços permanecem ativos sem exigir terminal aberto.
@@ -243,36 +250,36 @@ Caminhos usados durante o piloto:
 
 ## 11. Próxima ação recomendada
 
-Criar e validar uma suíte de avaliação do **MFSim CMake** com perguntas reais e
-fontes esperadas verificadas no código. A suíte deve avaliar:
+O piloto de recuperação e respostas dos dois repositórios foi validado. A
+próxima entrega deve tornar o resultado demonstrável sem expor o conteúdo do
+laboratório de forma anônima.
 
-1. recuperação lexical de identificadores e arquivos;
-2. recuperação conceitual em português e inglês;
-3. respostas de `/ask` com citações;
-4. preservação da branch canônica e do commit;
-5. ausência de mistura silenciosa com MFSim-NG;
-6. abstenção quando a evidência não existir.
+Implementar uma primeira interface web servida localmente pela própria aplicação,
+precedida por autenticação obrigatória para qualquer bind fora do loopback. A
+primeira versão deve oferecer:
 
-As perguntas e os caminhos esperados devem ficar em `evaluations/`. Nenhum deles
-deve ser incorporado às regras do recuperador.
+1. saúde da API, banco, modelo e indexador;
+2. repositórios, branches, documentos, chunks e cobertura de embeddings;
+3. busca com filtros de projeto, branch e modo;
+4. chat por `/ask`, com citações e abertura das fontes;
+5. progresso e resultado da última indexação;
+6. layout responsivo para demonstração em outros computadores do laboratório.
 
-Uma primeira suíte piloto foi preparada para ciclo do DPM, pressão/Poisson,
-refinamento adaptativo e abstenção. Ela ainda precisa ser executada na Morgoth.
-Comunicação MPI do DPM e saída Lagrangiana não foram promovidas porque a busca
-inicial recuperou mecanismos de IB, VOF ou HDF5 genérico, sem confirmação
-suficiente do mecanismo pretendido.
+O modo padrão deve continuar em `127.0.0.1`. A exposição à rede local precisa
+ser opt-in, exigir segredo local forte e servir interface e API na mesma origem,
+evitando CORS e armazenamento persistente do segredo no navegador. Um segredo
+compartilhado atende apenas à demonstração inicial; usuários individuais, HTTPS,
+grupos e auditoria serão necessários antes do uso institucional.
 
-Depois dessa validação, a ordem recomendada é:
+Depois da interface demonstrável, a ordem recomendada é:
 
-1. ampliar avaliações multi-repositório e multi-branch;
-2. substituir âncoras heurísticas por parsing estrutural genérico para C, C++,
+1. autenticação individual e política de acesso multiusuário;
+2. ampliar avaliações multi-repositório e multi-branch;
+3. substituir âncoras heurísticas por parsing estrutural genérico para C, C++,
    Fortran, CMake e casos configurados;
-3. adicionar autenticação e política de acesso multiusuário antes de expor a API
-   fora do loopback;
-4. construir o painel web de operação e busca;
-5. adicionar conectores autorizados para issues, merge requests, documentos e
+4. adicionar conectores autorizados para issues, merge requests, documentos e
    demais fontes do laboratório;
-6. avaliar MCP e ferramentas controladas somente após consolidar a camada de
+5. avaliar MCP e ferramentas controladas somente após consolidar a camada de
    leitura.
 
 ## 12. Forma de colaboração adotada

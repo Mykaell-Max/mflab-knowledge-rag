@@ -31,3 +31,13 @@ Esses dois casos exigem inspeção direta do snapshot antes de receber caminhos
 esperados. Resultados do próprio recuperador não devem ser transformados em
 verdade de referência sem essa confirmação.
 
+## Resultado da execução piloto
+
+As suítes promovidas foram executadas na Morgoth em 18 de agosto de 2026:
+
+- recuperação híbrida: 3/3 casos, 6/6 expectativas, recall 100% e MRR 1,000;
+- respostas `/ask`: 4/4 casos, incluindo abstenção, com cobertura média de
+  citações de 100%;
+- todas as fontes retornadas preservaram projeto `MFSim CMake`, branch `master`
+  e commit `3cdbff4811a9`;
+- pico de GPU: 12.969 MiB de 16.311 MiB.
