@@ -1,0 +1,59 @@
+{
+  "schema_version": "0.1",
+  "name": "MFSim CMake — avaliação semântica piloto",
+  "cases": [
+    {
+      "id": "legacy-dpm-lifecycle",
+      "query": "Where is the discrete particle model initialized and how are Lagrangian particles advanced?",
+      "project": "MFSim CMake",
+      "branch": "master",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "src_lag/DPM/dpm.c",
+          "within_rank": 5
+        },
+        {
+          "path": "src_lag/DPM/dpm_fortran_functions.f90",
+          "within_rank": 10
+        }
+      ]
+    },
+    {
+      "id": "legacy-pressure-poisson",
+      "query": "Where is the pressure Poisson equation assembled and solved?",
+      "project": "MFSim CMake",
+      "branch": "master",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "src_mat/mat_poisson_disc_simple.f90",
+          "within_rank": 5
+        },
+        {
+          "path": "src_amr/eul_pres_multigrid.f90",
+          "title_contains": "pressure_solvers",
+          "within_rank": 10
+        }
+      ]
+    },
+    {
+      "id": "legacy-adaptive-mesh-refinement",
+      "query": "How is adaptive mesh refinement represented, configured and updated?",
+      "project": "MFSim CMake",
+      "branch": "master",
+      "limit": 10,
+      "expectations": [
+        {
+          "path": "src_vof/vof_amr3d.f90",
+          "title_contains": "vof_refinement",
+          "within_rank": 5
+        },
+        {
+          "path": "src_amr/eul_refinement.f90",
+          "within_rank": 10
+        }
+      ]
+    }
+  ]
+}

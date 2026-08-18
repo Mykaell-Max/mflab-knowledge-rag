@@ -256,6 +256,12 @@ fontes esperadas verificadas no código. A suíte deve avaliar:
 As perguntas e os caminhos esperados devem ficar em `evaluations/`. Nenhum deles
 deve ser incorporado às regras do recuperador.
 
+Uma primeira suíte piloto foi preparada para ciclo do DPM, pressão/Poisson,
+refinamento adaptativo e abstenção. Ela ainda precisa ser executada na Morgoth.
+Comunicação MPI do DPM e saída Lagrangiana não foram promovidas porque a busca
+inicial recuperou mecanismos de IB, VOF ou HDF5 genérico, sem confirmação
+suficiente do mecanismo pretendido.
+
 Depois dessa validação, a ordem recomendada é:
 
 1. ampliar avaliações multi-repositório e multi-branch;

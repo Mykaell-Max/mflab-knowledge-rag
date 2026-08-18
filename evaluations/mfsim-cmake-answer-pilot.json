@@ -1,0 +1,113 @@
+{
+  "schema_version": "0.1",
+  "name": "MFSim CMake — respostas RAG piloto com isolamento de escopo",
+  "cases": [
+    {
+      "id": "answer-legacy-dpm-lifecycle",
+      "query": "Where is the discrete particle model initialized and how are Lagrangian particles advanced?",
+      "mode": "hybrid",
+      "project": "MFSim CMake",
+      "branch": "master",
+      "limit": 10,
+      "allowed_access": ["public", "lab"],
+      "max_context_characters": 14000,
+      "max_output_tokens": 800,
+      "temperature": 0,
+      "expectations": {
+        "abstained": false,
+        "grounding_status": "cited",
+        "min_valid_citations": 1,
+        "max_invalid_citations": 0,
+        "min_sources": 2,
+        "min_citation_coverage": 1.0,
+        "allowed_finish_reasons": ["stop"],
+        "max_client_duration_seconds": 180,
+        "max_generation_duration_seconds": 120,
+        "scope_warning": false,
+        "required_source_paths": [
+          "src_lag/DPM/dpm.c",
+          "src_lag/DPM/dpm_fortran_functions.f90"
+        ]
+      }
+    },
+    {
+      "id": "answer-legacy-pressure-poisson",
+      "query": "Where is the pressure Poisson equation assembled and solved?",
+      "mode": "hybrid",
+      "project": "MFSim CMake",
+      "branch": "master",
+      "limit": 10,
+      "allowed_access": ["public", "lab"],
+      "max_context_characters": 14000,
+      "max_output_tokens": 800,
+      "temperature": 0,
+      "expectations": {
+        "abstained": false,
+        "grounding_status": "cited",
+        "min_valid_citations": 1,
+        "max_invalid_citations": 0,
+        "min_sources": 2,
+        "min_citation_coverage": 1.0,
+        "allowed_finish_reasons": ["stop"],
+        "max_client_duration_seconds": 180,
+        "max_generation_duration_seconds": 120,
+        "scope_warning": false,
+        "required_source_paths": [
+          "src_mat/mat_poisson_disc_simple.f90",
+          "src_amr/eul_pres_multigrid.f90"
+        ]
+      }
+    },
+    {
+      "id": "answer-legacy-adaptive-mesh-refinement",
+      "query": "How is adaptive mesh refinement represented, configured and updated?",
+      "mode": "hybrid",
+      "project": "MFSim CMake",
+      "branch": "master",
+      "limit": 10,
+      "allowed_access": ["public", "lab"],
+      "max_context_characters": 14000,
+      "max_output_tokens": 800,
+      "temperature": 0,
+      "expectations": {
+        "abstained": false,
+        "grounding_status": "cited",
+        "min_valid_citations": 1,
+        "max_invalid_citations": 0,
+        "min_sources": 2,
+        "min_citation_coverage": 1.0,
+        "allowed_finish_reasons": ["stop"],
+        "max_client_duration_seconds": 180,
+        "max_generation_duration_seconds": 120,
+        "scope_warning": false,
+        "required_source_paths": [
+          "src_vof/vof_amr3d.f90",
+          "src_amr/eul_refinement.f90"
+        ]
+      }
+    },
+    {
+      "id": "answer-legacy-no-indexed-evidence",
+      "query": "mflab_cmake_no_such_symbol_94d837a1b2",
+      "mode": "lexical",
+      "project": "MFSim CMake",
+      "branch": "master",
+      "limit": 5,
+      "allowed_access": ["public", "lab"],
+      "max_context_characters": 4000,
+      "max_output_tokens": 128,
+      "temperature": 0,
+      "expectations": {
+        "abstained": true,
+        "grounding_status": "no_sources",
+        "min_valid_citations": 0,
+        "max_invalid_citations": 0,
+        "min_sources": 0,
+        "max_client_duration_seconds": 10,
+        "max_generation_duration_seconds": 1,
+        "scope_warning": false,
+        "required_source_paths": []
+      }
+    }
+  ]
+}
