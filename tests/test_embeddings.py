@@ -309,6 +309,34 @@ class EmbeddingTests(unittest.TestCase):
         self.assertEqual(symbols["ParticleIDGenerator"], 1)
         self.assertLessEqual(len(symbols), 24)
 
+    def test_paired_source_skips_companions_already_in_baseline(self) -> None:
+        paths, _directories, _symbols = embeddings._context_hints(
+            [
+                {
+                    "path": "src/output/already_present.cpp",
+                    "title": "write",
+                    "text": "write();",
+                },
+                {
+                    "path": "src/output/already_present.hpp",
+                    "title": "Writer",
+                    "text": "class Writer {};",
+                },
+                {
+                    "path": "src/output/missing_source.hpp",
+                    "title": "ParallelWriter",
+                    "text": "class ParallelWriter {};",
+                },
+            ]
+        )
+
+        self.assertNotIn("src/output/already_present.cpp", paths)
+        self.assertNotIn("src/output/already_present.hpp", paths)
+        self.assertEqual(
+            paths["src/output/missing_source.cpp"][0],
+            "paired_source",
+        )
+
     def test_single_test_hit_does_not_expand_the_whole_bundle(self) -> None:
         _paths, directories, _symbols = embeddings._context_hints(
             [

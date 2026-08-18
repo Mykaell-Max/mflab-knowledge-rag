@@ -519,6 +519,9 @@ def _context_hints(
     paths: dict[str, tuple[str, int, int]] = {}
     directory_prefixes: dict[str, tuple[str, int, int]] = {}
     symbols: dict[str, int] = {}
+    seed_paths = {
+        str(seed.get("path", "")) for seed in seeds if seed.get("path")
+    }
     seed_path_counts: Counter[str] = Counter(
         str(seed.get("path", "")) for seed in seeds if seed.get("path")
     )
@@ -545,8 +548,11 @@ def _context_hints(
                     active_policy.same_document_strength,
                 )
             for paired_suffix in _PAIRED_EXTENSIONS.get(suffix, ()):
+                paired_path = path.with_suffix(paired_suffix)
+                if paired_path.as_posix() in seed_paths:
+                    continue
                 add_path(
-                    path.with_suffix(paired_suffix),
+                    paired_path,
                     "paired_source",
                     source_rank,
                     active_policy.paired_source_strength,
@@ -1031,7 +1037,7 @@ def hybrid_fingerprint(
     active_policy = retrieval_policy or RetrievalPolicy()
     fingerprint = database_fingerprint(database_url)
     fingerprint["mode"] = "hybrid"
-    fingerprint["retrieval_algorithm"] = "structural_context_v2"
+    fingerprint["retrieval_algorithm"] = "structural_context_v3"
     fingerprint["retrieval_policy"] = active_policy.fingerprint()
     fingerprint["embedding_model"] = embedder.model_id
     fingerprint["embedding_revision"] = embedder.revision
