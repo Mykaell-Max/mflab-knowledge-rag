@@ -194,6 +194,65 @@ class _StateReporter:
         self.log(message, "section")
 
 
+def _compact_json(value: object, *, limit: int = 600) -> str:
+    rendered = json.dumps(value, ensure_ascii=False, separators=(",", ":"))
+    if len(rendered) <= limit:
+        return rendered
+    return rendered[: limit - 1] + "…"
+
+
+def _report_answer_evaluation_failures(
+    report: dict[str, object],
+    reporter: ConsoleReporter,
+) -> None:
+    cases = report.get("cases")
+    if not isinstance(cases, list):
+        return
+    for case in cases:
+        if not isinstance(case, dict) or case.get("passed") is not False:
+            continue
+        case_id = str(case.get("id") or "caso-sem-id")
+        checks = case.get("checks")
+        failed_checks = [
+            check
+            for check in (checks if isinstance(checks, list) else [])
+            if isinstance(check, dict) and check.get("passed") is False
+        ]
+        reporter.error(
+            f"{case_id}: {len(failed_checks)} verificação(ões) reprovada(s)"
+        )
+        for check in failed_checks:
+            reporter.warning(
+                f"{check.get('name')}: esperado="
+                f"{_compact_json(check.get('expected'))}; obtido="
+                f"{_compact_json(check.get('actual'))}"
+            )
+
+        response = case.get("response")
+        if not isinstance(response, dict):
+            continue
+        sources = response.get("sources")
+        source_paths = [
+            source.get("path")
+            for source in (sources if isinstance(sources, list) else [])
+            if isinstance(source, dict) and source.get("path")
+        ]
+        reporter.log(
+            "Diagnóstico: "
+            f"grounding={response.get('grounding_status')}; "
+            f"finish_reason={response.get('finish_reason')}; "
+            f"citações={_compact_json(response.get('citations_used'))}; "
+            f"fontes={_compact_json(source_paths)}",
+            "info",
+        )
+        coverage = response.get("citation_coverage")
+        if isinstance(coverage, dict) and coverage.get("uncited_previews"):
+            reporter.warning(
+                "Trechos sem citação: "
+                + _compact_json(coverage.get("uncited_previews"))
+            )
+
+
 def _add_console_options(parser: argparse.ArgumentParser) -> None:
     parser.add_argument(
         "--color",
@@ -1066,7 +1125,7 @@ def main(argv: Sequence[str] | None = None) -> int:
             )
         except Exception as exc:
             reporter.error(str(exc))
-            return 1
+            return 2
         summary = report["summary"]
         assert isinstance(summary, dict)
         failures = int(summary["cases_failed"])
@@ -1086,6 +1145,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"{gpu_text}",
             "result" if failures == 0 else "warning",
         )
+        if failures:
+            _report_answer_evaluation_failures(report, reporter)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 1 if failures else 0
 

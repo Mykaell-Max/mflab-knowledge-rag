@@ -250,6 +250,12 @@ registra picos; sua ausência não impede a avaliação funcional.
   --color always
 ```
 
+O comando retorna `0` quando todos os casos passam, `1` quando a API respondeu
+mas alguma expectativa de qualidade foi reprovada e `2` para erro operacional
+(por exemplo, API indisponível ou relatório inválido). Em reprovações, os logs
+mostram as verificações, valores observados, estado de grounding e caminhos das
+fontes; a resposta completa permanece no relatório JSON indicado por `--output`.
+
 O endpoint deve ser loopback literal e redirecionamentos são recusados. O
 relatório gerado permanece em `data/`, fora do Git, pois contém respostas e
 metadados das fontes. A suíte versionada contém apenas perguntas, filtros e

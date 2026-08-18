@@ -255,27 +255,72 @@ class ConsoleReporterTests(unittest.TestCase):
                 "cases_failed": 1,
                 "mean_citation_coverage": 0.5,
                 "peak_gpu_memory_used_mib": 12000.0,
-            }
+            },
+            "cases": [
+                {
+                    "id": "partial-answer",
+                    "passed": False,
+                    "checks": [
+                        {
+                            "name": "allowed_finish_reasons",
+                            "expected": ["stop"],
+                            "actual": "length",
+                            "passed": False,
+                        }
+                    ],
+                    "response": {
+                        "grounding_status": "partial_citations",
+                        "finish_reason": "length",
+                        "citations_used": ["S1"],
+                        "sources": [{"path": "src/solver.cpp"}],
+                    },
+                }
+            ],
         }
-        with mock.patch(
-            "mflab_knowledge.cli.evaluate_answer_suite",
-            return_value=report,
-        ) as evaluate:
-            status = main(
-                [
-                    "api-evaluate",
-                    "--suite",
-                    "evaluations/answers.json",
-                    "--color",
-                    "never",
-                ]
-            )
+        logs = io.StringIO()
+        with redirect_stderr(logs):
+            with mock.patch(
+                "mflab_knowledge.cli.evaluate_answer_suite",
+                return_value=report,
+            ) as evaluate:
+                status = main(
+                    [
+                        "api-evaluate",
+                        "--suite",
+                        "evaluations/answers.json",
+                        "--color",
+                        "never",
+                    ]
+                )
 
         self.assertEqual(status, 1)
+        self.assertIn("partial-answer", logs.getvalue())
+        self.assertIn("allowed_finish_reasons", logs.getvalue())
+        self.assertIn("src/solver.cpp", logs.getvalue())
         self.assertEqual(
             evaluate.call_args.kwargs["suite_path"],
             Path("evaluations/answers.json"),
         )
+
+    def test_api_evaluate_distinguishes_operational_error(self) -> None:
+        logs = io.StringIO()
+        with redirect_stderr(logs):
+            with mock.patch(
+                "mflab_knowledge.cli.evaluate_answer_suite",
+                side_effect=ConnectionError("API indisponível"),
+            ):
+                status = main(
+                    [
+                        "api-evaluate",
+                        "--suite",
+                        "evaluations/answers.json",
+                        "--color",
+                        "never",
+                    ]
+                )
+
+        self.assertEqual(status, 2)
+        self.assertIn("API indisponível", logs.getvalue())
 
     def test_scheduled_command_uses_default_lock_and_reports_success(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
