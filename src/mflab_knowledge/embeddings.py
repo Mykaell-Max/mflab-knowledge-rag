@@ -640,8 +640,19 @@ def _line_distance(
 
 
 CONTEXT_SEARCH_SQL = """
+WITH context_candidates AS (
 SELECT
     1.0 - (embedding.embedding <=> %(query_embedding)s) AS score,
+    embedding.embedding <=> %(query_embedding)s AS vector_distance,
+    row_number() OVER (
+        PARTITION BY
+            repository.repository_id,
+            preferred.branch,
+            document.path
+        ORDER BY
+            embedding.embedding <=> %(query_embedding)s,
+            chunk.chunk_id
+    ) AS path_candidate_rank,
     chunk.chunk_id,
     chunk.chunk_hash,
     repository.project,
@@ -705,18 +716,37 @@ WHERE embedding.model_id = %(profile)s
           WHERE strpos(lower(chunk.title), lower(requested.symbol)) > 0
       )
   )
+)
+SELECT
+    score,
+    chunk_id,
+    chunk_hash,
+    project,
+    path,
+    title,
+    line_start,
+    line_end,
+    access_class,
+    branch,
+    commit_sha,
+    occurrences,
+    text
+FROM context_candidates
 ORDER BY
     CASE
-        WHEN document.path = ANY(%(same_document_paths)s::text[]) THEN 0
-        WHEN document.path = ANY(%(exact_paths)s::text[]) THEN 1
+        WHEN path = ANY(%(exact_paths)s::text[])
+             AND path_candidate_rank = 1 THEN 0
+        WHEN path = ANY(%(same_document_paths)s::text[]) THEN 1
+        WHEN path = ANY(%(exact_paths)s::text[]) THEN 2
         WHEN EXISTS (
             SELECT 1
             FROM unnest(%(directory_prefixes)s::text[]) AS requested(prefix)
-            WHERE document.path LIKE requested.prefix || '/%%'
-        ) THEN 2
-        ELSE 3
+            WHERE path LIKE requested.prefix || '/%%'
+        ) THEN 3
+        ELSE 4
     END,
-    embedding.embedding <=> %(query_embedding)s
+    vector_distance,
+    chunk_id
 LIMIT %(context_candidate_limit)s
 """
 
@@ -773,7 +803,10 @@ def _contextual_search(
                 ),
                 "directory_prefixes": sorted(directory_hints),
                 "symbols": list(symbol_hints),
-                "context_candidate_limit": active_policy.context_candidate_limit,
+                "context_candidate_limit": max(
+                    active_policy.context_candidate_limit,
+                    len(path_hints),
+                ),
             },
         ).fetchall()
     candidates = _rows_to_results(rows)
@@ -1037,7 +1070,7 @@ def hybrid_fingerprint(
     active_policy = retrieval_policy or RetrievalPolicy()
     fingerprint = database_fingerprint(database_url)
     fingerprint["mode"] = "hybrid"
-    fingerprint["retrieval_algorithm"] = "structural_context_v3"
+    fingerprint["retrieval_algorithm"] = "structural_context_v4"
     fingerprint["retrieval_policy"] = active_policy.fingerprint()
     fingerprint["embedding_model"] = embedder.model_id
     fingerprint["embedding_revision"] = embedder.revision

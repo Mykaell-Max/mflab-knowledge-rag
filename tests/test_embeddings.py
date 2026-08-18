@@ -452,18 +452,60 @@ class EmbeddingTests(unittest.TestCase):
         )
         self.assertIn("occurrence.branch = %(branch)s::text", sql)
         self.assertIn(
-            "document.path = ANY(%(same_document_paths)s::text[])",
+            "path = ANY(%(same_document_paths)s::text[])",
             sql,
         )
         self.assertIn(
             "chunk.chunk_id = ANY(%(seed_chunk_ids)s::text[])",
             sql,
         )
+        self.assertIn("row_number() OVER", sql)
+        self.assertIn("path_candidate_rank = 1", sql)
         self.assertEqual(parameters["allowed_access"], ["lab"])
         self.assertEqual(parameters["branch"], "diagnostic/dpm")
         self.assertEqual(parameters["context_candidate_limit"], 50)
         self.assertEqual(values[0]["context_relation"], "symbol_reference")
         self.assertEqual(values[0]["context_source_rank"], 1)
+
+    def test_context_window_reserves_one_candidate_per_explicit_path(self) -> None:
+        result_cursor = mock.MagicMock()
+        result_cursor.fetchall.return_value = []
+        connection = mock.MagicMock()
+        connection.execute.return_value = result_cursor
+        context = mock.MagicMock()
+        context.__enter__.return_value = connection
+        embedder = mock.MagicMock()
+        embedder.profile_id = "profile"
+        embedder.encode_query.return_value = [0.0] * 1024
+        policy = embeddings.RetrievalPolicy(context_candidate_limit=1)
+
+        with mock.patch.object(embeddings, "_driver", return_value=(None, object())):
+            with mock.patch.object(embeddings, "_connect", return_value=context):
+                embeddings._contextual_search(
+                    "postgresql://unused",
+                    embedder,
+                    query="parallel output",
+                    seeds=[
+                        {
+                            "chunk_id": "header",
+                            "path": "src/output/writer.hpp",
+                            "title": "Writer",
+                            "text": "class Writer {};",
+                        }
+                    ],
+                    branch="work/output",
+                    project="Generic Solver",
+                    path_prefix=None,
+                    allowed_access={"lab"},
+                    policy=policy,
+                )
+
+        _sql, parameters = connection.execute.call_args.args
+        self.assertEqual(
+            parameters["context_candidate_limit"],
+            len(parameters["exact_paths"]),
+        )
+        self.assertGreater(parameters["context_candidate_limit"], 1)
 
     def test_context_search_keeps_one_complement_per_directory_bundle(self) -> None:
         def bundle_row(chunk_id: str, path: str, score: float) -> dict[str, object]:

@@ -129,7 +129,10 @@ similaridade vetorial. Esses documentos também têm prioridade na janela de
 candidatos SQL, antes de pares de arquivos e bundles, para que seus vizinhos não
 sejam perdidos por truncamento. Pares fonte/header cujo caminho já está
 representado no ranking-base não são expandidos novamente, preservando as vagas
-contextuais para complementos ausentes. Cada bundle pode fornecer no máximo um
+contextuais para complementos ausentes. A janela SQL reserva o melhor candidato
+de cada caminho estrutural explícito antes de distribuir as vagas restantes por
+similaridade; o limite efetivo nunca fica abaixo da quantidade desses caminhos.
+Cada bundle pode fornecer no máximo um
 complemento. O resultado registra `context_relation`, `context_group`,
 `context_rank` e a posição da evidência. Nenhum caminho ou texto é lido fora das
 fontes autorizadas.
