@@ -572,11 +572,15 @@ caminhos fixos:
   --group "$(id -gn)" \
   --interval 5min \
   --batch-size 4 \
+  --device cpu \
   --run-now
 ```
 
 O timer consulta os remotes depois de cada intervalo, reutiliza todo conteúdo
 inalterado e processa somente branches, documentos, chunks e embeddings novos.
+O dispositivo do processo agendado é configurável; `cpu` é o padrão seguro
+quando a mesma GPU atende simultaneamente a API de embeddings e o servidor LLM.
+Uma máquina com GPU dedicada ao indexador pode selecionar `--device cuda`.
 Não é necessário manter um terminal aberto. Instalação, estado, logs, retomada
 e comandos administrativos estão descritos em
 [`docs/operations.md`](docs/operations.md).

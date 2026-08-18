@@ -26,6 +26,7 @@ class DeploymentAssetTests(unittest.TestCase):
             "@ENV_FILE@": "/srv/mflab-knowledge-rag/.env",
             "@STATE_DIR@": "/srv/mflab-knowledge-rag/state",
             "@BATCH_SIZE@": "4",
+            "@DEVICE@": "cpu",
             "@INTERVAL@": "5min",
         }
         rendered = service + timer
@@ -35,6 +36,8 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("@", rendered)
         self.assertIn("run-scheduled", rendered)
         self.assertIn("OnUnitInactiveSec=5min", rendered)
+        self.assertIn("--device cpu", rendered)
+        self.assertIn('DEVICE="cpu"', installer)
         self.assertIn("ConditionPathExists=@CONFIG_FILE@", service)
         self.assertIn("WorkingDirectory=@PROJECT_DIR@", service)
         self.assertNotIn('ConditionPathExists="', service)

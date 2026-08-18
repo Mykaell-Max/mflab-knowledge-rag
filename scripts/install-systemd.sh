@@ -6,6 +6,7 @@ SERVICE_USER="$(id -un)"
 SERVICE_GROUP="$(id -gn)"
 INTERVAL="5min"
 BATCH_SIZE="4"
+DEVICE="cpu"
 RUN_NOW="false"
 
 usage() {
@@ -17,6 +18,7 @@ usage() {
     "  --group GRUPO       Grupo Linux do serviço (padrão: grupo atual)" \
     "  --interval TEMPO    Intervalo systemd: 30s, 5min, 1h etc. (padrão: 5min)" \
     "  --batch-size N      Minibatch dos embeddings, 1 a 256 (padrão: 4)" \
+    "  --device DISPOSITIVO Dispositivo dos embeddings (padrão: cpu)" \
     "  --run-now           Inicia uma indexação após instalar" \
     "  --help              Mostra esta ajuda"
 }
@@ -41,6 +43,10 @@ while [ "$#" -gt 0 ]; do
       ;;
     --batch-size)
       BATCH_SIZE="${2:?--batch-size exige um valor}"
+      shift 2
+      ;;
+    --device)
+      DEVICE="${2:?--device exige um valor}"
       shift 2
       ;;
     --run-now)
@@ -83,6 +89,10 @@ fi
 if ! [[ "$BATCH_SIZE" =~ ^[0-9]+$ ]] ||
    [ "$BATCH_SIZE" -lt 1 ] || [ "$BATCH_SIZE" -gt 256 ]; then
   printf 'Batch size deve estar entre 1 e 256.\n' >&2
+  exit 2
+fi
+if ! [[ "$DEVICE" =~ ^[a-zA-Z0-9_.:-]+$ ]]; then
+  printf 'Dispositivo inválido: %s\n' "$DEVICE" >&2
   exit 2
 fi
 
@@ -135,6 +145,7 @@ sed \
   -e "s|@ENV_FILE@|$(escape_sed_replacement "$ENV_FILE")|g" \
   -e "s|@STATE_DIR@|$(escape_sed_replacement "$STATE_DIR")|g" \
   -e "s|@BATCH_SIZE@|$BATCH_SIZE|g" \
+  -e "s|@DEVICE@|$(escape_sed_replacement "$DEVICE")|g" \
   "$SERVICE_TEMPLATE" >"$SERVICE_OUTPUT"
 
 sed \
@@ -168,6 +179,7 @@ printf '\nServiço instalado com sucesso.\n'
 printf 'Projeto:    %s\n' "$PROJECT_DIR"
 printf 'Usuário:    %s:%s\n' "$SERVICE_USER" "$SERVICE_GROUP"
 printf 'Intervalo:  %s após o término de cada execução\n' "$INTERVAL"
+printf 'Embeddings: dispositivo %s, batch %s\n' "$DEVICE" "$BATCH_SIZE"
 printf 'Estado:     %s/last-run.json\n' "$STATE_DIR"
 printf '\nPróxima execução:\n'
 "${SUDO[@]}" systemctl list-timers mflab-knowledge-index.timer --no-pager

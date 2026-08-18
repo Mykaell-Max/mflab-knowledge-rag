@@ -12,7 +12,7 @@ User=@SERVICE_USER@
 Group=@SERVICE_GROUP@
 WorkingDirectory=@PROJECT_DIR@
 Environment=PYTHONUNBUFFERED=1
-ExecStart="@PYTHON@" -m mflab_knowledge run-scheduled --config "@CONFIG_FILE@" --env-file "@ENV_FILE@" --state-dir "@STATE_DIR@" --batch-size @BATCH_SIZE@ --color never
+ExecStart="@PYTHON@" -m mflab_knowledge run-scheduled --config "@CONFIG_FILE@" --env-file "@ENV_FILE@" --state-dir "@STATE_DIR@" --batch-size @BATCH_SIZE@ --device @DEVICE@ --color never
 UMask=0077
 Nice=10
 IOSchedulingClass=best-effort

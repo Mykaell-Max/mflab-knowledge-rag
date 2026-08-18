@@ -14,6 +14,7 @@ Uma execução manual equivalente à execução do `systemd` pode ser feita com:
   --env-file .env \
   --state-dir state \
   --batch-size 4 \
+  --device cpu \
   --color always
 ```
 
@@ -50,12 +51,18 @@ caminhos absolutos locais, protege `.env` com modo `0600` e habilita o timer:
   --group "$(id -gn)" \
   --interval 5min \
   --batch-size 4 \
+  --device cpu \
   --run-now
 ```
 
 Nenhum usuário, diretório, repositório ou intervalo está fixado nas unidades.
 O instalador usa os modelos em `deploy/systemd/` e grava as unidades renderizadas
 em `/etc/systemd/system/`.
+
+O dispositivo também é configurável. O padrão `cpu` mantém o indexador
+incremental independente da GPU usada simultaneamente pela API e pelo servidor
+LLM. Em máquinas com uma GPU dedicada ao indexador, use `--device cuda` ou o
+identificador apropriado ao reinstalar a unidade.
 
 O timer espera o intervalo configurado depois que a execução anterior fica
 inativa. A própria unidade `systemd` e a trava do runner impedem sobreposição.
@@ -105,7 +112,7 @@ journalctl -u mflab-knowledge-api.service --since today
 curl --fail http://127.0.0.1:8765/health
 ```
 
-Para alterar intervalo, usuário ou batch do indexador, execute novamente
+Para alterar intervalo, usuário, batch ou dispositivo do indexador, execute novamente
 `install-systemd.sh`. Para alterar a porta da API, execute novamente
 `install-api-systemd.sh`. Cada instalador substitui somente as unidades sob sua
 responsabilidade e recarrega o `systemd`.
