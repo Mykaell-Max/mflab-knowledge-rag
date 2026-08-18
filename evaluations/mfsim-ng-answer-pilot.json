@@ -12,7 +12,7 @@
       "allowed_access": ["public", "lab"],
       "max_context_characters": 12000,
       "max_output_tokens": 700,
-      "temperature": 0.1,
+      "temperature": 0,
       "expectations": {
         "abstained": false,
         "grounding_status": "cited",
@@ -39,7 +39,7 @@
       "allowed_access": ["public", "lab"],
       "max_context_characters": 16000,
       "max_output_tokens": 900,
-      "temperature": 0.1,
+      "temperature": 0,
       "expectations": {
         "abstained": false,
         "grounding_status": "cited",
@@ -68,7 +68,7 @@
       "allowed_access": ["public", "lab"],
       "max_context_characters": 14000,
       "max_output_tokens": 800,
-      "temperature": 0.1,
+      "temperature": 0,
       "expectations": {
         "abstained": false,
         "grounding_status": "cited",
