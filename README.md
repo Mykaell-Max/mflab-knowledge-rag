@@ -94,6 +94,28 @@ O instalador renderiza e verifica uma unidade genérica, protege `.env`, inicia 
 processo, consulta `/health` e encerra com erro se a API não ficar saudável. A
 unidade reinicia após falhas e no boot, sem depender de um terminal aberto.
 
+O servidor OpenAI-compatible local também pode ser instalado separadamente
+como serviço. O runtime, o snapshot e o nome publicado são argumentos locais;
+nenhum modelo ou caminho de usuário fica gravado no template:
+
+```bash
+./scripts/install-llm-systemd.sh \
+  --project-dir "$PWD" \
+  --user "$USER" \
+  --group "$(id -gn)" \
+  --vllm-python /caminho/do/runtime/bin/python \
+  --model-path /caminho/do/snapshot-local \
+  --served-model-name modelo-local \
+  --port 8000
+```
+
+O instalador valida o runtime, o JSON do chat template, o snapshot e a unidade
+antes de usar `sudo`. O processo opera offline, escuta apenas em loopback,
+reinicia após falhas e publica `/health` e `/metrics`. Parâmetros de GPU,
+contexto, concorrência e template continuam configuráveis pela linha de
+comando. Consulte [`docs/api.md`](docs/api.md) para conectar o endpoint a
+`generation.toml`.
+
 ## Uso no computador do laboratório
 
 Crie um ambiente e instale o projeto localmente:

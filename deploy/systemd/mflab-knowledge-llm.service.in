@@ -1,0 +1,34 @@
+[Unit]
+Description=MFLab Knowledge local OpenAI-compatible LLM
+Documentation=https://github.com/Mykaell-Max/mflab-knowledge-rag
+After=network.target
+ConditionPathExists=@VLLM_PYTHON@
+ConditionPathExists=@MODEL_PATH@
+
+[Service]
+Type=simple
+User=@SERVICE_USER@
+Group=@SERVICE_GROUP@
+WorkingDirectory=@PROJECT_DIR@
+Environment=PYTHONUNBUFFERED=1
+Environment=HF_HUB_OFFLINE=1
+Environment=TRANSFORMERS_OFFLINE=1
+Environment=VLLM_USE_FLASHINFER_SAMPLER=0
+ExecStart="@VLLM_PYTHON@" -m vllm.entrypoints.openai.api_server --model "@MODEL_PATH@" --served-model-name "@SERVED_MODEL@" --host 127.0.0.1 --port @PORT@ --max-model-len @MAX_MODEL_LEN@ --gpu-memory-utilization @GPU_MEMORY_UTILIZATION@ --max-num-seqs @MAX_NUM_SEQS@ --enforce-eager --disable-uvicorn-access-log --default-chat-template-kwargs '@CHAT_TEMPLATE_KWARGS@'
+Restart=on-failure
+RestartSec=10s
+TimeoutStartSec=300s
+TimeoutStopSec=90s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectControlGroups=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectKernelLogs=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

@@ -76,6 +76,49 @@ class DeploymentAssetTests(unittest.TestCase):
             self.assertNotIn(forbidden, service.casefold())
             self.assertNotIn(forbidden, installer.casefold())
 
+    def test_llm_systemd_assets_are_loopback_only_and_generic(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        service = (
+            root / "deploy/systemd/mflab-knowledge-llm.service.in"
+        ).read_text(encoding="utf-8")
+        installer = (root / "scripts/install-llm-systemd.sh").read_text(
+            encoding="utf-8"
+        )
+        replacements = {
+            "@PROJECT_DIR@": "/srv/mflab-knowledge-rag",
+            "@SERVICE_USER@": "knowledge",
+            "@SERVICE_GROUP@": "knowledge",
+            "@VLLM_PYTHON@": "/opt/mflab-vllm/bin/python",
+            "@MODEL_PATH@": "/var/lib/mflab/models/model",
+            "@SERVED_MODEL@": "local-model",
+            "@PORT@": "8000",
+            "@MAX_MODEL_LEN@": "8192",
+            "@GPU_MEMORY_UTILIZATION@": "0.75",
+            "@MAX_NUM_SEQS@": "2",
+            "@CHAT_TEMPLATE_KWARGS@": "{}",
+        }
+        rendered = service
+        for placeholder, value in replacements.items():
+            rendered = rendered.replace(placeholder, value)
+
+        self.assertNotIn("@", rendered)
+        self.assertIn("--host 127.0.0.1", rendered)
+        self.assertIn("VLLM_USE_FLASHINFER_SAMPLER=0", service)
+        self.assertIn("--served-model-name", service)
+        self.assertIn("--default-chat-template-kwargs", service)
+        self.assertIn("--model-path", installer)
+        self.assertIn("systemd-analyze verify", installer)
+        self.assertIn("/health", installer)
+        for forbidden in (
+            "/home/max",
+            "mfsim-ng",
+            "mfsim-cmake",
+            "qwen",
+            "huggingface",
+        ):
+            self.assertNotIn(forbidden, service.casefold())
+            self.assertNotIn(forbidden, installer.casefold())
+
 
 if __name__ == "__main__":
     unittest.main()

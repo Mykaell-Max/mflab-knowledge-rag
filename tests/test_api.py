@@ -271,6 +271,11 @@ class ApiServiceTests(unittest.TestCase):
 
         self.assertTrue(result["abstained"])
         self.assertEqual(result["grounding_status"], "no_sources")
+        self.assertEqual(result["citations_used"], [])
+        self.assertEqual(result["invalid_citations"], [])
+        self.assertEqual(result["scopes"], [])
+        self.assertFalse(result["scope_warning"])
+        self.assertEqual(result["model"], "local-test-model")
         self.assertEqual(generator.calls, [])
 
 

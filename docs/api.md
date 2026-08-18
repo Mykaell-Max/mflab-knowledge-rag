@@ -155,7 +155,55 @@ Sem `generation.toml`, `/search` e `/context` continuam funcionando, enquanto
 A interface OpenAPI/Swagger está disponível em `http://127.0.0.1:8765/docs`
 durante a execução.
 
-## Serviço permanente
+## Servidor LLM permanente
+
+Depois de validar um modelo local em primeiro plano, instale o runtime vLLM e
+o snapshot já existente como uma unidade independente:
+
+```bash
+./scripts/install-llm-systemd.sh \
+  --project-dir "$PWD" \
+  --user "$USER" \
+  --group "$(id -gn)" \
+  --vllm-python /caminho/do/runtime/bin/python \
+  --model-path /caminho/do/snapshot-local \
+  --served-model-name modelo-local \
+  --port 8000 \
+  --max-model-len 8192 \
+  --gpu-memory-utilization 0.75 \
+  --max-num-seqs 2 \
+  --chat-template-kwargs '{}'
+```
+
+O script não baixa modelos nem instala pacotes. Todos os valores que dependem
+da máquina são argumentos e o template versionado permanece genérico. A
+unidade usa somente os arquivos locais, escuta em `127.0.0.1`, valida `/health`
+e oferece métricas em `http://127.0.0.1:8000/metrics`.
+
+Use o mesmo nome e porta em `generation.toml`:
+
+```toml
+schema_version = "0.1"
+
+[provider]
+kind = "openai_compatible"
+base_url = "http://127.0.0.1:8000/v1"
+model = "modelo-local"
+timeout_seconds = 180
+max_output_tokens = 1024
+temperature = 0.1
+```
+
+Depois de criar ou alterar esse arquivo, reinicie a API. Comandos
+administrativos do modelo:
+
+```bash
+systemctl status mflab-knowledge-llm.service --no-pager
+journalctl -u mflab-knowledge-llm.service --since today
+sudo systemctl restart mflab-knowledge-llm.service
+```
+
+## API permanente
 
 Após validar o processo em primeiro plano, instale a unidade `systemd`:
 
