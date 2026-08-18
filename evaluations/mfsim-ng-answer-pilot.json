@@ -1,0 +1,113 @@
+{
+  "schema_version": "0.1",
+  "name": "MFSim-NG — respostas RAG híbridas, citações e abstinência",
+  "cases": [
+    {
+      "id": "answer-pt-dpm-initialization",
+      "query": "Onde e como o gerenciador do modelo de partículas é inicializado?",
+      "mode": "hybrid",
+      "project": "MFSim-NG",
+      "branch": "master",
+      "limit": 10,
+      "allowed_access": ["public", "lab"],
+      "max_context_characters": 12000,
+      "max_output_tokens": 700,
+      "temperature": 0.1,
+      "expectations": {
+        "abstained": false,
+        "grounding_status": "cited",
+        "min_valid_citations": 1,
+        "max_invalid_citations": 0,
+        "min_sources": 1,
+        "min_citation_coverage": 1.0,
+        "allowed_finish_reasons": ["stop"],
+        "max_client_duration_seconds": 180,
+        "max_generation_duration_seconds": 90,
+        "scope_warning": false,
+        "required_source_paths": [
+          "src/mfsim/model/lagrangian/DPM/dpm_manager.cpp"
+        ]
+      }
+    },
+    {
+      "id": "answer-pt-distributed-particle-ids",
+      "query": "Como o código evita colisões entre identificadores de partículas criadas por processos MPI diferentes?",
+      "mode": "hybrid",
+      "project": "MFSim-NG",
+      "branch": "diagnostic/dpm",
+      "limit": 10,
+      "allowed_access": ["public", "lab"],
+      "max_context_characters": 16000,
+      "max_output_tokens": 900,
+      "temperature": 0.1,
+      "expectations": {
+        "abstained": false,
+        "grounding_status": "cited",
+        "min_valid_citations": 2,
+        "max_invalid_citations": 0,
+        "min_sources": 3,
+        "min_citation_coverage": 1.0,
+        "allowed_finish_reasons": ["stop"],
+        "max_client_duration_seconds": 120,
+        "max_generation_duration_seconds": 90,
+        "scope_warning": false,
+        "required_source_paths": [
+          "src/mfsim/common/id_generator.cpp",
+          "src/mfsim/model/lagrangian/DPM/common/dpm_types.hpp",
+          "src/mfsim/model/lagrangian/DPM/common/dpm_particle.cpp"
+        ]
+      }
+    },
+    {
+      "id": "answer-en-lagrangian-output",
+      "query": "How are Lagrangian particle fields written to parallel output files?",
+      "mode": "hybrid",
+      "project": "MFSim-NG",
+      "branch": "diagnostic/dpm",
+      "limit": 10,
+      "allowed_access": ["public", "lab"],
+      "max_context_characters": 14000,
+      "max_output_tokens": 800,
+      "temperature": 0.1,
+      "expectations": {
+        "abstained": false,
+        "grounding_status": "cited",
+        "min_valid_citations": 1,
+        "max_invalid_citations": 0,
+        "min_sources": 2,
+        "min_citation_coverage": 1.0,
+        "allowed_finish_reasons": ["stop"],
+        "max_client_duration_seconds": 120,
+        "max_generation_duration_seconds": 90,
+        "scope_warning": false,
+        "required_source_paths": [
+          "src/mfsim/output/hdf5/hdf5_lag_output.cpp",
+          "src/mfsim/output/hdf5/hdf5_lag_output.hpp"
+        ]
+      }
+    },
+    {
+      "id": "answer-no-indexed-evidence",
+      "query": "mflab_no_such_symbol_7f42e9c11a5d4c768d84",
+      "mode": "lexical",
+      "project": "MFSim-NG",
+      "branch": "master",
+      "limit": 5,
+      "allowed_access": ["public", "lab"],
+      "max_context_characters": 4000,
+      "max_output_tokens": 128,
+      "temperature": 0,
+      "expectations": {
+        "abstained": true,
+        "grounding_status": "no_sources",
+        "min_valid_citations": 0,
+        "max_invalid_citations": 0,
+        "min_sources": 0,
+        "max_client_duration_seconds": 10,
+        "max_generation_duration_seconds": 1,
+        "scope_warning": false,
+        "required_source_paths": []
+      }
+    }
+  ]
+}

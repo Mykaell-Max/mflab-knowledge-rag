@@ -29,6 +29,8 @@ Ele:
 - combina os rankings lexical e semântico por Reciprocal Rank Fusion (RRF);
 - executa as mesmas suítes versionadas de regressão em cada modo.
 - serve saúde, estado, cobertura por repositório e busca por HTTP em loopback;
+- avalia respostas reais da API, cobertura de citações, abstinência, latência e
+  pico opcional de GPU por uma suíte JSON versionada;
 - aplica branch canônica, escopo e filtros independentes por repositório,
   declarados em TOML e registrados por hash no manifesto agregado.
 
@@ -115,6 +117,23 @@ reinicia após falhas e publica `/health` e `/metrics`. Parâmetros de GPU,
 contexto, concorrência e template continuam configuráveis pela linha de
 comando. Consulte [`docs/api.md`](docs/api.md) para conectar o endpoint a
 `generation.toml`.
+
+Avalie o fluxo completo já servido, incluindo busca híbrida, geração e
+telemetria local:
+
+```bash
+.venv/bin/python -m mflab_knowledge api-evaluate \
+  --suite evaluations/mfsim-ng-answer-pilot.json \
+  --api-base-url http://127.0.0.1:8765 \
+  --output data/mfsim-ng-answer-evaluation.generated.json \
+  --color always
+```
+
+As perguntas, filtros e fontes esperadas pertencem à suíte, não ao serviço.
+Outros repositórios podem adicionar arquivos de avaliação independentes. O
+relatório registra cada resposta e verificação, duração do cliente, cobertura
+por unidade factual e, quando `nvidia-smi` existe, pico de memória e utilização
+da GPU. Use `--no-gpu-monitor` em máquinas sem NVIDIA.
 
 ## Uso no computador do laboratório
 

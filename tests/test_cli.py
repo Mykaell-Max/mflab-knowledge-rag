@@ -190,6 +190,16 @@ class ConsoleReporterTests(unittest.TestCase):
                 "retrieval.toml",
             ]
         )
+        api_evaluate = parser.parse_args(
+            [
+                "api-evaluate",
+                "--suite",
+                "evaluations/answers.json",
+                "--api-base-url",
+                "http://127.0.0.1:9999",
+                "--no-gpu-monitor",
+            ]
+        )
         self.assertEqual(inventory.color, "never")
         self.assertEqual(sync.color, "always")
         self.assertEqual(sync.canonical_ref, "origin/trunk")
@@ -216,6 +226,12 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
         self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))
+        self.assertEqual(
+            api_evaluate.suite,
+            Path("evaluations/answers.json"),
+        )
+        self.assertEqual(api_evaluate.api_base_url, "http://127.0.0.1:9999")
+        self.assertTrue(api_evaluate.no_gpu_monitor)
 
     def test_single_repository_sync_requires_explicit_canonical_ref(self) -> None:
         parser = build_parser()
@@ -230,6 +246,36 @@ class ConsoleReporterTests(unittest.TestCase):
                         "test",
                     ]
                 )
+
+    def test_api_evaluate_returns_failure_when_a_case_fails(self) -> None:
+        report = {
+            "summary": {
+                "cases": 2,
+                "cases_passed": 1,
+                "cases_failed": 1,
+                "mean_citation_coverage": 0.5,
+                "peak_gpu_memory_used_mib": 12000.0,
+            }
+        }
+        with mock.patch(
+            "mflab_knowledge.cli.evaluate_answer_suite",
+            return_value=report,
+        ) as evaluate:
+            status = main(
+                [
+                    "api-evaluate",
+                    "--suite",
+                    "evaluations/answers.json",
+                    "--color",
+                    "never",
+                ]
+            )
+
+        self.assertEqual(status, 1)
+        self.assertEqual(
+            evaluate.call_args.kwargs["suite_path"],
+            Path("evaluations/answers.json"),
+        )
 
     def test_scheduled_command_uses_default_lock_and_reports_success(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

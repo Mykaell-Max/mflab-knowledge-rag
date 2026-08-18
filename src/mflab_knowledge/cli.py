@@ -9,6 +9,10 @@ from typing import Sequence
 from urllib.parse import urlsplit
 
 from mflab_knowledge.api import ApiSettings, run_api
+from mflab_knowledge.api_evaluate import (
+    evaluate_answer_suite,
+    sample_nvidia_gpu,
+)
 from mflab_knowledge.credentials import load_database_url, load_git_credentials
 from mflab_knowledge.database import (
     database_fingerprint,
@@ -635,6 +639,29 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_console_options(evaluate)
 
+    api_evaluate = subparsers.add_parser(
+        "api-evaluate",
+        help="Avalia respostas, citações e recursos da API RAG local.",
+    )
+    api_evaluate.add_argument("--suite", required=True, type=Path)
+    api_evaluate.add_argument(
+        "--api-base-url",
+        default="http://127.0.0.1:8765",
+    )
+    api_evaluate.add_argument(
+        "--output",
+        default=Path("data/api-answer-evaluation.generated.json"),
+        type=Path,
+    )
+    api_evaluate.add_argument("--timeout-seconds", type=int, default=300)
+    api_evaluate.add_argument(
+        "--gpu-sampling-interval",
+        type=float,
+        default=0.5,
+    )
+    api_evaluate.add_argument("--no-gpu-monitor", action="store_true")
+    _add_console_options(api_evaluate)
+
     db_init = subparsers.add_parser(
         "db-init",
         help="Cria ou atualiza o schema PostgreSQL do serviço.",
@@ -1013,6 +1040,50 @@ def main(argv: Sequence[str] | None = None) -> int:
             f"Avaliação: {summary['cases_passed']}/{summary['cases']} casos; "
             f"recall {float(summary['expectation_recall']):.1%}; "
             f"MRR {float(summary['mean_reciprocal_rank']):.3f}",
+            "result" if failures == 0 else "warning",
+        )
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 1 if failures else 0
+
+    if args.command == "api-evaluate":
+        reporter = ConsoleReporter(
+            args.quiet,
+            args.color,
+            progress_label="respostas",
+            verbose=args.verbose,
+        )
+        try:
+            report = evaluate_answer_suite(
+                suite_path=args.suite,
+                api_base_url=args.api_base_url,
+                output=args.output,
+                timeout_seconds=args.timeout_seconds,
+                log=reporter.log,
+                metric_sampler=(
+                    None if args.no_gpu_monitor else sample_nvidia_gpu
+                ),
+                sampling_interval_seconds=args.gpu_sampling_interval,
+            )
+        except Exception as exc:
+            reporter.error(str(exc))
+            return 1
+        summary = report["summary"]
+        assert isinstance(summary, dict)
+        failures = int(summary["cases_failed"])
+        coverage = summary.get("mean_citation_coverage")
+        coverage_text = (
+            "n/a" if coverage is None else f"{float(coverage):.1%}"
+        )
+        gpu_peak = summary.get("peak_gpu_memory_used_mib")
+        gpu_text = (
+            "sem telemetria GPU"
+            if gpu_peak is None
+            else f"pico GPU {float(gpu_peak):.0f} MiB"
+        )
+        reporter.log(
+            f"Avaliação /ask: {summary['cases_passed']}/"
+            f"{summary['cases']} casos; cobertura média {coverage_text}; "
+            f"{gpu_text}",
             "result" if failures == 0 else "warning",
         )
         print(json.dumps(report, ensure_ascii=False, indent=2))

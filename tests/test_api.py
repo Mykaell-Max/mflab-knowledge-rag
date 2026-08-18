@@ -237,6 +237,7 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["grounding_status"], "invalid_citations")
         self.assertEqual(result["citations_used"], ["S1", "S2"])
         self.assertEqual(result["invalid_citations"], ["S99"])
+        self.assertEqual(result["citation_coverage"]["coverage"], 1.0)
         self.assertTrue(result["scope_warning"])
         self.assertEqual(len(result["scopes"]), 2)
         self.assertNotIn("text", result["sources"][0])
@@ -273,10 +274,57 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["grounding_status"], "no_sources")
         self.assertEqual(result["citations_used"], [])
         self.assertEqual(result["invalid_citations"], [])
+        self.assertIsNone(result["citation_coverage"]["coverage"])
         self.assertEqual(result["scopes"], [])
         self.assertFalse(result["scope_warning"])
         self.assertEqual(result["model"], "local-test-model")
         self.assertEqual(generator.calls, [])
+
+    def test_ask_reports_partial_citation_coverage(self) -> None:
+        generator = _Generator(
+            "The solver initializes the state [S1].\n\n"
+            "It also performs an unsupported operation."
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+            ),
+        )
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "explain",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 10,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "selected_occurrence": {
+                            "branch": "trunk",
+                            "commit_sha": "a" * 40,
+                        },
+                        "path": "src/a.cpp",
+                        "text": "evidence",
+                    }
+                ],
+            },
+        ):
+            result = service.ask(query="explain")
+
+        self.assertEqual(result["grounding_status"], "partial_citations")
+        self.assertEqual(result["citation_coverage"]["units"], 2)
+        self.assertEqual(result["citation_coverage"]["cited_units"], 1)
+        self.assertEqual(result["citation_coverage"]["coverage"], 0.5)
 
 
 if __name__ == "__main__":

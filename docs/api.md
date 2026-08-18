@@ -130,13 +130,15 @@ sem chamar o modelo.
 }
 ```
 
-A resposta inclui `answer`, `citations_used`, `invalid_citations`, `sources` e
-`scopes`. `grounding_status` vale `cited`, `missing_citations`,
-`invalid_citations` ou `no_sources`. `scope_warning` fica verdadeiro quando as
-fontes abrangem mais de uma combinação projeto/branch/commit; isso não bloqueia
-uma comparação intencional, mas impede que o cliente trate versões distintas
-como se fossem uma só. O texto integral das fontes não é repetido na resposta
-de `/ask`.
+A resposta inclui `answer`, `citations_used`, `invalid_citations`, `sources`,
+`scopes` e `citation_coverage`. A cobertura é uma verificação estrutural por
+parágrafo ou bullet factual; ela não substitui uma avaliação semântica humana
+de que a fonte realmente sustenta a afirmação. `grounding_status` vale `cited`,
+`partial_citations`, `missing_citations`, `invalid_citations` ou `no_sources`.
+`scope_warning` fica verdadeiro quando as fontes abrangem mais de uma
+combinação projeto/branch/commit; isso não bloqueia uma comparação intencional,
+mas impede que o cliente trate versões distintas como se fossem uma só. O
+texto integral das fontes não é repetido na resposta de `/ask`.
 
 Sem `generation.toml`, `/search` e `/context` continuam funcionando, enquanto
 `/ask` retorna `503` com uma orientação de configuração.
@@ -231,3 +233,25 @@ sudo systemctl restart mflab-knowledge-api.service
 O serviço continua preso a `127.0.0.1`. Acesso por outra máquina deverá passar
 posteriormente por um proxy autenticado; mudar apenas a porta não altera essa
 restrição.
+
+## Avaliação ponta a ponta
+
+`api-evaluate` envia uma suíte JSON versionada ao `/ask` local e valida por
+caso: abstinência, status de grounding, número de fontes e citações, cobertura
+estrutural, motivo de término, escopos, caminhos obrigatórios e limites de
+latência. O monitor opcional consulta `nvidia-smi` durante cada requisição e
+registra picos; sua ausência não impede a avaliação funcional.
+
+```bash
+.venv/bin/python -m mflab_knowledge api-evaluate \
+  --suite evaluations/mfsim-ng-answer-pilot.json \
+  --api-base-url http://127.0.0.1:8765 \
+  --output data/mfsim-ng-answer-evaluation.generated.json \
+  --color always
+```
+
+O endpoint deve ser loopback literal e redirecionamentos são recusados. O
+relatório gerado permanece em `data/`, fora do Git, pois contém respostas e
+metadados das fontes. A suíte versionada contém apenas perguntas, filtros e
+expectativas deliberadamente revisadas; adicionar outro projeto não exige
+alterar o avaliador.
