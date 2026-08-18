@@ -106,6 +106,7 @@ def sync_all_repositories(
                 branch_scope=repository.branch_scope,
                 access_class=repository.access_class,
                 profile=repository.profile,
+                inventory_policy_file=catalog.inventory_policy_file,
                 cache_dir=cache_dir,
                 output_dir=output_dir,
                 include_branches=repository.include_branches,
@@ -188,6 +189,11 @@ def sync_all_repositories(
         "cache_root": str(catalog.cache_root),
         "inventory_root": str(catalog.inventory_root),
         "normalized_root": str(catalog.normalized_root),
+        "inventory_policy_file": (
+            str(catalog.inventory_policy_file)
+            if catalog.inventory_policy_file is not None
+            else None
+        ),
         "summary": {
             "configured": len(catalog.repositories),
             "enabled": len(catalog.enabled),

@@ -21,6 +21,7 @@ profile = "generic"
 cache_root = "state/cache"
 inventory_root = "state/inventory"
 normalized_root = "state/data"
+inventory_policy_file = "policies/inventory.toml"
 fetch_timeout_seconds = 2400
 
 [[repositories]]
@@ -69,6 +70,10 @@ access_class = "pending"
             self.assertEqual(ui.fetch_timeout_seconds, 2400)
             self.assertFalse(legacy.enabled)
             self.assertEqual(catalog.cache_root, (root / "state/cache").resolve())
+            self.assertEqual(
+                catalog.inventory_policy_file,
+                (root / "policies/inventory.toml").resolve(),
+            )
             self.assertTrue(catalog.config_hash.startswith("sha256:"))
 
     def test_rejects_enabled_pending_and_duplicate_ids(self) -> None:

@@ -48,6 +48,7 @@ class RepositoryCatalog:
     inventory_root: Path
     normalized_root: Path
     repositories: tuple[RepositoryDefinition, ...]
+    inventory_policy_file: Path | None = None
 
     @property
     def enabled(self) -> tuple[RepositoryDefinition, ...]:
@@ -131,6 +132,7 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
         "include_branches",
         "exclude_branches",
         "fetch_timeout_seconds",
+        "inventory_policy_file",
     }
     unknown_defaults = sorted(set(defaults) - allowed_defaults)
     if unknown_defaults:
@@ -158,6 +160,21 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
         "normalized_root",
         "defaults",
     )
+    configured_policy_file = defaults.get("inventory_policy_file")
+    if configured_policy_file is not None:
+        inventory_policy_file = _resolve_path(
+            base,
+            configured_policy_file,
+            "inventory_policy_file",
+            "defaults",
+        )
+    else:
+        conventional_policy = base / "inventory-policies.toml"
+        inventory_policy_file = (
+            conventional_policy.resolve()
+            if conventional_policy.is_file()
+            else None
+        )
     default_scope = _required_text(
         defaults.get("branch_scope", "remote"),
         "branch_scope",
@@ -318,4 +335,5 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
         inventory_root=inventory_root,
         normalized_root=normalized_root,
         repositories=tuple(repositories),
+        inventory_policy_file=inventory_policy_file,
     )

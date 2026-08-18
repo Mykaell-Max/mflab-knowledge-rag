@@ -162,6 +162,13 @@ cache, saída e falhas por repositório e grava um manifesto agregado com o hash
 configuração. Novas entradas ficam desabilitadas/`pending` até a política ser
 confirmada.
 
+Perfis de inventário são dados, não condicionais no código. Um catálogo TOML
+separado associa nomes de perfil a globs de inclusão e exclusão; o catálogo de
+repositórios escolhe explicitamente um desses nomes. `generic` é neutro e não
+depende do nome do projeto. O hash das regras selecionadas acompanha o catálogo
+gerado e a identidade do cache, portanto qualquer mudança de escopo força a
+reavaliação dos commits sem apagar caches manualmente.
+
 Quando a política canônica é `remote_default`, o Git informa simbolicamente o
 nome da branch padrão. O serviço persiste essa relação no mirror e registra no
 manifesto tanto a política quanto a branch efetivamente resolvida; não presume

@@ -155,7 +155,8 @@ mflab-knowledge inventory \
   --ref master \
   --project MFSim-NG \
   --access-class lab \
-  --profile auto \
+  --profile mfsim-ng-pilot \
+  --inventory-policy-file inventory-policies.toml \
   --output inventory/mfsim-ng.generated.yaml
 ```
 
@@ -167,14 +168,17 @@ PYTHONPATH=src python -m mflab_knowledge inventory \
   --ref master \
   --project MFSim-NG \
   --access-class lab \
-  --profile auto \
+  --profile mfsim-ng-pilot \
+  --inventory-policy-file inventory-policies.toml \
   --output inventory/mfsim-ng.generated.yaml
 ```
 
-Para `MFSim-NG`, o perfil `auto` seleciona o piloto: código primário, CMake,
-configurações, scripts, documentação Markdown original, análises derivadas e os
-casos `dpm_ram*`. O restante continua visível como exclusão do catálogo, mas não
-é preparado para embeddings.
+Perfis não são inferidos pelo nome do projeto. O arquivo versionado
+`inventory-policies.toml` define, por globs, o escopo do perfil piloto usado
+neste repositório. O perfil universal `generic` considera todos os formatos
+suportados. Novos repositórios podem usar `generic` ou receber outro perfil na
+configuração, sem alterar o código do indexador. O restante continua visível
+como exclusão do catálogo, mas não é preparado para embeddings.
 
 O relatório gerado fica ignorado pelo Git porque pode conter caminhos e metadados internos.
 
@@ -213,6 +217,7 @@ PYTHONPATH=src python -m mflab_knowledge sync \
   --branch-scope remote \
   --access-class lab \
   --profile mfsim-ng-pilot \
+  --inventory-policy-file inventory-policies.toml \
   --cache-dir cache \
   --output-dir inventory/mfsim-ng
 ```
@@ -237,8 +242,9 @@ Para operar temporariamente sem consultar o GitLab, acrescente `--offline`.
 
 Além dos snapshots Git, o comando mantém em `cache/inventories/` um cache
 persistente do inventário de cada commit. A chave inclui repositório, projeto,
-commit, perfil, classe de acesso e versões da política/schema. Assim, uma nova
-execução sem mudanças não percorre novamente milhares de arquivos. O resumo
+commit, perfil, hash da política externa, classe de acesso e versão do schema.
+Assim, uma nova execução sem mudanças não percorre novamente milhares de
+arquivos. O resumo
 informa separadamente `inventories_built` e `inventories_reused`. Um commit novo
 ou uma mudança de política causa somente os recálculos necessários; cache
 ausente, incompatível ou corrompido é reconstruído automaticamente.
@@ -478,8 +484,14 @@ próprio mirror sem clone de trabalho. URLs com usuário, token ou senha embutid
 são rejeitadas. `canonical_ref`, `branch_scope`, classe de acesso, perfil e os globs opcionais
 `include_branches`/`exclude_branches` também são independentes. A branch
 canônica é preservada mesmo que um filtro a exclua. Nomes como `master`,
-`develop`, caminhos do MFSim ou convenções de um projeto vivem somente nesse
-arquivo de configuração, nunca no motor genérico.
+`develop` ou convenções de um projeto vivem somente em configuração, nunca no
+motor genérico.
+
+O campo `[defaults].inventory_policy_file` aponta para o catálogo versionado de
+perfis de inventário. Cada perfil contém apenas globs `include_paths` e
+`exclude_paths`; cada repositório escolhe seu perfil pelo campo `profile`.
+Caminhos específicos de uma base ficam nesse catálogo auditável. Alterar uma
+regra muda seu hash e invalida somente os caches de inventário afetados.
 
 `canonical_ref = "remote_default"` segue explicitamente a branch padrão
 informada pelo servidor Git. O nome resolvido é armazenado como ref simbólica no

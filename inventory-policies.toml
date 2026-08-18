@@ -1,0 +1,25 @@
+schema_version = "0.1"
+
+# O perfil generic não precisa ser declarado: ele considera todos os formatos
+# suportados e ainda aplica as exclusões globais de segurança do inventário.
+
+[profiles.mfsim-ng-pilot]
+include_paths = [
+  ".clang-tidy",
+  ".clangd",
+  ".gitattributes",
+  ".gitignore",
+  "AGENTS.md",
+  "Changelog.md",
+  "CMakeLists.txt",
+  "Doxyfile",
+  "README.md",
+  "src/**",
+  "cmake/**",
+  "etc/**",
+  "scripts/**",
+  "docs/md/**",
+  "mfsim-ng-guide/analysis/**",
+  "tests/dpm_ram*/**",
+]
+exclude_paths = []

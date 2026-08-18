@@ -7,6 +7,7 @@ profile = "generic"
 cache_root = "cache/repositories"
 inventory_root = "inventory/repositories"
 normalized_root = "data/repositories"
+inventory_policy_file = "inventory-policies.toml"
 fetch_timeout_seconds = 3600
 
 [[repositories]]

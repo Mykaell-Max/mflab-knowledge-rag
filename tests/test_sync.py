@@ -6,7 +6,12 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from mflab_knowledge.sync import _branch_selected, sync_repository_branches
+from mflab_knowledge.sync import (
+    _branch_selected,
+    _inventory_cache_descriptor,
+    _inventory_cache_path,
+    sync_repository_branches,
+)
 
 
 def _git(repository: Path, *arguments: str) -> str:
@@ -22,6 +27,29 @@ def _git(repository: Path, *arguments: str) -> str:
 
 @unittest.skipUnless(shutil.which("git"), "Git não está disponível")
 class SyncTests(unittest.TestCase):
+    def test_inventory_policy_hash_invalidates_cache_identity(self) -> None:
+        common = {
+            "repository": "https://git.example.invalid/solver.git",
+            "project": "Generic Solver",
+            "commit_sha": "a" * 40,
+            "access_class": "lab",
+            "profile": "focused",
+        }
+        first = _inventory_cache_descriptor(
+            **common,
+            inventory_policy_hash="sha256:first",
+        )
+        second = _inventory_cache_descriptor(
+            **common,
+            inventory_policy_hash="sha256:second",
+        )
+
+        self.assertNotEqual(first, second)
+        self.assertNotEqual(
+            _inventory_cache_path(Path("cache"), first),
+            _inventory_cache_path(Path("cache"), second),
+        )
+
     def test_branch_filters_are_generic_globs(self) -> None:
         self.assertTrue(
             _branch_selected(

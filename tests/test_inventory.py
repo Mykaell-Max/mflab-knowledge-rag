@@ -8,6 +8,29 @@ from mflab_knowledge.inventory import build_inventory, write_yaml
 
 
 class InventoryTests(unittest.TestCase):
+    def test_legacy_auto_alias_does_not_infer_policy_from_project_name(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            (root / "source.cpp").write_text("int value;\n", encoding="utf-8")
+
+            named_like_pilot = build_inventory(
+                root,
+                "MFSim-NG",
+                profile="auto",
+            )
+            unrelated = build_inventory(
+                root,
+                "Unrelated Solver",
+                profile="auto",
+            )
+
+            self.assertEqual(named_like_pilot["source"]["profile"], "generic")
+            self.assertEqual(unrelated["source"]["profile"], "generic")
+            self.assertEqual(
+                [item["path"] for item in named_like_pilot["indexable"]],
+                [item["path"] for item in unrelated["indexable"]],
+            )
+
     def test_discovers_source_and_excludes_unsafe_content(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
@@ -44,34 +67,54 @@ class InventoryTests(unittest.TestCase):
             self.assertEqual(inventory["summary"]["excluded_files"], 3)
             self.assertEqual(inventory["summary"]["excluded_directories"], 1)
 
-    def test_mfsim_profile_limits_pilot_scope(self) -> None:
+    def test_external_profile_limits_scope_without_project_assumptions(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)
+            policy_file = root / "inventory-policies.toml"
+            policy_file.write_text(
+                """schema_version = "0.1"
+[profiles.focused]
+include_paths = ["src/**", "tests/smoke*/**"]
+exclude_paths = []
+""",
+                encoding="utf-8",
+            )
             (root / "src").mkdir()
             (root / "src" / "solver.cpp").write_text("solver\n", encoding="utf-8")
             (root / "libs").mkdir()
             (root / "libs" / "vendor.cpp").write_text("vendor\n", encoding="utf-8")
-            (root / "tests" / "dpm_ram").mkdir(parents=True)
-            (root / "tests" / "dpm_ram" / "domains.json").write_text(
+            (root / "tests" / "smoke-fast").mkdir(parents=True)
+            (root / "tests" / "smoke-fast" / "domains.json").write_text(
                 "{}\n", encoding="utf-8"
             )
-            (root / "tests" / "poisson").mkdir(parents=True)
-            (root / "tests" / "poisson" / "domains.json").write_text(
+            (root / "tests" / "integration").mkdir(parents=True)
+            (root / "tests" / "integration" / "domains.json").write_text(
                 "{}\n", encoding="utf-8"
             )
 
-            inventory = build_inventory(root, "MFSim-NG", "lab")
+            inventory = build_inventory(
+                root,
+                "Generic Solver",
+                "lab",
+                profile="focused",
+                policy_file=policy_file,
+            )
 
             indexable = {item["path"] for item in inventory["indexable"]}
             exclusions = {
                 item["path"]: item["reason"] for item in inventory["excluded"]
             }
             self.assertEqual(
-                indexable, {"src/solver.cpp", "tests/dpm_ram/domains.json"}
+                indexable, {"src/solver.cpp", "tests/smoke-fast/domains.json"}
             )
-            self.assertEqual(exclusions["libs/vendor.cpp"], "outside_pilot_scope")
+            self.assertEqual(exclusions["libs/vendor.cpp"], "outside_profile_scope")
             self.assertEqual(
-                exclusions["tests/poisson/domains.json"], "outside_pilot_scope"
+                exclusions["tests/integration/domains.json"],
+                "outside_profile_scope",
+            )
+            self.assertEqual(inventory["source"]["profile"], "focused")
+            self.assertTrue(
+                inventory["source"]["inventory_policy_hash"].startswith("sha256:")
             )
 
     def test_writes_generated_yaml(self) -> None:

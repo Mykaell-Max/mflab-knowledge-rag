@@ -10,7 +10,12 @@ from pathlib import Path
 from typing import Any, Callable, Iterator
 from urllib.parse import urlsplit, urlunsplit
 
-SCHEMA_VERSION = "0.3"
+from mflab_knowledge.inventory_policy import (
+    InventoryPolicy,
+    load_inventory_policy,
+)
+
+SCHEMA_VERSION = "0.4"
 MAX_INDEXABLE_SIZE_BYTES = 2 * 1024 * 1024
 
 EXCLUDED_DIRECTORY_NAMES = {
@@ -94,19 +99,6 @@ SPECIAL_FORMAT_BY_NAME = {
 INDEXABLE_FORMATS = set(FORMAT_BY_SUFFIX.values()) | set(
     SPECIAL_FORMAT_BY_NAME.values()
 )
-
-MFSIM_NG_ROOT_FILES = {
-    ".clang-tidy",
-    ".clangd",
-    ".gitattributes",
-    ".gitignore",
-    "agents.md",
-    "changelog.md",
-    "cmakelists.txt",
-    "doxyfile",
-    "readme.md",
-}
-
 
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
@@ -235,34 +227,6 @@ def _git_tracked_files(root: Path) -> list[Path] | None:
     return [root / item for item in tracked.split("\0") if item]
 
 
-def _resolve_profile(project: str, profile: str) -> str:
-    if profile != "auto":
-        return profile
-    normalized = project.casefold().replace("_", "-").replace(" ", "-")
-    return "mfsim-ng-pilot" if normalized == "mfsim-ng" else "generic"
-
-
-def _profile_exclusion(relative_path: str, profile: str) -> str | None:
-    if profile == "generic":
-        return None
-    if profile != "mfsim-ng-pilot":
-        raise ValueError(f"perfil desconhecido: {profile}")
-
-    parts = relative_path.casefold().split("/")
-    if len(parts) == 1:
-        return None if parts[0] in MFSIM_NG_ROOT_FILES else "outside_pilot_scope"
-
-    if parts[0] in {"src", "cmake", "etc", "scripts"}:
-        return None
-    if parts[:2] == ["docs", "md"]:
-        return None
-    if parts[:2] == ["mfsim-ng-guide", "analysis"]:
-        return None
-    if parts[0] == "tests" and any(part.startswith("dpm_ram") for part in parts[1:]):
-        return None
-    return "outside_pilot_scope"
-
-
 def _top_level(relative_path: str) -> str:
     return relative_path.split("/", 1)[0]
 
@@ -271,7 +235,9 @@ def build_inventory(
     source: Path,
     project: str,
     access_class: str = "lab",
-    profile: str = "auto",
+    profile: str = "generic",
+    policy_file: Path | None = None,
+    inventory_policy: InventoryPolicy | None = None,
     metadata_override: dict[str, Any] | None = None,
     progress: Callable[[int, int, str], None] | None = None,
 ) -> dict[str, Any]:
@@ -282,7 +248,11 @@ def build_inventory(
         raise ValueError(f"a fonte não é um diretório: {root}")
 
     git_metadata = metadata_override or detect_git_metadata(root)
-    selected_profile = _resolve_profile(project, profile)
+    selected_policy = inventory_policy or load_inventory_policy(
+        profile,
+        policy_file,
+    )
+    selected_profile = selected_policy.name
     indexable: list[dict[str, Any]] = []
     excluded: list[dict[str, Any]] = []
     errors: list[dict[str, str]] = []
@@ -357,7 +327,7 @@ def build_inventory(
             excluded_files += 1
             continue
         file_format = _classify_format(path)
-        reason = _profile_exclusion(relative_path, selected_profile)
+        reason = selected_policy.exclusion_reason(relative_path)
         if reason is None and file_format not in INDEXABLE_FORMATS:
             reason = "unsupported_format"
         if reason is None and size > MAX_INDEXABLE_SIZE_BYTES:
@@ -412,6 +382,12 @@ def build_inventory(
             **git_metadata,
             "enumeration": enumeration,
             "profile": selected_profile,
+            "inventory_policy_hash": selected_policy.policy_hash,
+            "inventory_policy_file": (
+                str(selected_policy.source_file)
+                if selected_policy.source_file is not None
+                else None
+            ),
             "snapshot_hash": f"sha256:{snapshot_digest.hexdigest()}",
         },
         "summary": {

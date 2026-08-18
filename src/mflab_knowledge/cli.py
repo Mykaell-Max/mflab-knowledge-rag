@@ -464,9 +464,13 @@ def build_parser() -> argparse.ArgumentParser:
     )
     inventory.add_argument(
         "--profile",
-        default="auto",
-        choices=("auto", "generic", "mfsim-ng-pilot"),
-        help="Política de seleção; 'auto' reconhece o MFSim-NG.",
+        default="generic",
+        help="Perfil nomeado da política de inventário (padrão: generic).",
+    )
+    inventory.add_argument(
+        "--inventory-policy-file",
+        type=Path,
+        help="Catálogo TOML opcional de perfis de inventário.",
     )
     inventory.add_argument(
         "--ref",
@@ -511,7 +515,12 @@ def build_parser() -> argparse.ArgumentParser:
     sync.add_argument(
         "--profile",
         default="generic",
-        choices=("auto", "generic", "mfsim-ng-pilot"),
+        help="Perfil nomeado da política de inventário (padrão: generic).",
+    )
+    sync.add_argument(
+        "--inventory-policy-file",
+        type=Path,
+        help="Catálogo TOML opcional de perfis de inventário.",
     )
     sync.add_argument("--cache-dir", default=Path("cache"), type=Path)
     sync.add_argument(
@@ -828,6 +837,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 project=args.project,
                 access_class=args.access_class,
                 profile=args.profile,
+                policy_file=args.inventory_policy_file,
                 metadata_override=metadata_override,
                 progress=reporter.progress,
             )
@@ -885,6 +895,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 branch_scope=args.branch_scope,
                 access_class=args.access_class,
                 profile=args.profile,
+                inventory_policy_file=args.inventory_policy_file,
                 cache_dir=args.cache_dir,
                 fetch_timeout_seconds=args.fetch_timeout_seconds,
                 output_dir=args.output_dir,

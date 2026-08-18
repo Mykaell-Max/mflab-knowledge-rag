@@ -20,6 +20,7 @@ from mflab_knowledge.inventory import (
     write_json,
     write_yaml,
 )
+from mflab_knowledge.inventory_policy import load_inventory_policy
 from mflab_knowledge.repository import (
     RepositoryBranch,
     compare_branch_to_canonical,
@@ -33,7 +34,7 @@ from mflab_knowledge.repository import (
 LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, int, str], None]
 INVENTORY_CACHE_SCHEMA_VERSION = "0.1"
-INVENTORY_POLICY_VERSION = "1"
+INVENTORY_POLICY_VERSION = "2"
 
 
 def _utc_now() -> str:
@@ -111,6 +112,7 @@ def _inventory_cache_descriptor(
     commit_sha: str,
     access_class: str,
     profile: str,
+    inventory_policy_hash: str,
 ) -> dict[str, str]:
     return {
         "cache_schema_version": INVENTORY_CACHE_SCHEMA_VERSION,
@@ -121,6 +123,7 @@ def _inventory_cache_descriptor(
         "commit_sha": commit_sha,
         "access_class": access_class,
         "profile": profile,
+        "inventory_policy_hash": inventory_policy_hash,
     }
 
 
@@ -279,6 +282,7 @@ def sync_repository_branches(
     branch_scope: str,
     access_class: str,
     profile: str,
+    inventory_policy_file: Path | None = None,
     cache_dir: Path,
     output_dir: Path,
     include_branches: tuple[str, ...] = (),
@@ -292,6 +296,7 @@ def sync_repository_branches(
     logger = log or (lambda _message, _level="info": None)
     destination = output_dir.expanduser().resolve()
     destination.mkdir(parents=True, exist_ok=True)
+    inventory_policy = load_inventory_policy(profile, inventory_policy_file)
 
     if (source is None) == (remote_url is None):
         raise ValueError("informe exatamente uma origem: source ou remote_url")
@@ -408,7 +413,8 @@ def sync_repository_branches(
                 project=project,
                 commit_sha=branch.commit_sha,
                 access_class=access_class,
-                profile=profile,
+                profile=inventory_policy.name,
+                inventory_policy_hash=inventory_policy.policy_hash,
             )
             inventory_cache = _inventory_cache_path(cache_dir, descriptor)
             cached_inventory = _load_cached_inventory(inventory_cache, descriptor)
@@ -418,7 +424,7 @@ def sync_repository_branches(
                 inventories_reused += 1
                 logger(
                     f"Reutilizando inventário {branch.commit_sha[:12]} "
-                    f"({profile}, {access_class})",
+                    f"({inventory_policy.name}, {access_class})",
                     "cache",
                 )
             else:
@@ -436,7 +442,8 @@ def sync_repository_branches(
                     source=snapshot.path,
                     project=project,
                     access_class=access_class,
-                    profile=profile,
+                    profile=inventory_policy.name,
+                    inventory_policy=inventory_policy,
                     metadata_override=snapshot.metadata(),
                     progress=branch_progress if progress is not None else None,
                 )
@@ -524,7 +531,7 @@ def sync_repository_branches(
     total_errors = sum(int(entry["errors"]) for entry in entries)
     elapsed_seconds = time.monotonic() - synchronization_started
     manifest: dict[str, object] = {
-        "schema_version": "0.3",
+        "schema_version": "0.4",
         "generated_at": _utc_now(),
         "project": project,
         "source": remote_url or str(mirror.source_path),
@@ -535,6 +542,13 @@ def sync_repository_branches(
         "canonical_policy": canonical_ref,
         "branch_scope": branch_scope,
         "fetch_timeout_seconds": fetch_timeout_seconds,
+        "inventory_profile": inventory_policy.name,
+        "inventory_policy_hash": inventory_policy.policy_hash,
+        "inventory_policy_file": (
+            str(inventory_policy.source_file)
+            if inventory_policy.source_file is not None
+            else None
+        ),
         "branch_filters": {
             "include": list(include_branches),
             "exclude": list(exclude_branches),
@@ -579,4 +593,6 @@ def sync_repository_branches(
         "inventories_reused": inventories_reused,
         "errors": total_errors,
         "duration_seconds": round(elapsed_seconds, 3),
+        "inventory_profile": inventory_policy.name,
+        "inventory_policy_hash": inventory_policy.policy_hash,
     }
