@@ -269,12 +269,58 @@ Depois dessa validação, a ordem recomendada é:
 
 ## 12. Forma de colaboração adotada
 
-- Entregar comandos Linux em um único bloco copiável quando o usuário precisar
-  executar algo na Morgoth.
-- Manter o terminal aberto ao final de blocos longos para permitir copiar o
-  resultado.
-- Exibir etapas, cores, progresso, sucesso, aviso, erro e resumo.
-- Implementar e testar localmente antes de solicitar o teste no laboratório.
-- Não apagar mudanças do usuário nem executar operações Git destrutivas.
-- Não fazer push; informar o commit para que o usuário realize o envio.
+### 12.1 Separação entre as máquinas
 
+- O Windows do usuário é o workspace de colaboração e edição do código. Ele não
+  é o ambiente de execução do serviço.
+- PostgreSQL, pgvector, CUDA, vLLM, modelos, indexações reais, unidades `systemd`
+  e testes integrados com os corpora devem ser executados na **Morgoth**, a
+  máquina Ubuntu do laboratório.
+- Testes unitários pequenos e independentes da infraestrutura podem ser
+  executados no workspace de desenvolvimento quando forem compatíveis. Isso não
+  substitui a validação final na Morgoth.
+- Não tentar instalar ou reproduzir a stack Linux/GPU no Windows apenas para
+  validar uma alteração.
+- O acesso remoto costuma ser realizado pelo RustDesk. Uma conexão SSH direta a
+  partir de fora da rede da UFU não deve ser presumida, pois pode ser bloqueada
+  pela rede institucional.
+- Os comandos destinados ao laboratório devem considerar como raiz do projeto
+  `/home/max/Desktop/mflab-knowledge-rag`, mas scripts e código versionados
+  continuam genéricos e não podem fixar esse caminho.
+
+### 12.2 Formato preferido para comandos de teste
+
+- Quando o usuário precisar executar comandos na Morgoth, entregar **um único
+  bloco Bash completo e copiável**, chamado de RunBlock na conversa, em vez de
+  vários blocos ou comandos soltos.
+- O bloco deve poder ser colado inteiro no terminal e executar as etapas na ordem
+  correta, incluindo atualização do repositório, instalação editável quando
+  necessária, validações e resumo final.
+- Blocos longos devem mostrar títulos de etapa, cores, progresso, sucessos,
+  avisos, erros e o caminho do log. Operações demoradas devem fornecer heartbeat,
+  porcentagem ou outra evidência clara de que continuam ativas.
+- O tempo esperado deve ser informado antes da execução quando houver download,
+  carregamento de modelo, inventário amplo ou cálculo de embeddings.
+- O terminal deve permanecer aberto ao final do bloco, inclusive quando uma
+  etapa falhar, para que o resultado possa ser copiado. A falha deve ser
+  preservada no resumo e no código de status interno, sem encerrar a janela antes
+  da pausa final.
+- O bloco não deve imprimir tokens, senhas, URLs de banco com credenciais ou o
+  conteúdo integral de `.env`.
+- Sempre que possível, o bloco deve salvar uma cópia do resultado em `logs/`,
+  sem depender exclusivamente do histórico visível do terminal.
+
+### 12.3 Fluxo Git e estilo de colaboração
+
+- As alterações são implementadas e verificadas no workspace compartilhado.
+- Um commit identificável é criado depois da validação local.
+- O assistente **não faz push**. O usuário realiza o push e informa quando o
+  commit estiver disponível.
+- Na Morgoth, o RunBlock começa atualizando o clone e confirma o commit realmente
+  testado.
+- Não apagar mudanças do usuário nem executar operações Git destrutivas.
+- As explicações e os logs destinados ao usuário devem ser apresentados em
+  português claro.
+- Evitar trabalho operacional manual recorrente. Configurações locais podem
+  exigir uma preparação inicial, mas sincronização, indexação, retomada e
+  monitoramento devem ser automatizados.
