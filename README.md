@@ -2,6 +2,10 @@
 
 Serviço interno de inventário, indexação e RAG para fontes autorizadas do MFLab.
 
+Para continuar o desenvolvimento em outra conversa, leia primeiro
+[`HANDOFF.md`](HANDOFF.md). Ele registra o estado operacional, as validações já
+concluídas e a próxima ação recomendada.
+
 O projeto é separado do MFSim-NG: ele lê um clone ou snapshot fornecido por caminho, grava apenas em seu próprio armazenamento e nunca precisa alterar o solver.
 
 ## Estado atual
