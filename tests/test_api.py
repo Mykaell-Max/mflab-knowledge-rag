@@ -1556,6 +1556,76 @@ class ApiServiceTests(unittest.TestCase):
             [step["title"] for step in progress],
         )
 
+    def test_ask_salvages_audited_claims_when_model_repair_is_disabled(self) -> None:
+        generator = _VerifyingGenerator(
+            answers=[
+                "The observed operation advances state [S1].\n\n"
+                "This is the complete architecture [S1]."
+            ],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"Directly present."},'
+                '{"claim_id":"C2","verdict":"unsupported",'
+                '"source_ids":["S1"],"finding":"Too broad."}]}',
+                '{"claims":[{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"Directly present."}]}',
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        progress: list[dict[str, object]] = []
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the observed operation",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 30,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                        "path": "src/model.cpp",
+                        "text": "The operation advances state.",
+                    }
+                ],
+            },
+        ):
+            result = service.ask(
+                query="Explain the observed operation",
+                progress_callback=progress.append,
+            )
+
+        self.assertFalse(result["abstained"])
+        self.assertTrue(result["verification"]["passed"])
+        self.assertEqual(
+            result["answer"], "The observed operation advances state [S1]."
+        )
+        self.assertFalse(result["context"]["evidence_repair"])
+        self.assertEqual(len(generator.calls), 1)
+        self.assertEqual(len(generator.verify_calls), 2)
+        self.assertIn(
+            "Afirmações rejeitadas removidas",
+            [step["title"] for step in progress],
+        )
+
     def test_overview_reports_when_answer_cites_only_one_scope(self) -> None:
         generator = _Generator("Solver A is the complete system [S1].")
         service = api.RagApiService(

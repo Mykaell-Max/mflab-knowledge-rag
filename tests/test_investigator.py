@@ -28,7 +28,7 @@ class InvestigatorTests(unittest.TestCase):
                 "actions": [
                     {"tool": "search_code", "query": "factory create initialize"},
                     {"tool": "open_neighborhood", "chunk_id": "known"},
-                    {"tool": "open_neighborhood", "chunk_id": "invented"},
+                    {"tool": "open_related", "chunk_id": "known"},
                     {"tool": "shell", "query": "rm -rf"},
                 ],
                 "keep_chunk_ids": ["known", "invented"],
@@ -42,6 +42,7 @@ class InvestigatorTests(unittest.TestCase):
             [
                 {"tool": "search_code", "query": "factory create initialize"},
                 {"tool": "open_neighborhood", "chunk_id": "known"},
+                {"tool": "open_related", "chunk_id": "known"},
             ],
         )
         self.assertEqual(decision["keep_chunk_ids"], ["known"])
@@ -89,6 +90,30 @@ class InvestigatorTests(unittest.TestCase):
         self.assertEqual(observations[0]["path"], "src/domain.cpp")
         self.assertEqual(len(observations[0]["preview"]), 500)
 
+    def test_observations_round_robin_independent_retrieval_groups(self) -> None:
+        crowded = [
+            {
+                "chunk_id": f"expanded-{position}",
+                "project": "Solver",
+                "path": f"src/expanded-{position}.cpp",
+                "selected_occurrence": {"branch": "trunk"},
+            }
+            for position in range(30)
+        ]
+        independent = {
+            "chunk_id": "initial-lead",
+            "project": "Solver",
+            "path": "src/independent.cpp",
+            "selected_occurrence": {"branch": "trunk"},
+        }
+
+        observations = build_observations(
+            [{"results": crowded}, {"results": [independent]}]
+        )
+
+        self.assertEqual(len(observations), 18)
+        self.assertEqual(observations[1]["chunk_id"], "initial-lead")
+
     def test_fallback_uses_qualified_terms_and_only_observed_targets(self) -> None:
         observations = [
             {
@@ -118,6 +143,10 @@ class InvestigatorTests(unittest.TestCase):
         )
         self.assertEqual(
             actions[1],
+            {"tool": "open_related", "chunk_id": "qualified"},
+        )
+        self.assertEqual(
+            actions[2],
             {"tool": "find_symbol", "query": "AdaptiveManager::buildGrid"},
         )
         self.assertTrue(
@@ -157,7 +186,10 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertEqual(
             actions,
-            [{"tool": "search_code", "query": "Driver advance"}],
+            [
+                {"tool": "open_related", "chunk_id": "observed"},
+                {"tool": "search_code", "query": "Driver advance"},
+            ],
         )
 
     def test_fallback_moves_to_next_observation_after_exhausting_target(self) -> None:
@@ -177,6 +209,7 @@ class InvestigatorTests(unittest.TestCase):
         ]
         previous = [
             {"tool": "open_neighborhood", "chunk_id": "first"},
+            {"tool": "open_related", "chunk_id": "first"},
             {"tool": "find_symbol", "query": "GridManager::initialize"},
             {"tool": "search_code", "query": "Grid Manager initialize"},
         ]

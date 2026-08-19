@@ -359,6 +359,38 @@ class SemanticDatabaseTests(unittest.TestCase):
             relation_sql,
         )
 
+    def test_related_chunks_reapply_scope_and_acl(self) -> None:
+        connection = _StatusConnection(
+            [{"chunk_id": "caller"}, {"chunk_id": "companion"}]
+        )
+        with mock.patch.object(
+            semantic_database,
+            "_driver",
+            return_value=(object(), object()),
+        ):
+            with mock.patch.object(
+                semantic_database,
+                "_connect",
+                return_value=connection,
+            ):
+                result = semantic_database.related_semantic_chunk_ids(
+                    "postgresql://not-logged",
+                    chunk_id="origin",
+                    project="Solver",
+                    branch="feature/solver",
+                    allowed_access={"lab"},
+                    limit=5,
+                )
+
+        self.assertEqual(result, ["caller", "companion"])
+        self.assertIn("semantic_relations AS relation", connection.sql)
+        self.assertIn("semantic_relation_occurrences", connection.sql)
+        self.assertIn("ANY(%(allowed_access)s::text[])", connection.sql)
+        self.assertEqual(connection.parameters["chunk_id"], "origin")
+        self.assertEqual(connection.parameters["project"], "Solver")
+        self.assertEqual(connection.parameters["branch"], "feature/solver")
+        self.assertEqual(connection.parameters["allowed_access"], ["lab"])
+
     def test_search_rejects_pending_access_and_invalid_limits(self) -> None:
         with self.assertRaisesRegex(ValueError, "filtro de acesso"):
             semantic_database.search_semantic_map(

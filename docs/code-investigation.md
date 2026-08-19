@@ -47,10 +47,13 @@ o raciocínio interno do modelo e não expõe prompts ocultos.
 A 0.39.0 acrescenta um primeiro runtime agentivo sobre essa fundação. Depois
 da recuperação inicial, o modelo observa metadados, proveniência e previews
 limitados dos chunks reais. Em até quatro ciclos, escolhe até três ferramentas de
-leitura entre `search_code`, `find_symbol` e `open_neighborhood`. Resultados de
-um ciclo alimentam a decisão seguinte; ações repetidas ou fora do esquema são
-descartadas. Um caderno de cobertura registra aspectos cobertos, parciais e
-lacunas e orienta a síntese sem ser tratado como evidência.
+leitura entre `search_code`, `find_symbol`, `open_neighborhood` e
+`open_related`. A última abre chunks citáveis de arquivos companheiros,
+dependências e dependentes que já estejam ligados no mapa estrutural, sempre
+reaplicando projeto, branch e ACL no SQL. Resultados de um ciclo alimentam a
+decisão seguinte; ações repetidas ou fora do esquema são descartadas. Um
+caderno de cobertura registra aspectos cobertos, parciais e lacunas e orienta
+a síntese sem ser tratado como evidência.
 
 Uma hipótese sem resultados não encerra a investigação: a contagem zero volta
 como observação para que o ciclo seguinte possa mudar de vocabulário. Depois da
@@ -98,6 +101,17 @@ houver evidência. Se a correção textual ainda acrescentar afirmações rejeit
 uma consolidação determinística preserva somente as unidades já aprovadas e
 submete esse subconjunto a uma terceira auditoria. Nenhuma afirmação rejeitada é
 liberada apenas porque o restante da resposta passou.
+
+A validação real da 0.40.1 chegou a 97,9% de cobertura de citações, mas revelou
+dois defeitos diferentes. Uma expansão em torno de um nome genérico ocupava a
+janela inteira e escondia hipóteses iniciais independentes; em outro caso, duas
+frases amplas fizeram a resposta descartar 22 afirmações já aprovadas. A 0.40.2
+passa a intercalar grupos de resultados na janela observável, preserva uma
+leitura estrutural independente ao lado da hipótese escolhida pelo modelo e
+adiciona `open_related`. A consolidação determinística passa a ser uma
+salvaguarda obrigatória quando há unidades aprovadas, mesmo se a reescrita pelo
+modelo estiver desativada na configuração local. O subconjunto continua sendo
+auditado novamente e não recebe texto novo.
 
 ## Próximas camadas
 

@@ -7,13 +7,18 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v4"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v5"
 MAX_AGENT_ITERATIONS = 4
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
 MAX_OBSERVATION_PREVIEW = 500
 
-ALLOWED_ACTIONS = {"search_code", "find_symbol", "open_neighborhood"}
+ALLOWED_ACTIONS = {
+    "search_code",
+    "find_symbol",
+    "open_neighborhood",
+    "open_related",
+}
 ALLOWED_COVERAGE = {"covered", "partial", "gap"}
 
 # These are language and source-code navigation words, not repository concepts.
@@ -184,11 +189,21 @@ def build_observations(
 
     observations: list[dict[str, object]] = []
     seen: set[tuple[str, str, str]] = set()
-    for retrieval in retrievals:
-        raw_results = retrieval.get("results")
-        if not isinstance(raw_results, list):
-            continue
-        for result in raw_results:
+    result_groups = [
+        raw_results
+        for retrieval in retrievals
+        if isinstance((raw_results := retrieval.get("results")), list)
+    ]
+    # New tool results are inserted before the original retrievals. Walking a
+    # whole group at once used to let one exploratory query evict every earlier
+    # lead from the bounded observation window. Round-robin keeps independent
+    # hypotheses observable and prevents semantic drift around one generic name.
+    maximum_group_size = max((len(group) for group in result_groups), default=0)
+    for result_position in range(maximum_group_size):
+        for raw_results in result_groups:
+            if result_position >= len(raw_results):
+                continue
+            result = raw_results[result_position]
             if not isinstance(result, dict):
                 continue
             chunk_id = str(result.get("chunk_id", ""))
@@ -310,6 +325,9 @@ def fallback_investigation_actions(
         if chunk_id:
             candidates.append(
                 {"tool": "open_neighborhood", "chunk_id": chunk_id}
+            )
+            candidates.append(
+                {"tool": "open_related", "chunk_id": chunk_id}
             )
 
         observed_title = " ".join(

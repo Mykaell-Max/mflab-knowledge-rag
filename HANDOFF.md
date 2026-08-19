@@ -440,6 +440,25 @@ da correção pelo modelo, uma consolidação determinística pode remover somen
 as unidades rejeitadas e preservar as aprovadas; o resultado é obrigatoriamente
 auditado outra vez antes de ser entregue.
 
+A validação real da 0.40.1 manteve a infraestrutura saudável e elevou a
+cobertura média da suíte para 97,9%, mas os dois casos ainda reprovaram. Na
+consulta de localização, uma expansão sobre um método genérico ligado à
+fronteira imersa tomou a janela de observações e desviou a investigação dos
+arquivos centrais da malha. Na consulta de fluxo, 22 afirmações foram aprovadas
+e apenas duas frases amplas foram rejeitadas, mas a consolidação não executou
+porque estava acoplada à opção local de reescrita pelo modelo.
+
+A 0.40.2 corrige as causas sem codificar nenhum projeto ou subsistema. Grupos de
+resultados passam a ser intercalados na janela limitada, impedindo que uma única
+busca expulse todas as hipóteses anteriores. O servidor preserva uma hipótese
+estrutural independente por ciclo e oferece `open_related`, que percorre
+relações já indexadas entre arquivos companheiros, dependências e dependentes;
+projeto, branch e ACL são reaplicados no SQL antes de buscar os chunks. A
+consolidação de afirmações aprovadas torna-se independente da reescrita pelo
+modelo e continua exigindo uma auditoria final. A próxima execução real deve
+confirmar se a navegação recupera os pontos de integração esperados e se o caso
+de fluxo deixa de abster sem relaxar a sustentação.
+
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
 rotas web somente leitura; administração usa senha separada. Um segredo

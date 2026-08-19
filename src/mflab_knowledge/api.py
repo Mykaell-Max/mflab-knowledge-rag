@@ -55,6 +55,7 @@ from mflab_knowledge.generation import (
 from mflab_knowledge.grounding import citation_coverage, citation_ids
 from mflab_knowledge.investigator import (
     AGENT_INVESTIGATION_ALGORITHM,
+    MAX_ACTIONS_PER_ITERATION,
     MAX_AGENT_ITERATIONS,
     build_observations,
     coverage_summary,
@@ -70,7 +71,10 @@ from mflab_knowledge.repository_config import (
 )
 from mflab_knowledge.service_runner import read_last_run
 from mflab_knowledge.scope import resolve_query_scopes
-from mflab_knowledge.semantic_database import search_semantic_map
+from mflab_knowledge.semantic_database import (
+    related_semantic_chunk_ids,
+    search_semantic_map,
+)
 from mflab_knowledge.structure import STRUCTURE_ALGORITHM, structure_source
 from mflab_knowledge.verification import (
     INVESTIGATION_ALGORITHM,
@@ -1327,6 +1331,61 @@ class RagApiService:
                                     "actions": raw_actions,
                                 },
                             )
+                elif raw_actions and not decision["stop"]:
+                    # Keep one independent, deterministic lead alive beside the
+                    # model-selected hypothesis. This bounded hedge prevents an
+                    # early generic match from monopolizing all later cycles.
+                    raw_hints = exploration.get("queries")
+                    search_hints = (
+                        [str(value) for value in raw_hints]
+                        if isinstance(raw_hints, list)
+                        else []
+                    )
+                    if isinstance(query_plan, dict):
+                        raw_identifiers = query_plan.get("identifiers")
+                        if isinstance(raw_identifiers, list):
+                            search_hints.extend(
+                                str(value) for value in raw_identifiers
+                            )
+                    supplemental = fallback_investigation_actions(
+                        question=query,
+                        search_hints=search_hints,
+                        observations=observations,
+                        previous_actions=[*agent_actions, *raw_actions],
+                    )
+                    current_identities = {
+                        (
+                            str(item.get("tool", "")),
+                            str(
+                                item.get("query") or item.get("chunk_id") or ""
+                            ).casefold(),
+                        )
+                        for item in raw_actions
+                        if isinstance(item, dict)
+                    }
+                    for supplemental_action in supplemental:
+                        identity = (
+                            supplemental_action["tool"],
+                            str(
+                                supplemental_action.get("query")
+                                or supplemental_action.get("chunk_id")
+                                or ""
+                            ).casefold(),
+                        )
+                        if identity in current_identities:
+                            continue
+                        raw_actions.append(supplemental_action)
+                        record(
+                            "agent",
+                            "Hipótese estrutural independente preservada",
+                            "Uma leitura limitada foi acrescentada para evitar dependência de uma única trilha.",
+                            {
+                                "iteration": iteration,
+                                "action": supplemental_action,
+                            },
+                        )
+                        break
+                    raw_actions = raw_actions[:MAX_ACTIONS_PER_ITERATION]
                 actions: list[dict[str, str]] = []
                 for action in raw_actions:
                     assert isinstance(action, dict)
@@ -1442,6 +1501,45 @@ class RagApiService:
                                 )
                                 for result in fetched:
                                     result["source_kind"] = "agent_neighborhood_evidence"
+                                iteration_results.extend(fetched)
+                        elif tool == "open_related":
+                            observation = next(
+                                (
+                                    item
+                                    for item in observations
+                                    if item.get("chunk_id") == action["chunk_id"]
+                                ),
+                                None,
+                            )
+                            if observation is not None:
+                                related_ids = related_semantic_chunk_ids(
+                                    self.settings.database_url,
+                                    chunk_id=action["chunk_id"],
+                                    limit=12,
+                                    project=str(observation.get("project", ""))
+                                    or None,
+                                    branch=str(observation.get("branch", ""))
+                                    or None,
+                                    allowed_access=self._allowed_access(
+                                        allowed_access
+                                    ),
+                                )
+                                fetched = fetch_chunks_by_id(
+                                    self.settings.database_url,
+                                    chunk_ids=related_ids,
+                                    limit=12,
+                                    project=str(observation.get("project", ""))
+                                    or None,
+                                    branch=str(observation.get("branch", ""))
+                                    or None,
+                                    allowed_access=self._allowed_access(
+                                        allowed_access
+                                    ),
+                                )
+                                for result in fetched:
+                                    result["source_kind"] = (
+                                        "agent_related_evidence"
+                                    )
                                 iteration_results.extend(fetched)
                     except Exception:
                         self.log(
@@ -2216,6 +2314,71 @@ class RagApiService:
                         "repair_completed": False,
                         "repair_reason": "structured_result_unavailable",
                     }
+
+            # Deterministic salvage is a safety property, not a generation
+            # preference. Even when model-based rewriting is disabled locally,
+            # one rejected sentence must not discard independently audited
+            # statements. No new prose or citation is introduced here.
+            if (
+                verification.get("performed") is True
+                and verification.get("passed") is False
+            ):
+                supported_answer = supported_claim_subset(verification)
+                if supported_answer and supported_answer.strip() != answer.strip():
+                    record(
+                        "revision",
+                        "Afirmações rejeitadas removidas",
+                        "Somente unidades já aprovadas pela auditoria foram "
+                        "preservadas antes da conferência final.",
+                        {
+                            "retained_claims": len(
+                                claims_for_verification(supported_answer)
+                            ),
+                            "mode": "deterministic_supported_subset",
+                        },
+                    )
+                    answer = supported_answer
+                    assessment = _grounding_assessment(
+                        answer,
+                        raw_sources,
+                        require_scope_coverage=require_scope_coverage,
+                    )
+                    quality_issues = overview_quality_issues(
+                        answer,
+                        exploration if isinstance(exploration, dict) else {},
+                    )
+                    try:
+                        verification = audit_with_retry(answer)
+                    except (
+                        GenerationUnavailableError,
+                        ValueError,
+                        TypeError,
+                    ) as exc:
+                        self.log(
+                            f"Auditoria do conjunto sustentado indisponível: {exc}",
+                            "warning",
+                        )
+                        verification = unavailable_verification(
+                            "supported_subset_audit_unavailable"
+                        )
+                    subset_counts = verification.get("counts")
+                    if isinstance(subset_counts, dict):
+                        record(
+                            "verification",
+                            "Conjunto sustentado conferido novamente",
+                            "A remoção determinística não dispensou uma nova auditoria.",
+                            {
+                                "supported": int(
+                                    subset_counts.get("supported", 0)
+                                ),
+                                "unsupported": int(
+                                    subset_counts.get("unsupported", 0)
+                                ),
+                                "uncertain": int(
+                                    subset_counts.get("uncertain", 0)
+                                ),
+                            },
+                        )
 
         verification_failed = bool(
             verification_expected and verification.get("passed") is not True
