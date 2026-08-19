@@ -334,6 +334,9 @@ revisada e, se persistir, a resposta candidata não é entregue. A interface usa
 uma fila efêmera limitada a um worker e acompanha eventos reais da investigação
 por polling: escopo, recuperação, evidências, geração, auditoria e revisão. Essa
 trilha não expõe prompts, raciocínio interno ou texto integral das fontes.
+O teste real correspondente está concentrado em
+`scripts/validate-investigation.py`; RunBlocks devem chamá-lo em vez de repetir
+Python extenso dentro de heredocs aninhados.
 
 A próxima validação na Morgoth deve confirmar a 0.34.0 com uma resposta correta,
 um falso positivo citado que exija revisão e a trilha aparecendo durante o
