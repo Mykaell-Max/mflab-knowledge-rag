@@ -43,10 +43,13 @@ EXPECTATION_FIELDS = {
     "max_invalid_citations",
     "min_sources",
     "min_citation_coverage",
+    "min_scope_citation_coverage",
     "allowed_finish_reasons",
     "max_client_duration_seconds",
     "max_generation_duration_seconds",
     "scope_warning",
+    "exploration_intent",
+    "required_source_projects",
     "required_source_paths",
 }
 
@@ -334,6 +337,24 @@ def _evaluate_expectations(
             coverage_value is not None and coverage_value >= minimum,
         )
 
+    scope_coverage_value: float | None = None
+    scope_coverage = response.get("scope_citation_coverage")
+    if (
+        isinstance(scope_coverage, dict)
+        and scope_coverage.get("coverage") is not None
+    ):
+        scope_coverage_value = float(scope_coverage["coverage"])
+    if "min_scope_citation_coverage" in expectations:
+        minimum = float(expectations["min_scope_citation_coverage"])
+        _check(
+            checks,
+            "min_scope_citation_coverage",
+            minimum,
+            scope_coverage_value,
+            scope_coverage_value is not None
+            and scope_coverage_value >= minimum,
+        )
+
     if "allowed_finish_reasons" in expectations:
         allowed = expectations["allowed_finish_reasons"]
         if not isinstance(allowed, list) or not all(
@@ -368,6 +389,43 @@ def _evaluate_expectations(
             raise ValueError("expectations.scope_warning deve ser booleano")
         actual = response.get("scope_warning")
         _check(checks, "scope_warning", expected, actual, actual is expected)
+
+    if "exploration_intent" in expectations:
+        expected = expectations["exploration_intent"]
+        if not isinstance(expected, str):
+            raise ValueError("exploration_intent deve ser texto")
+        context = response.get("context")
+        exploration = (
+            context.get("exploration") if isinstance(context, dict) else None
+        )
+        actual = (
+            exploration.get("intent")
+            if isinstance(exploration, dict)
+            else None
+        )
+        _check(checks, "exploration_intent", expected, actual, actual == expected)
+
+    if "required_source_projects" in expectations:
+        expected_projects = expectations["required_source_projects"]
+        if not isinstance(expected_projects, list) or not all(
+            isinstance(value, str) for value in expected_projects
+        ):
+            raise ValueError(
+                "required_source_projects deve ser uma lista de textos"
+            )
+        actual_projects = {
+            str(source.get("project"))
+            for source in (sources if isinstance(sources, list) else [])
+            if isinstance(source, dict)
+        }
+        missing = sorted(set(expected_projects) - actual_projects)
+        _check(
+            checks,
+            "required_source_projects",
+            expected_projects,
+            {"present": sorted(actual_projects), "missing": missing},
+            not missing,
+        )
 
     if "required_source_paths" in expectations:
         expected_paths = expectations["required_source_paths"]

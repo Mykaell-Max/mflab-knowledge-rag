@@ -206,14 +206,25 @@ async function submitAsk(event) {
   try {
     const response = await api("/ui-api/ask", { method: "POST", body: JSON.stringify(payload) });
     const resolution = response.context?.scope_resolution;
+    const incompleteScopes = response.grounding_status === "incomplete_scope_coverage";
     feedback.textContent = response.abstained
       ? `Não há evidência indexada suficiente.${scopeSummary(resolution)}`
-      : `Resposta concluída.${scopeSummary(resolution)}`;
+      : `${incompleteScopes ? "Resposta parcial: nem todos os escopos foram citados." : "Resposta concluída."}${scopeSummary(resolution)}`;
     card.append(element("h3", "", response.abstained ? "Evidência insuficiente" : "Resposta"));
     card.append(element("div", "answer-text", response.answer || "A base indexada não sustenta uma resposta."));
     const footer = element("div", "answer-footer");
     footer.append(element("span", "chip accent", response.grounding_status || "sem status"));
     footer.append(element("span", "chip", `${(response.citations_used || []).length} citações`));
+    const exploration = response.context?.exploration;
+    if (exploration?.intent === "overview") footer.append(element("span", "chip", "visão geral"));
+    const scopeCoverage = response.scope_citation_coverage;
+    if (scopeCoverage?.required) {
+      footer.append(element(
+        "span",
+        "chip",
+        `${scopeCoverage.cited_scopes?.length || 0}/${scopeCoverage.available_scopes?.length || 0} escopos citados`,
+      ));
+    }
     footer.append(element("span", "chip", `${response.duration_seconds || 0}s`));
     card.append(footer);
     card.classList.remove("hidden");

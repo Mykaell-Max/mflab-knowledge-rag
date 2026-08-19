@@ -30,6 +30,11 @@ from mflab_knowledge.embeddings import (
     hybrid_search,
     semantic_search,
 )
+from mflab_knowledge.exploration import (
+    exploration_instructions,
+    overview_authority,
+    plan_exploration,
+)
 from mflab_knowledge.normalize import RETRIEVABLE_ACCESS_CLASSES
 from mflab_knowledge.generation import (
     GenerationConfig,
@@ -110,6 +115,12 @@ def _reduce_context_evidence(
             "sources": sources,
         }
     )
+    exploration = reduced.get("exploration")
+    if isinstance(exploration, dict):
+        reduced["instructions"] = CONTEXT_INSTRUCTIONS + exploration_instructions(
+            exploration,
+            sources,
+        )
     return reduced
 
 
@@ -147,6 +158,165 @@ def _merge_scoped_results(
             break
         position += 1
     return merged
+
+
+def _matches_resolved_scope(
+    result: dict[str, object],
+    scopes: list[dict[str, object]],
+) -> bool:
+    occurrence = result.get("selected_occurrence")
+    if not isinstance(occurrence, dict):
+        occurrence = {}
+    project = str(result.get("project", ""))
+    branch = str(occurrence.get("branch", ""))
+    return any(
+        project == str(scope.get("project", ""))
+        and (
+            scope.get("branch") is None
+            or branch == str(scope.get("branch"))
+        )
+        for scope in scopes
+    )
+
+
+def _merge_exploration_results(
+    retrievals: list[dict[str, object]],
+    *,
+    limit: int,
+    overview: bool,
+) -> list[dict[str, object]]:
+    candidates: dict[tuple[str, str, str], dict[str, object]] = {}
+    for retrieval in retrievals:
+        raw_results = retrieval.get("results")
+        if not isinstance(raw_results, list):
+            continue
+        for result in raw_results:
+            if not isinstance(result, dict):
+                continue
+            occurrence = result.get("selected_occurrence")
+            if not isinstance(occurrence, dict):
+                occurrence = {}
+            key = (
+                str(result.get("project", "")),
+                str(occurrence.get("branch", "")),
+                str(result.get("chunk_id", "")),
+            )
+            candidates.setdefault(key, result)
+    if not overview:
+        return list(candidates.values())[:limit]
+
+    by_scope: dict[tuple[str, str], list[dict[str, object]]] = {}
+    for result in candidates.values():
+        occurrence = result.get("selected_occurrence")
+        if not isinstance(occurrence, dict):
+            occurrence = {}
+        key = (
+            str(result.get("project", "")),
+            str(occurrence.get("branch", "")),
+        )
+        by_scope.setdefault(key, []).append(result)
+    groups = [
+        sorted(values, key=overview_authority)
+        for _scope, values in sorted(by_scope.items())
+    ]
+    return _merge_scoped_results(groups, limit=limit)
+
+
+def _grounding_assessment(
+    answer: str,
+    sources: list[dict[str, object]],
+    *,
+    require_scope_coverage: bool,
+) -> dict[str, object]:
+    valid_source_ids = {
+        str(source["source_id"])
+        for source in sources
+        if isinstance(source, dict)
+    }
+    cited_ids = citation_ids(answer)
+    valid_citations = sorted(cited_ids & valid_source_ids)
+    invalid_citations = sorted(cited_ids - valid_source_ids)
+    coverage = citation_coverage(answer, valid_source_ids=valid_source_ids)
+    source_scopes: dict[str, tuple[str, str]] = {}
+    for source in sources:
+        occurrence = source.get("selected_occurrence")
+        if not isinstance(occurrence, dict):
+            occurrence = {}
+        source_scopes[str(source.get("source_id", ""))] = (
+            str(source.get("project", "?")),
+            str(occurrence.get("branch", "?")),
+        )
+    available_scopes = sorted(set(source_scopes.values()))
+    cited_scopes = sorted(
+        {
+            source_scopes[source_id]
+            for source_id in valid_citations
+            if source_id in source_scopes
+        }
+    )
+    missing_scopes = sorted(set(available_scopes) - set(cited_scopes))
+    coverage_required = require_scope_coverage and len(available_scopes) > 1
+    scope_citation_coverage = {
+        "required": coverage_required,
+        "available_scopes": [
+            {"project": item[0], "branch": item[1]}
+            for item in available_scopes
+        ],
+        "cited_scopes": [
+            {"project": item[0], "branch": item[1]}
+            for item in cited_scopes
+        ],
+        "missing_scopes": [
+            {"project": item[0], "branch": item[1]}
+            for item in missing_scopes
+        ],
+        "coverage": (
+            round(len(cited_scopes) / len(available_scopes), 6)
+            if available_scopes
+            else None
+        ),
+    }
+    if invalid_citations:
+        grounding_status = "invalid_citations"
+    elif not valid_citations:
+        grounding_status = "missing_citations"
+    elif coverage_required and missing_scopes:
+        grounding_status = "incomplete_scope_coverage"
+    elif (
+        coverage["coverage"] is not None
+        and float(coverage["coverage"]) < 1.0
+    ):
+        grounding_status = "partial_citations"
+    else:
+        grounding_status = "cited"
+    return {
+        "valid_citations": valid_citations,
+        "invalid_citations": invalid_citations,
+        "citation_coverage": coverage,
+        "scope_citation_coverage": scope_citation_coverage,
+        "grounding_status": grounding_status,
+        "missing_scopes": missing_scopes,
+    }
+
+
+def _scope_retry_instructions(
+    instructions: str,
+    assessment: dict[str, object],
+) -> str:
+    raw_missing = assessment.get("missing_scopes")
+    missing = raw_missing if isinstance(raw_missing, list) else []
+    scopes = ", ".join(
+        f"{project} / {branch}"
+        for project, branch in missing
+        if isinstance(project, str) and isinstance(branch, str)
+    )
+    return (
+        instructions
+        + " The previous draft did not represent every required evidence scope. "
+        + f"Write a complete replacement and include cited evidence from: {scopes}. "
+        + "Do not discuss the previous draft. Do not describe one specialized feature "
+        + "as the definition of the whole subject."
+    )
 
 
 def _memory_status() -> dict[str, int | float] | None:
@@ -590,6 +760,12 @@ class RagApiService:
                     execute_scope(scope, self._embedder) for scope in scopes
                 ]
         results = _merge_scoped_results(groups, limit=limit)
+        if scope_resolution.get("automatic"):
+            results = [
+                result
+                for result in results
+                if _matches_resolved_scope(result, scopes)
+            ]
         return {
             "query": query_text,
             "mode": mode,
@@ -616,19 +792,49 @@ class RagApiService:
             raise ValueError(
                 "max_context_characters deve estar entre 1000 e 100000"
             )
-        retrieval = self.search(
-            query=query,
-            mode=mode,
+        exploration = plan_exploration(query)
+        planned_queries = exploration["queries"]
+        assert isinstance(planned_queries, list)
+        retrievals = [
+            self.search(
+                query=str(planned_query),
+                mode=mode,
+                limit=limit,
+                branch=branch,
+                project=project,
+                path_prefix=path_prefix,
+                allowed_access=allowed_access,
+                max_per_path=max_per_path,
+                include_duplicate_content=include_duplicate_content,
+            )
+            for planned_query in planned_queries
+        ]
+        retrieval = retrievals[0]
+        raw_results = _merge_exploration_results(
+            retrievals,
             limit=limit,
-            branch=branch,
-            project=project,
-            path_prefix=path_prefix,
-            allowed_access=allowed_access,
-            max_per_path=max_per_path,
-            include_duplicate_content=include_duplicate_content,
+            overview=exploration["intent"] == "overview",
         )
-        raw_results = retrieval["results"]
         assert isinstance(raw_results, list)
+        retrieved_identities: set[tuple[str, str, str]] = set()
+        for item in retrievals:
+            item_results = item.get("results")
+            if not isinstance(item_results, list):
+                continue
+            for result in item_results:
+                if not isinstance(result, dict):
+                    continue
+                occurrence = result.get("selected_occurrence")
+                if not isinstance(occurrence, dict):
+                    occurrence = {}
+                retrieved_identities.add(
+                    (
+                        str(result.get("project", "")),
+                        str(occurrence.get("branch", "")),
+                        str(result.get("chunk_id", "")),
+                    )
+                )
+        retrieved_count = len(retrieved_identities)
         sources: list[dict[str, object]] = []
         used_characters = 0
         truncated = False
@@ -657,16 +863,21 @@ class RagApiService:
             if used_characters >= max_context_characters:
                 break
 
+        instructions = CONTEXT_INSTRUCTIONS + exploration_instructions(
+            exploration,
+            sources,
+        )
         return {
             "query": retrieval["query"],
             "mode": retrieval["mode"],
             "scope_resolution": retrieval.get("scope_resolution"),
-            "instructions": CONTEXT_INSTRUCTIONS,
+            "exploration": exploration,
+            "instructions": instructions,
             "source_count": len(sources),
-            "retrieved_count": retrieval["count"],
+            "retrieved_count": retrieved_count,
             "context_characters": used_characters,
             "max_context_characters": max_context_characters,
-            "truncated": truncated or len(sources) < int(retrieval["count"]),
+            "truncated": truncated or len(sources) < retrieved_count,
             "sources": sources,
         }
 
@@ -732,6 +943,13 @@ class RagApiService:
                     "coverage": None,
                     "uncited_previews": [],
                 },
+                "scope_citation_coverage": {
+                    "required": False,
+                    "available_scopes": [],
+                    "cited_scopes": [],
+                    "missing_scopes": [],
+                    "coverage": None,
+                },
                 "scope_warning": False,
                 "scopes": [],
                 "sources": [],
@@ -740,10 +958,12 @@ class RagApiService:
                     "source_count": 0,
                     "truncated": context["truncated"],
                     "scope_resolution": context.get("scope_resolution"),
+                    "exploration": context.get("exploration"),
                     "requested_max_context_characters": requested_context_limit,
                     "max_context_characters": effective_context_limit,
                     "generation_attempts": 0,
                     "reduced_for_generation": False,
+                    "quality_retry": False,
                 },
             }
         started = time.monotonic()
@@ -780,26 +1000,53 @@ class RagApiService:
         raw_sources = context["sources"]
         assert isinstance(raw_sources, list)
         answer = str(generated["answer"])
-        valid_source_ids = {
-            str(source["source_id"])
-            for source in raw_sources
-            if isinstance(source, dict)
-        }
-        cited_ids = citation_ids(answer)
-        valid_citations = sorted(cited_ids & valid_source_ids)
-        invalid_citations = sorted(cited_ids - valid_source_ids)
-        coverage = citation_coverage(answer, valid_source_ids=valid_source_ids)
-        if invalid_citations:
-            grounding_status = "invalid_citations"
-        elif not valid_citations:
-            grounding_status = "missing_citations"
-        elif (
-            coverage["coverage"] is not None
-            and float(coverage["coverage"]) < 1.0
-        ):
-            grounding_status = "partial_citations"
-        else:
-            grounding_status = "cited"
+        exploration = context.get("exploration")
+        require_scope_coverage = bool(
+            isinstance(exploration, dict)
+            and exploration.get("require_scope_coverage")
+        )
+        assessment = _grounding_assessment(
+            answer,
+            raw_sources,
+            require_scope_coverage=require_scope_coverage,
+        )
+        quality_retry = False
+        if assessment["grounding_status"] == "incomplete_scope_coverage":
+            quality_retry = True
+            generation_attempts += 1
+            self.log(
+                "Visão geral omitiu um escopo; solicitando uma síntese completa",
+                "warning",
+            )
+            try:
+                generated = self.generator.generate(
+                    question=str(context["query"]),
+                    instructions=_scope_retry_instructions(
+                        str(context["instructions"]), assessment
+                    ),
+                    sources=raw_sources,
+                    max_output_tokens=max_output_tokens,
+                    temperature=temperature,
+                )
+            except GenerationContextTooLargeError:
+                self.log(
+                    "A revisão de cobertura excedeu o contexto; preservando a "
+                    "resposta parcial já produzida",
+                    "warning",
+                )
+            else:
+                answer = str(generated["answer"])
+                assessment = _grounding_assessment(
+                    answer,
+                    raw_sources,
+                    require_scope_coverage=require_scope_coverage,
+                )
+
+        valid_citations = assessment["valid_citations"]
+        invalid_citations = assessment["invalid_citations"]
+        coverage = assessment["citation_coverage"]
+        scope_citation_coverage = assessment["scope_citation_coverage"]
+        grounding_status = assessment["grounding_status"]
 
         scopes: set[tuple[str, str, str]] = set()
         public_sources: list[dict[str, object]] = []
@@ -838,6 +1085,7 @@ class RagApiService:
             "citations_used": valid_citations,
             "invalid_citations": invalid_citations,
             "citation_coverage": coverage,
+            "scope_citation_coverage": scope_citation_coverage,
             "scope_warning": len(scopes) > 1,
             "scopes": scope_values,
             "sources": public_sources,
@@ -847,12 +1095,14 @@ class RagApiService:
                 "context_characters": context["context_characters"],
                 "truncated": context["truncated"],
                 "scope_resolution": context.get("scope_resolution"),
+                "exploration": context.get("exploration"),
                 "requested_max_context_characters": requested_context_limit,
                 "max_context_characters": context.get(
                     "max_context_characters", effective_context_limit
                 ),
                 "generation_attempts": generation_attempts,
                 "reduced_for_generation": reduced_for_generation,
+                "quality_retry": quality_retry,
             },
         }
 

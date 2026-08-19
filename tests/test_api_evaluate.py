@@ -246,6 +246,50 @@ class ApiEvaluateTests(unittest.TestCase):
             3,
         )
 
+    def test_validates_overview_scope_and_source_projects(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite = self._suite(
+                root,
+                [
+                    {
+                        "id": "overview",
+                        "query": "What is the solver?",
+                        "expectations": {
+                            "grounding_status": "cited",
+                            "min_scope_citation_coverage": 1.0,
+                            "exploration_intent": "overview",
+                            "required_source_projects": [
+                                "Solver A",
+                                "Solver B",
+                            ],
+                        },
+                    }
+                ],
+            )
+            response = {
+                "answer": "Two implementations [S1] [S2].",
+                "abstained": False,
+                "grounding_status": "cited",
+                "citations_used": ["S1", "S2"],
+                "invalid_citations": [],
+                "citation_coverage": {"coverage": 1.0},
+                "scope_citation_coverage": {"coverage": 1.0},
+                "scope_warning": True,
+                "context": {"exploration": {"intent": "overview"}},
+                "sources": [
+                    {"project": "Solver A", "path": "README.md"},
+                    {"project": "Solver B", "path": "README.md"},
+                ],
+            }
+            report = evaluate_answer_suite(
+                suite_path=suite,
+                request=lambda _payload, _timeout: response,
+                metric_sampler=None,
+            )
+
+        self.assertEqual(report["summary"]["cases_passed"], 1)
+
     def test_rejects_external_endpoint_and_unknown_case_options(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

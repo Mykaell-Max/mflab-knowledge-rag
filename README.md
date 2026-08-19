@@ -103,6 +103,14 @@ aliases e branches com alta confiança; comparações explícitas são recuperad
 em escopos separados e intercaladas. A resolução aplicada é devolvida ao
 cliente e mostrada na interface, nunca escondida.
 
+Perguntas amplas de definição ou visão geral ativam exploração limitada. O
+serviço formula um pequeno conjunto genérico de consultas sobre finalidade,
+arquitetura, componentes, linguagens e capacidades, favorece documentos de
+entrada em vez de rascunhos especializados e intercala as branches
+preferenciais dos repositórios disponíveis. A resposta precisa representar e
+citar cada escopo recuperado. Se a primeira síntese omitir algum deles, uma
+única revisão automática é solicitada; a cobertura continua visível no retorno.
+
 Depois da validação em primeiro plano, instale a API como serviço permanente:
 
 ```bash

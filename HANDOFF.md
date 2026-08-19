@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.30.1**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.31.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -266,6 +266,12 @@ inicia a evolução para assistente técnico: expõe todas as branches, adiciona
 aliases e branch preferencial por repositório, resolve menções explícitas e
 intercala comparações em escopos separados. A decisão aparece em
 `scope_resolution`. Confirmar na Morgoth:
+
+A versão 0.31.0 acrescenta a primeira camada de exploração qualitativa para
+visões gerais: consultas genéricas limitadas, preferência por documentos de
+entrada, balanceamento entre projeto/branch e verificação de citações por
+escopo. Uma primeira resposta incompleta recebe no máximo uma revisão. O caso
+real está em `evaluations/mfsim-overview-answer-pilot.json`.
 
 1. catálogo com 17 e 107 nomes de branches;
 2. `base` preferencial para MFSim-NG e a política escolhida para MFSim CMake;

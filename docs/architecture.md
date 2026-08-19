@@ -275,6 +275,14 @@ decisão é devolvida em `scope_resolution` e filtros explícitos do cliente nun
 são substituídos. Correspondências incertas permanecem amplas em vez de aplicar
 uma restrição silenciosa.
 
+Perguntas amplas passam por uma primeira camada de exploração qualitativa
+determinística. Consultas auxiliares genéricas procuram finalidade, arquitetura,
+componentes, linguagens e capacidades; documentos de entrada recebem prioridade
+sobre artefatos provisórios. A montagem intercala os escopos disponíveis e o
+gerador deve citar cada um. A cobertura entre projeto e branch é medida
+separadamente da cobertura textual e pode provocar uma única revisão da
+síntese. Essa navegação não substitui a evidência primária nem cria fatos.
+
 ## Política para novas fontes
 
 - Arquivo novo em projeto e branch autorizados: automático.

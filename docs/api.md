@@ -156,6 +156,13 @@ atribui IDs `S1`, `S2` e assim por diante às evidências, remove hashes interno
 informa explicitamente se alguma fonte ou o conjunto foi truncado pelo
 orçamento.
 
+Perguntas reconhecidas como visão geral recebem um plano de exploração
+determinístico e limitado. `exploration` informa o tipo de intenção, as
+consultas auxiliares e se todos os escopos precisam aparecer na resposta. As
+fontes são balanceadas por projeto e branch, com preferência por documentos de
+entrada e artefatos arquiteturais amplos. Nenhum termo científico é codificado
+nessa classificação.
+
 ```json
 {
   "query": "how are distributed particle identifiers generated?",
@@ -182,6 +189,9 @@ sem chamar o modelo. O orçamento solicitado nunca ultrapassa
 recusar a janela, o backend reduz o pacote de evidências preservando sua ordem e
 IDs, e tenta novamente até duas vezes. Os campos `generation_attempts` e
 `reduced_for_generation` tornam esse comportamento observável na resposta.
+Para visões gerais com mais de um escopo, omitir um projeto ou branch produz
+`incomplete_scope_coverage` e aciona no máximo uma revisão automática. O campo
+`quality_retry` registra essa revisão.
 
 ```json
 {
@@ -197,10 +207,12 @@ IDs, e tenta novamente até duas vezes. Os campos `generation_attempts` e
 ```
 
 A resposta inclui `answer`, `citations_used`, `invalid_citations`, `sources`,
-`scopes` e `citation_coverage`. A cobertura é uma verificação estrutural por
+`scopes`, `citation_coverage` e `scope_citation_coverage`. A cobertura é uma
+verificação estrutural por
 parágrafo ou bullet factual; ela não substitui uma avaliação semântica humana
 de que a fonte realmente sustenta a afirmação. `grounding_status` vale `cited`,
-`partial_citations`, `missing_citations`, `invalid_citations` ou `no_sources`.
+`partial_citations`, `incomplete_scope_coverage`, `missing_citations`,
+`invalid_citations` ou `no_sources`.
 `scope_warning` fica verdadeiro quando as fontes abrangem mais de uma
 combinação projeto/branch/commit; isso não bloqueia uma comparação intencional,
 mas impede que o cliente trate versões distintas como se fossem uma só. O

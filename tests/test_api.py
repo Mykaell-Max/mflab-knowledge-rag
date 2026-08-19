@@ -63,6 +63,24 @@ class ApiServiceTests(unittest.TestCase):
         load.assert_not_called()
         self.assertIsNone(service.repository_catalog)
 
+    def test_resolved_branch_rejects_an_occurrence_from_another_branch(self) -> None:
+        result = {
+            "project": "Solver",
+            "selected_occurrence": {
+                "branch": "trunk",
+                "commit_sha": "a" * 40,
+            },
+        }
+        scopes = [
+            {
+                "project": "Solver",
+                "branch": "integration",
+                "reason": "preferred_default",
+            }
+        ]
+
+        self.assertFalse(api._matches_resolved_scope(result, scopes))
+
     def test_health_is_safe_when_database_is_unavailable(self) -> None:
         service = api.RagApiService(self.settings())
         with mock.patch.object(
@@ -440,6 +458,57 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(context["context_characters"], 1000)
         self.assertTrue(context["sources"][0]["text_truncated"])
 
+    def test_context_explores_overview_and_balances_repository_sources(self) -> None:
+        service = api.RagApiService(self.settings())
+
+        def retrieval(**values: object) -> dict[str, object]:
+            query = str(values["query"])
+            suffix = str(abs(hash(query)))
+            return {
+                "query": query,
+                "mode": "hybrid",
+                "count": 2,
+                "scope_resolution": {
+                    "mode": "preferred_defaults",
+                    "automatic": True,
+                    "scopes": [],
+                },
+                "results": [
+                    {
+                        "chunk_id": f"a-{suffix}",
+                        "project": "Solver A",
+                        "path": "README.md" if "README" in query else "docs/topic.md",
+                        "text": "A overview",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                    },
+                    {
+                        "chunk_id": f"b-{suffix}",
+                        "project": "Solver B",
+                        "path": "README.md" if "README" in query else "src/main.cpp",
+                        "text": "B overview",
+                        "selected_occurrence": {
+                            "branch": "trunk",
+                            "commit_sha": "b" * 40,
+                        },
+                    },
+                ],
+            }
+
+        with mock.patch.object(service, "search", side_effect=retrieval) as search:
+            context = service.context(query="O que é o Solver?", limit=6)
+
+        self.assertEqual(search.call_count, 4)
+        self.assertEqual(context["exploration"]["intent"], "overview")
+        self.assertEqual(
+            {source["project"] for source in context["sources"]},
+            {"Solver A", "Solver B"},
+        )
+        self.assertIn("README.md", [source["path"] for source in context["sources"][:2]])
+        self.assertIn("Cover every available project", context["instructions"])
+
     def test_ask_validates_citations_and_reports_distinct_scopes(self) -> None:
         generator = _Generator("Compare [S1] with [S2]; ignore [S99].")
         service = api.RagApiService(
@@ -580,6 +649,146 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["citation_coverage"]["units"], 2)
         self.assertEqual(result["citation_coverage"]["cited_units"], 1)
         self.assertEqual(result["citation_coverage"]["coverage"], 0.5)
+
+    def test_overview_reports_when_answer_cites_only_one_scope(self) -> None:
+        generator = _Generator("Solver A is the complete system [S1].")
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "project": "Solver A",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+                "path": "README.md",
+                "text": "A",
+            },
+            {
+                "source_id": "S2",
+                "project": "Solver B",
+                "selected_occurrence": {
+                    "branch": "trunk",
+                    "commit_sha": "b" * 40,
+                },
+                "path": "README.md",
+                "text": "B",
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "What is Solver?",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "exploration": {
+                    "intent": "overview",
+                    "require_scope_coverage": True,
+                },
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 2,
+                "truncated": False,
+                "sources": sources,
+            },
+        ):
+            result = service.ask(query="What is Solver?")
+
+        self.assertEqual(
+            result["grounding_status"], "incomplete_scope_coverage"
+        )
+        self.assertEqual(result["scope_citation_coverage"]["coverage"], 0.5)
+        self.assertEqual(
+            result["scope_citation_coverage"]["missing_scopes"],
+            [{"project": "Solver B", "branch": "trunk"}],
+        )
+        self.assertTrue(result["context"]["quality_retry"])
+        self.assertEqual(result["context"]["generation_attempts"], 2)
+
+    def test_overview_retry_can_restore_scope_coverage(self) -> None:
+        generator = _Generator()
+        answers = iter(
+            [
+                "Solver A is one implementation [S1].",
+                "Solver has implementation A [S1] and implementation B [S2].",
+            ]
+        )
+
+        def generate(**kwargs: object) -> dict[str, object]:
+            generator.calls.append(kwargs)
+            return {
+                "answer": next(answers),
+                "model": "local-test-model",
+                "finish_reason": "stop",
+                "usage": {"total_tokens": 20},
+            }
+
+        generator.generate = generate  # type: ignore[method-assign]
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "project": "Solver A",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+                "path": "README.md",
+                "text": "A",
+            },
+            {
+                "source_id": "S2",
+                "project": "Solver B",
+                "selected_occurrence": {
+                    "branch": "trunk",
+                    "commit_sha": "b" * 40,
+                },
+                "path": "README.md",
+                "text": "B",
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "What is Solver?",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "exploration": {
+                    "intent": "overview",
+                    "require_scope_coverage": True,
+                },
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 2,
+                "truncated": False,
+                "sources": sources,
+            },
+        ):
+            result = service.ask(query="What is Solver?")
+
+        self.assertEqual(result["grounding_status"], "cited")
+        self.assertEqual(result["scope_citation_coverage"]["coverage"], 1.0)
+        self.assertEqual(result["context"]["generation_attempts"], 2)
+        self.assertTrue(result["context"]["quality_retry"])
+        self.assertIn("Solver B / trunk", generator.calls[1]["instructions"])
 
     def test_ask_caps_and_reduces_context_when_provider_rejects_it(self) -> None:
         generator = _RetryGenerator()
