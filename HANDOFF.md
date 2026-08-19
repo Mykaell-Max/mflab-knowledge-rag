@@ -367,6 +367,17 @@ não foi conectada ao `/ask`. A próxima ação é validar consultas estruturais
 corpus real, incluindo uma branch de trabalho, antes de projetar ferramentas do
 planejador.
 
+A 0.38.0 conecta o mapa estrutural ao `/ask` para perguntas de localização e
+mecanismo. O modelo local atua somente como planejador de vocabulário, com
+saída JSON limitada; projeto e branch continuam sendo resolvidos pela pergunta
+original e pelo catálogo. As consultas híbridas alimentam uma navegação por
+símbolos e relações, e cada resultado volta ao chunk primário com ACL e escopo
+reaplicados no PostgreSQL. A interface mostra consultas, termos, nós e trechos
+selecionados sem expor raciocínio oculto. A arquitetura e suas fontes estão em
+`docs/code-investigation.md`; a regressão específica fica em
+`evaluations/mfsim-ng-investigation-pilot.json`. A próxima camada é enriquecer o
+mapa com chamadas e usos de símbolos extraídos por parsing sintático genérico.
+
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
 rotas web somente leitura; administração usa senha separada. Um segredo

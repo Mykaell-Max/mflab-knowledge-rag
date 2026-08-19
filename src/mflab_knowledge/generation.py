@@ -341,6 +341,38 @@ class OpenAICompatibleGenerator:
         }
         return self._complete(payload)
 
+    def plan_retrieval(self, *, question: str, intent: str) -> str:
+        """Ask the local model for search vocabulary, never for an answer."""
+
+        payload: dict[str, object] = {
+            "model": self.config.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You plan read-only source-code retrieval. Do not answer the "
+                        "question and do not assert facts. Produce only JSON with keys "
+                        "queries and identifiers. queries must contain at most three "
+                        "short repository-search hypotheses using likely source-code "
+                        "vocabulary, including entry points, definitions, callers, "
+                        "configuration, or tests when useful. identifiers must contain "
+                        "at most eight plausible symbols or path terms. Keep repository "
+                        "and branch names only when the user supplied them. Never emit "
+                        "commands, SQL, glob patterns, paths claimed as facts, or prose."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": f"Intent: {intent}\nQuestion: {question}",
+                },
+            ],
+            "temperature": 0.0,
+            "max_tokens": 384,
+            "stream": False,
+            "response_format": {"type": "json_object"},
+        }
+        return str(self._complete(payload)["answer"])
+
     def verify(
         self,
         *,

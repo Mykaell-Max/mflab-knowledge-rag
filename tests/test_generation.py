@@ -206,6 +206,42 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(payload["temperature"], 0.0)
         self.assertIn("unsupported", result)
 
+    def test_retrieval_planner_requests_only_bounded_structured_vocabulary(self) -> None:
+        config = generation.GenerationConfig(
+            path=Path("generation.toml"),
+            base_url="http://127.0.0.1:8000/v1",
+            model="local-test-model",
+        )
+        captured: dict[str, object] = {}
+
+        def opener(request: object, *, timeout: int) -> _Response:
+            del timeout
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return _Response(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"queries":["mesh creation callers"],"identifiers":["MeshFactory"]}'
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            )
+
+        generator = generation.OpenAICompatibleGenerator(config, opener=opener)
+        result = generator.plan_retrieval(
+            question="Where is the mesh initialized?",
+            intent="location",
+        )
+
+        payload = captured["payload"]
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertEqual(payload["temperature"], 0.0)
+        self.assertEqual(payload["max_tokens"], 384)
+        self.assertIn("MeshFactory", result)
+
 
 if __name__ == "__main__":
     unittest.main()

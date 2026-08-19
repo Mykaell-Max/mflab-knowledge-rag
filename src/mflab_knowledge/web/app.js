@@ -74,6 +74,14 @@ function investigationDetail(step) {
   if (Number.isFinite(Number(data.candidates))) details.push(`${formatNumber(data.candidates)} candidatos`);
   if (Number.isFinite(Number(data.sources))) details.push(`${formatNumber(data.sources)} fontes selecionadas`);
   if (Number.isFinite(Number(data.maps))) details.push(`${formatNumber(data.maps)} mapas estruturais`);
+  if (Array.isArray(data.queries) && data.queries.length) {
+    details.push(`Consultas: ${data.queries.join("; ")}`);
+  }
+  if (Array.isArray(data.terms) && data.terms.length) {
+    details.push(`Navegação: ${data.terms.join("; ")}`);
+  }
+  if (Number.isFinite(Number(data.nodes))) details.push(`${formatNumber(data.nodes)} relações estruturais`);
+  if (Number.isFinite(Number(data.evidence))) details.push(`${formatNumber(data.evidence)} trechos primários`);
   if (Number.isFinite(Number(data.supported))) {
     details.push(`${formatNumber(data.supported)} afirmações sustentadas`);
   }

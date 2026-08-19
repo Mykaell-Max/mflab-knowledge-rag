@@ -536,6 +536,65 @@ LIMIT %(limit)s
 """
 
 
+CHUNKS_BY_ID_SQL = """
+WITH requested AS (
+    SELECT chunk_id, ordinal
+    FROM unnest(%(chunk_ids)s::text[]) WITH ORDINALITY
+         AS selected(chunk_id, ordinal)
+)
+SELECT
+    (1000.0 - requested.ordinal::double precision) AS score,
+    chunk.chunk_id,
+    chunk.chunk_hash,
+    repository.project,
+    document.path,
+    document.format,
+    chunk.title,
+    chunk.line_start,
+    chunk.line_end,
+    document.access_class,
+    preferred.branch,
+    preferred.commit_sha,
+    occurrences.items AS occurrences,
+    chunk.text
+FROM requested
+JOIN mflab_knowledge.chunks AS chunk
+  ON chunk.chunk_id = requested.chunk_id
+JOIN mflab_knowledge.documents AS document
+  ON document.document_id = chunk.document_id
+JOIN mflab_knowledge.repositories AS repository
+  ON repository.repository_id = document.repository_id
+JOIN LATERAL (
+    SELECT occurrence.branch, occurrence.commit_sha, occurrence.canonical
+    FROM mflab_knowledge.document_occurrences AS occurrence
+    WHERE occurrence.document_id = document.document_id
+      AND (%(branch)s::text IS NULL
+           OR occurrence.branch = %(branch)s::text)
+    ORDER BY occurrence.canonical DESC, occurrence.branch NULLS LAST
+    LIMIT 1
+) AS preferred ON true
+JOIN LATERAL (
+    SELECT jsonb_agg(
+        jsonb_build_object(
+            'branch', occurrence.branch,
+            'commit_sha', occurrence.commit_sha,
+            'canonical', occurrence.canonical,
+            'requested_ref', occurrence.requested_ref
+        ) ORDER BY occurrence.canonical DESC, occurrence.branch
+    ) AS items
+    FROM mflab_knowledge.document_occurrences AS occurrence
+    WHERE occurrence.document_id = document.document_id
+      AND (%(branch)s::text IS NULL
+           OR occurrence.branch = %(branch)s::text)
+) AS occurrences ON true
+WHERE document.access_class = ANY(%(allowed_access)s::text[])
+  AND (%(project)s::text IS NULL
+       OR repository.project = %(project)s::text)
+ORDER BY requested.ordinal
+LIMIT %(limit)s
+"""
+
+
 def search_postgres(
     database_url: str,
     *,
@@ -573,6 +632,50 @@ def search_postgres(
     }
     with _connect(database_url, row_factory=dict_row) as connection:
         rows = connection.execute(SEARCH_SQL, parameters).fetchall()
+    return _rows_to_results(rows)
+
+
+def fetch_chunks_by_id(
+    database_url: str,
+    *,
+    chunk_ids: list[str],
+    limit: int = 20,
+    branch: str | None = None,
+    project: str | None = None,
+    allowed_access: set[str] | None = None,
+) -> list[dict[str, object]]:
+    """Fetch already selected evidence while reapplying scope and ACL in SQL."""
+
+    normalized_ids = list(
+        dict.fromkeys(
+            value.strip()
+            for value in chunk_ids
+            if isinstance(value, str) and value.strip()
+        )
+    )
+    if not normalized_ids:
+        return []
+    if len(normalized_ids) > 200:
+        raise ValueError("chunk_ids excede o limite de 200 itens")
+    if limit < 1 or limit > 100:
+        raise ValueError("limit deve estar entre 1 e 100")
+    effective_access = allowed_access if allowed_access is not None else {"public"}
+    if not effective_access or not effective_access.issubset(
+        RETRIEVABLE_ACCESS_CLASSES
+    ):
+        raise ValueError("filtro de acesso inválido ou vazio")
+    _psycopg, dict_row = _driver()
+    with _connect(database_url, row_factory=dict_row) as connection:
+        rows = connection.execute(
+            CHUNKS_BY_ID_SQL,
+            {
+                "chunk_ids": normalized_ids,
+                "limit": min(limit, len(normalized_ids)),
+                "branch": branch,
+                "project": project,
+                "allowed_access": sorted(effective_access),
+            },
+        ).fetchall()
     return _rows_to_results(rows)
 
 

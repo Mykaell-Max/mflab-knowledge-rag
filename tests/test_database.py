@@ -163,6 +163,43 @@ class DatabaseTests(unittest.TestCase):
                 allowed_access={"pending"},
             )
 
+    def test_fetch_chunks_by_id_reapplies_scope_and_acl(self) -> None:
+        connection = _Connection(
+            [
+                {
+                    "score": 999.0,
+                    "chunk_id": "chunk-1",
+                    "chunk_hash": "sha256:chunk",
+                    "project": "Solver",
+                    "path": "src/mesh.cpp",
+                    "format": "cpp",
+                    "title": "Mesh::initialize",
+                    "line_start": 10,
+                    "line_end": 20,
+                    "access_class": "lab",
+                    "branch": "trunk",
+                    "commit_sha": "a" * 40,
+                    "occurrences": [{"branch": "trunk"}],
+                    "text": "void Mesh::initialize() {}",
+                }
+            ]
+        )
+        with mock.patch.object(database, "_driver", return_value=(object(), object())):
+            with mock.patch.object(database, "_connect", return_value=connection):
+                results = database.fetch_chunks_by_id(
+                    "postgresql://not-logged",
+                    chunk_ids=["chunk-1", "chunk-1"],
+                    project="Solver",
+                    branch="trunk",
+                    allowed_access={"lab"},
+                )
+
+        self.assertIn("document.access_class = ANY", connection.sql)
+        self.assertEqual(connection.parameters["chunk_ids"], ["chunk-1"])
+        self.assertEqual(connection.parameters["project"], "Solver")
+        self.assertEqual(connection.parameters["branch"], "trunk")
+        self.assertEqual(results[0]["selected_occurrence"]["branch"], "trunk")
+
     def test_repository_status_reports_branch_and_embedding_coverage(self) -> None:
         class StatusConnection:
             def __enter__(self) -> StatusConnection:

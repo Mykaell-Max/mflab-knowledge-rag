@@ -34,6 +34,19 @@ class _Generator:
         }
 
 
+class _PlanningGenerator(_Generator):
+    def __init__(self) -> None:
+        super().__init__("The call flow is established [S1].")
+        self.plan_calls: list[dict[str, object]] = []
+
+    def plan_retrieval(self, **kwargs: object) -> str:
+        self.plan_calls.append(kwargs)
+        return (
+            '{"queries":["mesh creation initialization call flow"],'
+            '"identifiers":["MeshFactory","initialize"]}'
+        )
+
+
 class _RetryGenerator(_Generator):
     def generate(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
@@ -685,6 +698,134 @@ class ApiServiceTests(unittest.TestCase):
         self.assertNotIn("anchors", context["structural_guidance"]["maps"][0])
         self.assertEqual(context["sources"][0]["source_kind"], "derived_structure")
         self.assertIn("derived_structure", context["instructions"])
+
+    def test_context_navigates_semantic_map_then_fetches_primary_chunks(self) -> None:
+        service = api.RagApiService(self.settings())
+        initial = {
+            "query": "Onde a malha é inicializada?",
+            "mode": "hybrid",
+            "count": 1,
+            "scope_resolution": {
+                "mode": "explicit",
+                "automatic": False,
+                "scopes": [{"project": "Solver", "branch": "trunk"}],
+            },
+            "results": [
+                {
+                    "chunk_id": "weak",
+                    "project": "Solver",
+                    "path": "src/model.cpp",
+                    "title": "Model::initialize",
+                    "text": "void Model::initialize() {}",
+                    "selected_occurrence": {
+                        "branch": "trunk",
+                        "commit_sha": "a" * 40,
+                    },
+                }
+            ],
+        }
+        node = {
+            "item_id": "symbol-1",
+            "project": "Solver",
+            "path": "src/mesh.cpp",
+            "qualified_name": "Mesh::initialize",
+            "evidence_chunk_id": "mesh-evidence",
+            "selected_occurrence": {
+                "branch": "trunk",
+                "commit_sha": "a" * 40,
+            },
+        }
+        primary = {
+            "chunk_id": "mesh-evidence",
+            "project": "Solver",
+            "path": "src/mesh.cpp",
+            "title": "Mesh::initialize",
+            "text": "void Mesh::initialize() { build(); }",
+            "selected_occurrence": {
+                "branch": "trunk",
+                "commit_sha": "a" * 40,
+            },
+        }
+        with mock.patch.object(service, "search", return_value=initial):
+            with mock.patch.object(
+                api, "search_semantic_map", return_value=[node]
+            ) as map_search:
+                with mock.patch.object(
+                    api, "fetch_chunks_by_id", return_value=[primary]
+                ) as fetch:
+                    context = service.context(
+                        query="Onde a malha é inicializada?",
+                        project="Solver",
+                        branch="trunk",
+                        allowed_access={"lab"},
+                        query_plan={
+                            "algorithm": "test",
+                            "generated": True,
+                            "queries": ["Onde a malha é inicializada?"],
+                            "identifiers": ["Mesh::initialize"],
+                        },
+                    )
+
+        self.assertGreaterEqual(map_search.call_count, 1)
+        self.assertEqual(fetch.call_args.kwargs["project"], "Solver")
+        self.assertEqual(fetch.call_args.kwargs["branch"], "trunk")
+        self.assertEqual(context["sources"][0]["path"], "src/mesh.cpp")
+        self.assertEqual(
+            context["sources"][0]["source_kind"],
+            "structural_navigation_evidence",
+        )
+        self.assertEqual(
+            context["structural_guidance"]["navigation_status"], "success"
+        )
+
+    def test_ask_uses_local_query_planner_for_location_questions(self) -> None:
+        generator = _PlanningGenerator()
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                verify_evidence=False,
+            ),
+        )
+        captured: dict[str, object] = {}
+
+        def context(**kwargs: object) -> dict[str, object]:
+            captured.update(kwargs)
+            return {
+                "query": kwargs["query"],
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "exploration": {"intent": "location"},
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 20,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "path": "src/mesh.cpp",
+                        "text": "void initialize() {}",
+                        "selected_occurrence": {
+                            "branch": "trunk",
+                            "commit_sha": "a" * 40,
+                        },
+                    }
+                ],
+                "investigation": {"steps": []},
+            }
+
+        with mock.patch.object(service, "context", side_effect=context):
+            result = service.ask(query="Onde a malha é inicializada?")
+
+        self.assertFalse(result["abstained"])
+        self.assertEqual(len(generator.plan_calls), 1)
+        query_plan = captured["query_plan"]
+        self.assertIsInstance(query_plan, dict)
+        self.assertIn("MeshFactory", query_plan["identifiers"])
 
     def test_structural_anchor_marks_an_existing_search_result(self) -> None:
         result = {

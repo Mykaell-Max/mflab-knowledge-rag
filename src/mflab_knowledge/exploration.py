@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
 from pathlib import PurePosixPath
+
+QUERY_PLAN_ALGORITHM = "bounded_query_plan_v1"
+MAX_PLANNED_QUERIES = 4
+MAX_NAVIGATION_IDENTIFIERS = 8
 
 OVERVIEW_PATTERNS = (
     r"^o que (?:e|sao)\b",
@@ -26,6 +31,8 @@ COMPARISON_PATTERNS = (
 LOCATION_PATTERNS = (
     r"\bonde (?:fica|esta|e implementad[oa])\b",
     r"\bonde .+\b(?:declarad[oa]|definid[oa]|implementad[oa])\b",
+    r"\bonde .+\b(?:inicializad[oa]|criad[oa]|construid[oa])\b",
+    r"\bresponsavel por\b.+\b(?:inicializar|criar|construir|executar)\b",
     r"\b(?:qual|que) (?:arquivo|funcao|classe|trecho)\b",
     r"\bmostre (?:o |a )?(?:codigo|trecho|implementacao)\b",
     r"\bwhere (?:is|does)\b",
@@ -97,6 +104,123 @@ def plan_exploration(query: str) -> dict[str, object]:
         "queries": [query, *(f"{query} {hint}" for hint in hints)],
         "require_scope_coverage": intent in {"overview", "comparison"},
     }
+
+
+def normalize_query_plan(
+    raw: str | dict[str, object],
+    *,
+    original_query: str,
+    fallback_queries: list[str],
+) -> dict[str, object]:
+    """Validate model-proposed search vocabulary without accepting factual claims."""
+
+    if isinstance(raw, str):
+        candidate = raw.strip()
+        fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", candidate, re.DOTALL)
+        if fenced:
+            candidate = fenced.group(1)
+        try:
+            value = json.loads(candidate)
+        except json.JSONDecodeError:
+            value = None
+            decoder = json.JSONDecoder()
+            for match in re.finditer(r"\{", candidate):
+                try:
+                    possible, _end = decoder.raw_decode(candidate, match.start())
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(possible, dict) and (
+                    "queries" in possible or "identifiers" in possible
+                ):
+                    value = possible
+                    break
+    else:
+        value = raw
+    if not isinstance(value, dict):
+        raise ValueError("planejamento de busca deve ser um objeto JSON")
+
+    def safe_strings(raw_values: object, *, maximum: int, length: int) -> list[str]:
+        if not isinstance(raw_values, list):
+            return []
+        selected: list[str] = []
+        seen: set[str] = set()
+        for raw_value in raw_values:
+            if not isinstance(raw_value, str):
+                continue
+            text = " ".join(raw_value.split()).strip()
+            if not text or len(text) > length or any(ord(char) < 32 for char in text):
+                continue
+            key = text.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            selected.append(text)
+            if len(selected) >= maximum:
+                break
+        return selected
+
+    original = " ".join(original_query.split()).strip()
+    if not original or len(original) > 2_000:
+        raise ValueError("consulta original inválida para planejamento")
+    proposed_queries = safe_strings(
+        value.get("queries"), maximum=MAX_PLANNED_QUERIES - 1, length=200
+    )
+    queries = safe_strings(
+        [original, *proposed_queries, *fallback_queries],
+        maximum=MAX_PLANNED_QUERIES,
+        length=2_000,
+    )
+    identifiers = safe_strings(
+        value.get("identifiers"),
+        maximum=MAX_NAVIGATION_IDENTIFIERS,
+        length=120,
+    )
+    return {
+        "algorithm": QUERY_PLAN_ALGORITHM,
+        "generated": bool(proposed_queries or identifiers),
+        "queries": queries,
+        "identifiers": identifiers,
+    }
+
+
+def navigation_terms(
+    query_plan: dict[str, object],
+    retrievals: list[dict[str, object]],
+) -> list[str]:
+    """Derive bounded structural lookup terms from plan and retrieved metadata."""
+
+    candidates: list[str] = []
+    raw_identifiers = query_plan.get("identifiers")
+    if isinstance(raw_identifiers, list):
+        candidates.extend(
+            str(value) for value in raw_identifiers if isinstance(value, str)
+        )
+    for retrieval in retrievals:
+        results = retrieval.get("results")
+        if not isinstance(results, list):
+            continue
+        for result in results[:5]:
+            if not isinstance(result, dict):
+                continue
+            title = result.get("title")
+            if isinstance(title, str) and title.strip():
+                candidates.append(title)
+            path = result.get("path")
+            if isinstance(path, str) and path.strip():
+                candidates.append(PurePosixPath(path).stem)
+
+    selected: list[str] = []
+    seen: set[str] = set()
+    for candidate in candidates:
+        value = " ".join(candidate.split()).strip()
+        normalized = _normalized(value)
+        if len(normalized) < 3 or normalized in seen:
+            continue
+        seen.add(normalized)
+        selected.append(value[:120])
+        if len(selected) >= MAX_NAVIGATION_IDENTIFIERS:
+            break
+    return selected
 
 
 def overview_authority(result: dict[str, object]) -> tuple[int, int, str]:

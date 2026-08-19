@@ -4,6 +4,8 @@ import unittest
 
 from mflab_knowledge.exploration import (
     exploration_instructions,
+    navigation_terms,
+    normalize_query_plan,
     overview_authority,
     overview_quality_issues,
     plan_exploration,
@@ -93,6 +95,44 @@ class ExplorationTests(unittest.TestCase):
             ),
             [],
         )
+
+    def test_model_query_plan_is_bounded_and_keeps_original_query_first(self) -> None:
+        plan = normalize_query_plan(
+            """```json
+            {"queries":["mesh creation call flow","adaptive mesh configuration",
+            "mesh creation call flow","caller tests"],
+            "identifiers":["MeshFactory","initialize","generate"]}
+            ```""",
+            original_query="Onde a malha é inicializada?",
+            fallback_queries=["Onde a malha é inicializada? definition caller"],
+        )
+
+        self.assertEqual(plan["queries"][0], "Onde a malha é inicializada?")
+        self.assertLessEqual(len(plan["queries"]), 4)
+        self.assertEqual(plan["identifiers"], ["MeshFactory", "initialize", "generate"])
+        self.assertTrue(plan["generated"])
+
+    def test_query_plan_rejects_malformed_output(self) -> None:
+        with self.assertRaisesRegex(ValueError, "JSON"):
+            normalize_query_plan(
+                "not json",
+                original_query="question",
+                fallback_queries=["question implementation"],
+            )
+
+    def test_navigation_terms_combine_plan_and_candidate_metadata(self) -> None:
+        terms = navigation_terms(
+            {"identifiers": ["MeshFactory"]},
+            [
+                {
+                    "results": [
+                        {"title": "Domain::initialize", "path": "src/mesh_manager.cpp"}
+                    ]
+                }
+            ],
+        )
+
+        self.assertEqual(terms, ["MeshFactory", "Domain::initialize", "mesh_manager"])
 
 
 if __name__ == "__main__":

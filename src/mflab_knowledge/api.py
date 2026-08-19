@@ -17,6 +17,7 @@ from typing import Callable
 from mflab_knowledge import __version__
 from mflab_knowledge.database import (
     database_status,
+    fetch_chunks_by_id,
     repository_status,
     repository_structures,
     search_postgres,
@@ -33,6 +34,8 @@ from mflab_knowledge.embeddings import (
 )
 from mflab_knowledge.exploration import (
     exploration_instructions,
+    navigation_terms,
+    normalize_query_plan,
     overview_authority,
     overview_quality_issues,
     plan_exploration,
@@ -56,6 +59,7 @@ from mflab_knowledge.repository_config import (
 )
 from mflab_knowledge.service_runner import read_last_run
 from mflab_knowledge.scope import resolve_query_scopes
+from mflab_knowledge.semantic_database import search_semantic_map
 from mflab_knowledge.structure import STRUCTURE_ALGORITHM, structure_source
 from mflab_knowledge.verification import (
     INVESTIGATION_ALGORITHM,
@@ -909,6 +913,7 @@ class RagApiService:
         include_duplicate_content: bool = False,
         max_context_characters: int = 24000,
         progress_callback: ProgressCallback | None = None,
+        query_plan: dict[str, object] | None = None,
     ) -> dict[str, object]:
         if max_context_characters < 1000 or max_context_characters > 100000:
             raise ValueError(
@@ -933,6 +938,21 @@ class RagApiService:
             )
 
         exploration = plan_exploration(query)
+        if query_plan is not None:
+            planned = query_plan.get("queries")
+            if isinstance(planned, list) and planned:
+                exploration["queries"] = [
+                    str(value) for value in planned if isinstance(value, str)
+                ]
+            exploration["query_plan"] = {
+                "algorithm": str(query_plan.get("algorithm", "unknown")),
+                "generated": bool(query_plan.get("generated")),
+                "identifiers": [
+                    str(value)
+                    for value in query_plan.get("identifiers", [])
+                    if isinstance(value, str)
+                ],
+            }
         planned_queries = exploration["queries"]
         assert isinstance(planned_queries, list)
         record(
@@ -946,6 +966,7 @@ class RagApiService:
             {
                 "intent": str(exploration.get("intent", "direct")),
                 "query_count": len(planned_queries),
+                "queries": [str(value) for value in planned_queries],
             },
         )
         retrievals = [
@@ -1005,6 +1026,140 @@ class RagApiService:
                 ),
             },
         )
+        navigation_nodes: list[dict[str, object]] = []
+        navigation_status = "not_requested"
+        if exploration["intent"] in {"location", "mechanism"}:
+            navigation_status = "empty"
+            raw_query_plan = exploration.get("query_plan")
+            effective_query_plan = (
+                raw_query_plan if isinstance(raw_query_plan, dict) else {}
+            )
+            terms = navigation_terms(effective_query_plan, retrievals)
+            raw_scopes = (
+                scope_value.get("scopes")
+                if isinstance(scope_value, dict)
+                else None
+            )
+            scopes: set[tuple[str, str]] = set()
+            if isinstance(raw_scopes, list):
+                for scope in raw_scopes:
+                    if not isinstance(scope, dict):
+                        continue
+                    scope_project = scope.get("project")
+                    scope_branch = scope.get("branch")
+                    if scope_project and scope_branch:
+                        scopes.add((str(scope_project), str(scope_branch)))
+            if project and branch:
+                scopes.add((project, branch))
+            if not scopes:
+                for item in retrievals:
+                    values = item.get("results")
+                    if not isinstance(values, list):
+                        continue
+                    for result in values:
+                        if not isinstance(result, dict):
+                            continue
+                        occurrence = result.get("selected_occurrence")
+                        if not isinstance(occurrence, dict):
+                            continue
+                        result_project = result.get("project")
+                        result_branch = occurrence.get("branch")
+                        if result_project and result_branch:
+                            scopes.add((str(result_project), str(result_branch)))
+
+            evidence_by_scope: dict[tuple[str, str], list[str]] = {}
+            try:
+                effective_access = self._allowed_access(allowed_access)
+                for scope_project, scope_branch in sorted(scopes)[:4]:
+                    for term in terms:
+                        nodes = search_semantic_map(
+                            self.settings.database_url,
+                            query=term,
+                            limit=4,
+                            project=scope_project,
+                            branch=scope_branch,
+                            path_prefix=path_prefix,
+                            allowed_access=effective_access,
+                        )
+                        for node in nodes:
+                            if len(navigation_nodes) >= 24:
+                                break
+                            identity = (
+                                str(node.get("project", "")),
+                                str(node.get("selected_occurrence", {}).get("branch", ""))
+                                if isinstance(node.get("selected_occurrence"), dict)
+                                else "",
+                                str(node.get("item_id", "")),
+                            )
+                            if any(
+                                identity
+                                == (
+                                    str(existing.get("project", "")),
+                                    str(existing.get("selected_occurrence", {}).get("branch", ""))
+                                    if isinstance(existing.get("selected_occurrence"), dict)
+                                    else "",
+                                    str(existing.get("item_id", "")),
+                                )
+                                for existing in navigation_nodes
+                            ):
+                                continue
+                            navigation_nodes.append(node)
+                            evidence_id = node.get("evidence_chunk_id")
+                            if isinstance(evidence_id, str) and evidence_id:
+                                evidence_by_scope.setdefault(
+                                    (scope_project, scope_branch), []
+                                ).append(evidence_id)
+                navigation_results: list[dict[str, object]] = []
+                for (scope_project, scope_branch), chunk_ids in sorted(
+                    evidence_by_scope.items()
+                ):
+                    fetched = fetch_chunks_by_id(
+                        self.settings.database_url,
+                        chunk_ids=chunk_ids,
+                        limit=12,
+                        project=scope_project,
+                        branch=scope_branch,
+                        allowed_access=effective_access,
+                    )
+                    for result in fetched:
+                        result["source_kind"] = "structural_navigation_evidence"
+                    navigation_results.extend(fetched)
+                if navigation_results:
+                    retrievals.insert(
+                        0,
+                        {
+                            "query": query,
+                            "mode": "structural_navigation",
+                            "results": navigation_results,
+                        },
+                    )
+                    navigation_status = "success"
+            except Exception:
+                navigation_status = "unavailable"
+                self.log(
+                    "Navegação estrutural temporariamente indisponível; mantendo busca híbrida",
+                    "warning",
+                )
+            record(
+                "navigation",
+                "Mapa de código navegado",
+                (
+                    "Definições e relações encontradas foram convertidas em trechos primários."
+                    if navigation_status == "success"
+                    else "A busca híbrida permaneceu disponível como fallback."
+                ),
+                {
+                    "status": navigation_status,
+                    "terms": terms,
+                    "nodes": len(navigation_nodes),
+                    "evidence": sum(
+                        len(item.get("results", []))
+                        for item in retrievals
+                        if item.get("mode") == "structural_navigation"
+                        and isinstance(item.get("results"), list)
+                    ),
+                },
+            )
         structural_maps: list[dict[str, object]] = []
         structural_status = "not_requested"
         if exploration["intent"] == "overview":
@@ -1162,6 +1317,15 @@ class RagApiService:
                     }
                     for structure in structural_maps
                 ],
+                "navigation_status": navigation_status,
+                "navigation_nodes": [
+                    {
+                        key: value
+                        for key, value in node.items()
+                        if key not in {"text", "chunk_hash"}
+                    }
+                    for node in navigation_nodes
+                ],
             },
             "instructions": instructions,
             "source_count": len(sources),
@@ -1206,6 +1370,38 @@ class RagApiService:
             requested_context_limit,
             self.generation_config.max_context_characters,
         )
+        deterministic_plan = plan_exploration(query)
+        query_plan: dict[str, object] | None = None
+        if deterministic_plan.get("intent") in {"location", "mechanism"}:
+            planner = getattr(self.generator, "plan_retrieval", None)
+            if callable(planner):
+                emit_progress(
+                    progress_callback,
+                    stage="planning",
+                    title="Vocabulário de busca sendo apurado",
+                    detail=(
+                        "O modelo local propõe hipóteses de busca; nenhuma delas é tratada como fato."
+                    ),
+                )
+                try:
+                    raw_plan = planner(
+                        question=query,
+                        intent=str(deterministic_plan.get("intent", "direct")),
+                    )
+                    query_plan = normalize_query_plan(
+                        raw_plan,
+                        original_query=query,
+                        fallback_queries=[
+                            str(value)
+                            for value in deterministic_plan.get("queries", [])
+                            if isinstance(value, str)
+                        ],
+                    )
+                except Exception:
+                    self.log(
+                        "Planejador local indisponível; usando expansão determinística",
+                        "warning",
+                    )
         context = self.context(
             query=query,
             mode=mode,
@@ -1218,6 +1414,7 @@ class RagApiService:
             include_duplicate_content=include_duplicate_content,
             max_context_characters=effective_context_limit,
             progress_callback=progress_callback,
+            query_plan=query_plan,
         )
         raw_investigation = context.get("investigation")
         investigation_steps = (

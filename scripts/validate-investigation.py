@@ -86,7 +86,11 @@ def wait_for_job(
     raise RuntimeError("tempo limite excedido aguardando a investigação")
 
 
-def validate_result(result: dict[str, object]) -> None:
+def validate_result(
+    result: dict[str, object],
+    *,
+    require_navigation: bool = False,
+) -> None:
     investigation = result.get("investigation")
     steps = (
         investigation.get("steps", [])
@@ -112,6 +116,8 @@ def validate_result(result: dict[str, object]) -> None:
         raise RuntimeError(
             "etapas ausentes: " + ", ".join(sorted(missing))
         )
+    if require_navigation and "navigation" not in stages:
+        raise RuntimeError("a navegação estrutural não foi executada")
 
     verification = result.get("verification")
     if (
@@ -149,6 +155,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--expected-version")
     parser.add_argument("--timeout-seconds", type=int, default=360)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--require-navigation", action="store_true")
     return parser
 
 
@@ -179,7 +186,7 @@ def main() -> int:
         job_id,
         timeout_seconds=args.timeout_seconds,
     )
-    validate_result(result)
+    validate_result(result, require_navigation=args.require_navigation)
     validate_interface(args.base_url)
 
     if args.report:
