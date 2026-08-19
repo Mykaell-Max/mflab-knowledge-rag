@@ -107,6 +107,8 @@ class PreviewHandler(BaseHTTPRequestHandler):
             self._send_asset("app.css", "text/css; charset=utf-8")
         elif path == "/ui/app.js":
             self._send_asset("app.js", "text/javascript; charset=utf-8")
+        elif path == "/ui/mflab-logo.svg":
+            self._send_asset("mflab-logo.svg", "image/svg+xml")
         elif path == "/health":
             self._send_json(
                 {

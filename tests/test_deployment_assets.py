@@ -93,10 +93,15 @@ class DeploymentAssetTests(unittest.TestCase):
         javascript = (root / "src/mflab_knowledge/web/app.js").read_text(
             encoding="utf-8"
         )
+        logo = (root / "src/mflab_knowledge/web/mflab-logo.svg").read_text(
+            encoding="utf-8"
+        )
 
         self.assertIn("MFLab Knowledge", html)
         self.assertIn('src="/ui/app.js"', html)
         self.assertIn("Universidade Federal de Uberlândia", html)
+        self.assertIn('src="/ui/mflab-logo.svg"', html)
+        self.assertIn('viewBox="0 0 64 50"', logo)
         self.assertNotIn("eyebrow", html.casefold())
         self.assertNotIn("uma única superfície", html.casefold())
         self.assertIn("sessionStorage", javascript)

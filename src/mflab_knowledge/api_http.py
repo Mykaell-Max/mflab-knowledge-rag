@@ -40,7 +40,7 @@ class AskRequest(ContextRequest):
     temperature: float | None = Field(default=None, ge=0, le=1)
 
 
-@lru_cache(maxsize=3)
+@lru_cache(maxsize=4)
 def _web_asset(name: str) -> str:
     return (
         files("mflab_knowledge")
@@ -67,6 +67,7 @@ def create_app(service: RagApiService) -> FastAPI:
             "/ui/",
             "/ui/app.css",
             "/ui/app.js",
+            "/ui/mflab-logo.svg",
         }
         if request.url.path not in public_paths and not api_request_authorized(
             service.settings.api_key,
@@ -110,6 +111,14 @@ def create_app(service: RagApiService) -> FastAPI:
         return Response(
             _web_asset("app.js"),
             media_type="text/javascript",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    @app.get("/ui/mflab-logo.svg", include_in_schema=False)
+    def user_interface_logo() -> Response:
+        return Response(
+            _web_asset("mflab-logo.svg"),
+            media_type="image/svg+xml",
             headers={"Cache-Control": "no-store"},
         )
 

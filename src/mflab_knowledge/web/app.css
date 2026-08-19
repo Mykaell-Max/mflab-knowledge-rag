@@ -51,19 +51,8 @@ button { cursor: pointer; }
 .header-row { min-height: 76px; display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: 2.5rem; }
 
 .brand { display: flex; align-items: center; gap: 0.7rem; }
-.brand-mark {
-  width: 2.5rem;
-  height: 2.5rem;
-  display: grid;
-  place-items: center;
-  flex: 0 0 auto;
-  color: #fff;
-  background: var(--accent);
-  border-radius: 3px;
-  font-family: "IBM Plex Mono", ui-monospace, monospace;
-  font-size: 0.75rem;
-  font-weight: 600;
-}
+.brand-logo { width: 3.2rem; height: 2.5rem; display: block; flex: 0 0 auto; object-fit: contain; }
+.auth-logo { width: 3.85rem; height: 3rem; }
 .brand-name { display: grid; line-height: 1.1; }
 .brand-name strong { font-family: "Space Grotesk", Inter, sans-serif; font-size: 1.05rem; }
 .brand-name small { margin-top: 0.2rem; color: var(--muted); font-size: 0.72rem; }
