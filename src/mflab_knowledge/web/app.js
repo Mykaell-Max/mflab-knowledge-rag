@@ -206,7 +206,9 @@ async function submitAsk(event) {
   try {
     const response = await api("/ui-api/ask", { method: "POST", body: JSON.stringify(payload) });
     const resolution = response.context?.scope_resolution;
-    const incompleteScopes = response.grounding_status === "incomplete_scope_coverage";
+    const incompleteScopes = ["incomplete_scope_coverage", "scope_overclaim"].includes(
+      response.grounding_status,
+    );
     feedback.textContent = response.abstained
       ? `Não há evidência indexada suficiente.${scopeSummary(resolution)}`
       : `${incompleteScopes ? "Resposta parcial: nem todos os escopos foram citados." : "Resposta concluída."}${scopeSummary(resolution)}`;

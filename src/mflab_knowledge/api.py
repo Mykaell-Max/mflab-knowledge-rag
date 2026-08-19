@@ -33,6 +33,7 @@ from mflab_knowledge.embeddings import (
 from mflab_knowledge.exploration import (
     exploration_instructions,
     overview_authority,
+    overview_quality_issues,
     plan_exploration,
 )
 from mflab_knowledge.normalize import RETRIEVABLE_ACCESS_CLASSES
@@ -321,9 +322,10 @@ def _grounding_assessment(
     }
 
 
-def _scope_retry_instructions(
+def _quality_retry_instructions(
     instructions: str,
     assessment: dict[str, object],
+    quality_issues: list[str],
 ) -> str:
     raw_missing = assessment.get("missing_scopes")
     missing = raw_missing if isinstance(raw_missing, list) else []
@@ -334,10 +336,15 @@ def _scope_retry_instructions(
     )
     return (
         instructions
-        + " The previous draft did not represent every required evidence scope. "
-        + f"Write a complete replacement and include cited evidence from: {scopes}. "
-        + "Do not discuss the previous draft. Do not describe one specialized feature "
-        + "as the definition of the whole subject."
+        + " The previous draft failed the overview quality checks. Write a complete "
+        + "replacement, not a commentary about the draft. Mandatory constraints: "
+        + "describe the repositories exactly as the available indexed project scopes; "
+        + "explicitly state that repository coverage may be partial; never call these "
+        + "the main, principal, only, unique, or complete set of projects. "
+        + f"Include valid cited evidence from every missing scope: {scopes or 'none'}. "
+        + "Citations may be separate ([S1][S2]) or grouped ([S1, S2]). "
+        + "Do not describe one specialized feature as the definition of the whole "
+        + f"subject. Detected issues: {', '.join(quality_issues) or 'citation coverage'}."
     )
 
 
@@ -976,6 +983,7 @@ class RagApiService:
                     "missing_scopes": [],
                     "coverage": None,
                 },
+                "overview_quality_issues": [],
                 "scope_warning": False,
                 "scopes": [],
                 "sources": [],
@@ -1036,19 +1044,28 @@ class RagApiService:
             raw_sources,
             require_scope_coverage=require_scope_coverage,
         )
+        quality_issues = overview_quality_issues(
+            answer,
+            exploration if isinstance(exploration, dict) else {},
+        )
         quality_retry = False
-        if assessment["grounding_status"] == "incomplete_scope_coverage":
+        if require_scope_coverage and (
+            assessment["grounding_status"] != "cited" or quality_issues
+        ):
             quality_retry = True
             generation_attempts += 1
             self.log(
-                "Visão geral omitiu um escopo; solicitando uma síntese completa",
+                "Visão geral falhou na cobertura ou qualificação; "
+                "solicitando uma síntese revisada",
                 "warning",
             )
             try:
                 generated = self.generator.generate(
                     question=str(context["query"]),
-                    instructions=_scope_retry_instructions(
-                        str(context["instructions"]), assessment
+                    instructions=_quality_retry_instructions(
+                        str(context["instructions"]),
+                        assessment,
+                        quality_issues,
                     ),
                     sources=raw_sources,
                     max_output_tokens=max_output_tokens,
@@ -1067,6 +1084,13 @@ class RagApiService:
                     raw_sources,
                     require_scope_coverage=require_scope_coverage,
                 )
+                quality_issues = overview_quality_issues(
+                    answer,
+                    exploration if isinstance(exploration, dict) else {},
+                )
+
+        if quality_issues and assessment["grounding_status"] == "cited":
+            assessment["grounding_status"] = "scope_overclaim"
 
         valid_citations = assessment["valid_citations"]
         invalid_citations = assessment["invalid_citations"]
@@ -1112,6 +1136,7 @@ class RagApiService:
             "invalid_citations": invalid_citations,
             "citation_coverage": coverage,
             "scope_citation_coverage": scope_citation_coverage,
+            "overview_quality_issues": quality_issues,
             "scope_warning": len(scopes) > 1,
             "scopes": scope_values,
             "sources": public_sources,

@@ -5,6 +5,7 @@ import unittest
 from mflab_knowledge.exploration import (
     exploration_instructions,
     overview_authority,
+    overview_quality_issues,
     plan_exploration,
 )
 
@@ -50,6 +51,22 @@ class ExplorationTests(unittest.TestCase):
         self.assertIn("Solver B", instruction)
         self.assertIn("specialized feature", instruction)
         self.assertIn("do not claim they are the only", instruction)
+
+    def test_overview_flags_definitive_project_scope_claims(self) -> None:
+        plan = plan_exploration("O que é o Solver?")
+
+        self.assertEqual(
+            overview_quality_issues(
+                "Ele é composto por dois projetos principais.", plan
+            ),
+            ["available_scopes_presented_as_definitive"],
+        )
+        self.assertEqual(
+            overview_quality_issues(
+                "Entre os projetos atualmente indexados estão A e B.", plan
+            ),
+            [],
+        )
 
 
 if __name__ == "__main__":

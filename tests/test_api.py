@@ -798,12 +798,12 @@ class ApiServiceTests(unittest.TestCase):
         self.assertTrue(result["context"]["quality_retry"])
         self.assertEqual(result["context"]["generation_attempts"], 2)
 
-    def test_overview_retry_can_restore_scope_coverage(self) -> None:
+    def test_overview_retry_can_remove_scope_overclaim(self) -> None:
         generator = _Generator()
         answers = iter(
             [
-                "Solver A is one implementation [S1].",
-                "Solver has implementation A [S1] and implementation B [S2].",
+                "The main projects are Solver A and Solver B [S1, S2].",
+                "Available indexed scopes include Solver A and Solver B [S1, S2].",
             ]
         )
 
@@ -872,7 +872,8 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["scope_citation_coverage"]["coverage"], 1.0)
         self.assertEqual(result["context"]["generation_attempts"], 2)
         self.assertTrue(result["context"]["quality_retry"])
-        self.assertIn("Solver B / trunk", generator.calls[1]["instructions"])
+        self.assertEqual(result["overview_quality_issues"], [])
+        self.assertIn("never call these", generator.calls[1]["instructions"])
 
     def test_ask_caps_and_reduces_context_when_provider_rejects_it(self) -> None:
         generator = _RetryGenerator()

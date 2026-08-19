@@ -223,8 +223,10 @@ A resposta inclui `answer`, `citations_used`, `invalid_citations`, `sources`,
 verificação estrutural por
 parágrafo ou bullet factual; ela não substitui uma avaliação semântica humana
 de que a fonte realmente sustenta a afirmação. `grounding_status` vale `cited`,
-`partial_citations`, `incomplete_scope_coverage`, `missing_citations`,
-`invalid_citations` ou `no_sources`.
+`partial_citations`, `incomplete_scope_coverage`, `scope_overclaim`,
+`missing_citations`, `invalid_citations` ou `no_sources`. Citações podem ser
+individuais (`[S1][S2]`) ou agrupadas estritamente (`[S1, S2]` ou
+`[S1; S2]`); texto livre dentro dos colchetes não é aceito como citação.
 `scope_warning` fica verdadeiro quando as fontes abrangem mais de uma
 combinação projeto/branch/commit; isso não bloqueia uma comparação intencional,
 mas impede que o cliente trate versões distintas como se fossem uma só. O

@@ -37,6 +37,13 @@ run_without_citation();
 
         self.assertEqual(result["coverage"], 0.0)
 
+    def test_accepts_strict_grouped_citations(self) -> None:
+        self.assertEqual(
+            citation_ids("Supported by [S1, S2] and [S3; S4]."),
+            {"S1", "S2", "S3", "S4"},
+        )
+        self.assertEqual(citation_ids("Not citations: [S1 text] or S2."), set())
+
 
 if __name__ == "__main__":
     unittest.main()

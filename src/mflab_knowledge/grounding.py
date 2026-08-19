@@ -2,12 +2,19 @@ from __future__ import annotations
 
 import re
 
-CITATION_PATTERN = re.compile(r"\[S(\d+)\]")
+CITATION_GROUP_PATTERN = re.compile(
+    r"\[\s*S\d+\s*(?:(?:,|;)\s*S\d+\s*)*\]"
+)
+CITATION_ID_PATTERN = re.compile(r"S(\d+)")
 LIST_ITEM_PATTERN = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+)")
 
 
 def citation_ids(text: str) -> set[str]:
-    return {f"S{value}" for value in CITATION_PATTERN.findall(text)}
+    return {
+        f"S{value}"
+        for group in CITATION_GROUP_PATTERN.findall(text)
+        for value in CITATION_ID_PATTERN.findall(group)
+    }
 
 
 def _factual_units(text: str) -> list[str]:

@@ -123,3 +123,28 @@ def exploration_instructions(
         "project scopes; do not claim they are the only, principal, or complete set "
         "unless the evidence explicitly establishes that fact."
     )
+
+
+def overview_quality_issues(
+    answer: str,
+    plan: dict[str, object],
+) -> list[str]:
+    """Detect generic scope overclaims in repository-wide answers."""
+
+    if plan.get("intent") != "overview":
+        return []
+    normalized = _normalized(answer)
+    overclaim_patterns = (
+        r"\bprojetos principais\b",
+        r"\bprincipais projetos\b",
+        r"\bunicos projetos\b",
+        r"\bmain projects\b",
+        r"\bprincipal projects\b",
+        r"\bonly projects\b",
+        r"\bcomplete set of projects\b",
+    )
+    return (
+        ["available_scopes_presented_as_definitive"]
+        if any(re.search(pattern, normalized) for pattern in overclaim_patterns)
+        else []
+    )

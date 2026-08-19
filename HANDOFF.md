@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.31.2**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.31.3**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -287,6 +287,13 @@ derivado da origem, diferente do ID operacional do catálogo. A 0.31.2 associa
 essas camadas por ID exato ou por projeto unívoco, nessa ordem, e expõe o método
 em `configuration_match`. Projetos duplicados permanecem sem associação
 automática.
+
+O reteste da 0.31.2 confirmou a associação, os aliases e a branch `base`, mas o
+Qwen produziu citações agrupadas como `[S1, S2]` e repetiu a extrapolação “dois
+projetos principais”. A 0.31.3 aceita grupos estritos de IDs e amplia a revisão
+única de visões gerais: qualquer falha de grounding, cobertura ou qualificação
+dos escopos provoca nova síntese. Se a extrapolação persistir, o retorno usa
+`scope_overclaim` em vez de aprovar silenciosamente.
 
 1. catálogo com 17 e 107 nomes de branches;
 2. `base` preferencial para MFSim-NG e a política escolhida para MFSim CMake;
