@@ -29,6 +29,8 @@ id = "solver-next"
 project = "Solver Next"
 source = "sources/next"
 canonical_ref = "origin/trunk"
+preferred_branch = "research/current"
+aliases = ["solver", "next solver", "solver"]
 include_branches = ["trunk", "research/*"]
 exclude_branches = ["research/retired-*" ]
 
@@ -58,6 +60,8 @@ access_class = "pending"
             self.assertEqual(solver.canonical_ref, "origin/trunk")
             self.assertEqual(solver.include_branches, ("trunk", "research/*"))
             self.assertEqual(solver.exclude_branches, ("research/retired-*",))
+            self.assertEqual(solver.preferred_branch, "research/current")
+            self.assertEqual(solver.aliases, ("solver", "next solver"))
             self.assertEqual(ui.canonical_ref, "remote_default")
             self.assertEqual(ui.branch_scope, "remote")
             self.assertEqual(ui.access_class, "project")

@@ -102,10 +102,41 @@ function populateFilters(repositories) {
 function updateBranches(projectSelectId, branchSelectId) {
   const project = byId(projectSelectId).value;
   const select = byId(branchSelectId);
+  const current = select.value;
   select.replaceChildren(new Option("Todas", ""));
   if (!project) return;
   const repository = state.repositories.find((item) => item.project === project);
-  (repository?.canonical_branches || []).forEach((branch) => select.add(new Option(branch, branch)));
+  if (!repository) return;
+
+  const allBranches = repository.branch_names || repository.canonical_branches || [];
+  const canonical = new Set(repository.canonical_branches || []);
+  const preferred = repository.preferred_branch || "";
+  const grouped = new Set();
+
+  function addGroup(label, branches) {
+    const values = branches.filter((branch) => branch && !grouped.has(branch));
+    if (!values.length) return;
+    const group = document.createElement("optgroup");
+    group.label = label;
+    values.forEach((branch) => {
+      grouped.add(branch);
+      group.append(new Option(branch, branch));
+    });
+    select.append(group);
+  }
+
+  addGroup("Preferencial", preferred ? [preferred] : []);
+  addGroup("Canônicas", allBranches.filter((branch) => canonical.has(branch)));
+  addGroup("Outras branches", allBranches.filter((branch) => !canonical.has(branch)));
+  select.value = allBranches.includes(current) ? current : preferred;
+}
+
+function scopeSummary(resolution) {
+  if (!resolution?.automatic || !resolution.scopes?.length) return "";
+  const values = resolution.scopes.map((scope) =>
+    [scope.project, scope.branch].filter(Boolean).join(" · ")
+  );
+  return ` Escopo automático: ${values.join(" ↔ ")}.`;
 }
 
 async function loadCatalog() {
@@ -145,7 +176,7 @@ async function submitSearch(event) {
   if (byId("search-branch").value) payload.branch = byId("search-branch").value;
   try {
     const response = await api("/ui-api/search", { method: "POST", body: JSON.stringify(payload) });
-    feedback.textContent = `${response.count} trechos encontrados.`;
+    feedback.textContent = `${response.count} trechos encontrados.${scopeSummary(response.scope_resolution)}`;
     response.results.forEach((result) => results.append(resultCard(result)));
   } catch (error) {
     feedback.textContent = error.message;
@@ -174,7 +205,10 @@ async function submitAsk(event) {
   if (byId("ask-branch").value) payload.branch = byId("ask-branch").value;
   try {
     const response = await api("/ui-api/ask", { method: "POST", body: JSON.stringify(payload) });
-    feedback.textContent = response.abstained ? "Não há evidência indexada suficiente." : "Resposta concluída.";
+    const resolution = response.context?.scope_resolution;
+    feedback.textContent = response.abstained
+      ? `Não há evidência indexada suficiente.${scopeSummary(resolution)}`
+      : `Resposta concluída.${scopeSummary(resolution)}`;
     card.append(element("h3", "", response.abstained ? "Evidência insuficiente" : "Resposta"));
     card.append(element("div", "answer-text", response.answer || "A base indexada não sustenta uma resposta."));
     const footer = element("div", "answer-footer");

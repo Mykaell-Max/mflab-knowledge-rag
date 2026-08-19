@@ -690,6 +690,16 @@ def build_parser() -> argparse.ArgumentParser:
             "(padrão: ./generation.toml)."
         ),
     )
+    serve.add_argument(
+        "--repositories-config",
+        dest="repository_catalog",
+        default=Path("repositories.toml"),
+        type=Path,
+        help=(
+            "Catálogo usado para aliases e preferência de branches "
+            "(padrão: ./repositories.toml)."
+        ),
+    )
     _add_retrieval_policy_option(serve)
     _add_embedding_options(serve)
     _add_database_options(serve)
@@ -1222,6 +1232,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 state_dir=args.state_dir,
                 retrieval_config=args.retrieval_config,
                 generation_config=args.generation_config,
+                repository_catalog=args.repository_catalog,
                 allowed_access=frozenset(allowed_access),
                 embedding_model=args.embedding_model,
                 embedding_revision=args.embedding_revision,

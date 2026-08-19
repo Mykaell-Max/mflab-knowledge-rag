@@ -9,6 +9,10 @@ from mflab_knowledge.generation import (
     GenerationConfig,
     GenerationContextTooLargeError,
 )
+from mflab_knowledge.repository_config import (
+    RepositoryCatalog,
+    RepositoryDefinition,
+)
 
 
 class _Embedder:
@@ -131,6 +135,128 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(status.call_args.kwargs["allowed_access"], {"public"})
         with self.assertRaisesRegex(ValueError, "não liberada"):
             service.repositories(allowed_access={"restricted"})
+
+    def test_repository_summary_exposes_safe_branch_navigation_policy(self) -> None:
+        definition = RepositoryDefinition(
+            id="solver",
+            enabled=True,
+            project="Solver",
+            source=Path("source"),
+            canonical_ref="origin/trunk",
+            branch_scope="remote",
+            access_class="lab",
+            profile="generic",
+            preferred_branch="develop",
+            aliases=("solver-next",),
+        )
+        catalog = RepositoryCatalog(
+            path=Path("repositories.toml"),
+            config_hash="sha256:test",
+            cache_root=Path("cache"),
+            inventory_root=Path("inventory"),
+            normalized_root=Path("data"),
+            repositories=(definition,),
+        )
+        service = api.RagApiService(
+            self.settings(),
+            repository_catalog=catalog,
+        )
+        status = {
+            "repository_id": "solver",
+            "project": "Solver",
+            "branch_names": ["develop", "feature/a", "trunk"],
+            "canonical_branches": ["trunk"],
+        }
+        with mock.patch.object(
+            api,
+            "repository_status",
+            return_value=[status],
+        ):
+            result = service.repositories()[0]
+
+        self.assertEqual(result["preferred_branch"], "develop")
+        self.assertEqual(result["preference_status"], "configured")
+        self.assertEqual(result["aliases"], ["solver-next"])
+        self.assertEqual(
+            result["branch_names"], ["develop", "feature/a", "trunk"]
+        )
+
+    def test_automatic_comparison_searches_each_configured_scope(self) -> None:
+        definitions = tuple(
+            RepositoryDefinition(
+                id=identifier,
+                enabled=True,
+                project=project,
+                source=Path(identifier),
+                canonical_ref=f"origin/{branch}",
+                branch_scope="remote",
+                access_class="lab",
+                profile="generic",
+                preferred_branch=branch,
+                aliases=(alias,),
+            )
+            for identifier, project, branch, alias in (
+                ("solver-a", "Solver A", "integration", "modern"),
+                ("solver-b", "Solver B", "trunk", "legacy"),
+            )
+        )
+        catalog = RepositoryCatalog(
+            path=Path("repositories.toml"),
+            config_hash="sha256:test",
+            cache_root=Path("cache"),
+            inventory_root=Path("inventory"),
+            normalized_root=Path("data"),
+            repositories=definitions,
+        )
+        statuses = [
+            {
+                "repository_id": definition.id,
+                "project": definition.project,
+                "branch_names": [definition.preferred_branch],
+                "canonical_branches": [definition.preferred_branch],
+            }
+            for definition in definitions
+        ]
+        service = api.RagApiService(
+            self.settings(),
+            repository_catalog=catalog,
+        )
+
+        def search_backend(_database_url: str, **values: object):
+            project = str(values["project"])
+            branch = str(values["branch"])
+            return [
+                {
+                    "chunk_id": project,
+                    "project": project,
+                    "selected_occurrence": {
+                        "branch": branch,
+                        "commit_sha": "a" * 40,
+                    },
+                }
+            ]
+
+        with mock.patch.object(
+            api,
+            "repository_status",
+            return_value=statuses,
+        ):
+            with mock.patch.object(
+                api,
+                "search_postgres",
+                side_effect=search_backend,
+            ) as search:
+                result = service.search(
+                    query="Compare modern e legacy",
+                    mode="lexical",
+                )
+
+        self.assertEqual(search.call_count, 2)
+        self.assertEqual(result["scope_resolution"]["mode"], "projects_from_query")
+        self.assertEqual(
+            [item["project"] for item in result["results"]],
+            ["Solver A", "Solver B"],
+        )
 
     def test_non_loopback_host_is_rejected_before_importing_server(self) -> None:
         with self.assertRaisesRegex(ValueError, "exige MFLAB_API_KEY"):

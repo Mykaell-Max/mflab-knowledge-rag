@@ -96,6 +96,13 @@ e nova tentativa, sem remover a proveniência das fontes.
 As classes `public` e `lab` são o teto padrão do processo, e cada requisição
 pode apenas restringir esse conjunto, nunca ampliá-lo.
 
+O catálogo aceita `aliases` e `preferred_branch` por repositório. A interface
+lista todas as branches realmente indexadas, separando a preferencial e as
+canônicas. Sem filtros manuais, o serviço reconhece somente nomes de projeto,
+aliases e branches com alta confiança; comparações explícitas são recuperadas
+em escopos separados e intercaladas. A resolução aplicada é devolvida ao
+cliente e mostrada na interface, nunca escondida.
+
 Depois da validação em primeiro plano, instale a API como serviço permanente:
 
 ```bash

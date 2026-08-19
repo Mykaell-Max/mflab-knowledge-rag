@@ -109,8 +109,11 @@ configurado. Não retorna URL nem chave do provedor.
 
 Lista dinamicamente os repositórios presentes no banco, com documentos,
 ocorrências, branches, branch canônica, chunks, cobertura de embeddings e data
-da carga. A lista e suas contagens consideram somente as classes liberadas pelo
-processo. Nenhum nome de fonte é codificado no endpoint.
+da carga. `branch_names` contém todas as branches visíveis, enquanto
+`preferred_branch`, `canonical_branches`, `aliases` e `preference_status`
+descrevem a política segura de navegação. A lista e suas contagens consideram
+somente as classes liberadas pelo processo. Nenhum nome de fonte é codificado
+no endpoint.
 
 ### `POST /search`
 
@@ -131,6 +134,15 @@ Exemplo híbrido:
 `path_prefix` são opcionais e não possuem valores predefinidos. Cada resultado
 preserva projeto, branch, commit, caminho, linhas, classe de acesso, texto e
 citação.
+
+Quando `project` e `branch` não são enviados, o resolvedor consulta o catálogo
+local. Nomes ou aliases de projetos mencionados explicitamente usam a branch
+preferencial correspondente; branches entre aspas, após `branch`/`ref` ou com
+nomes estruturados como `grupo/recurso` também podem formar o escopo. Duas
+fontes mencionadas produzem buscas separadas, intercaladas antes da montagem do
+contexto. Se nada for mencionado, cada repositório contribui por sua branch
+preferencial. `scope_resolution` informa exatamente a decisão. Filtros
+estruturados enviados pelo cliente continuam tendo precedência e são estritos.
 
 As classes solicitadas precisam ser um subconjunto do teto definido quando o
 servidor iniciou. A classe `project` também exige o filtro `project`; `pending`

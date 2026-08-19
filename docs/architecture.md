@@ -267,6 +267,14 @@ na resposta. Escopos distintos são devolvidos separadamente e produzem um aviso
 explícito. Ausência de evidência causa abstenção sem inferência; ausência do
 gerador não afeta os endpoints de recuperação.
 
+O resolvedor de escopo opera antes da recuperação e usa somente metadados do
+catálogo autorizado. `aliases` e `preferred_branch` são definidos por
+repositório. Menções de múltiplos projetos ou branches viram escopos paralelos;
+os resultados são intercalados para que uma fonte não elimine a outra. A
+decisão é devolvida em `scope_resolution` e filtros explícitos do cliente nunca
+são substituídos. Correspondências incertas permanecem amplas em vez de aplicar
+uma restrição silenciosa.
+
 ## Política para novas fontes
 
 - Arquivo novo em projeto e branch autorizados: automático.

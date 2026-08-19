@@ -184,6 +184,12 @@ class DatabaseTests(unittest.TestCase):
                             "documents": 20,
                             "occurrences": 35,
                             "branches": 4,
+                            "branch_names": [
+                                "feature/a",
+                                "release/1",
+                                "research",
+                                "trunk",
+                            ],
                             "canonical_branches": ["trunk"],
                             "chunks": 100,
                             "embedded_chunks": 75,
@@ -206,6 +212,10 @@ class DatabaseTests(unittest.TestCase):
         self.assertIn("count(DISTINCT occurrence.branch)", connection.sql)
         self.assertIn("access_class = ANY(%(allowed_access)s::text[])", connection.sql)
         self.assertEqual(results[0]["canonical_branches"], ["trunk"])
+        self.assertEqual(
+            results[0]["branch_names"],
+            ["feature/a", "release/1", "research", "trunk"],
+        )
         self.assertEqual(results[0]["embedding_coverage"], 0.75)
         self.assertEqual(results[0]["embedding_profile"], "profile-1")
         self.assertEqual(connection.parameters["embedding_profile"], "profile-1")

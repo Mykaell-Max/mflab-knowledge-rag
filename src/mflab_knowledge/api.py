@@ -41,7 +41,12 @@ from mflab_knowledge.generation import (
 )
 from mflab_knowledge.grounding import citation_coverage, citation_ids
 from mflab_knowledge.retrieval import RetrievalPolicy, load_retrieval_policy
+from mflab_knowledge.repository_config import (
+    RepositoryCatalog,
+    load_repository_catalog,
+)
 from mflab_knowledge.service_runner import read_last_run
+from mflab_knowledge.scope import resolve_query_scopes
 
 LogCallback = Callable[[str, str], None]
 EmbedderFactory = Callable[[], LocalEmbedder]
@@ -106,6 +111,42 @@ def _reduce_context_evidence(
         }
     )
     return reduced
+
+
+def _merge_scoped_results(
+    groups: list[list[dict[str, object]]],
+    *,
+    limit: int,
+) -> list[dict[str, object]]:
+    """Interleave scopes so one repository or branch cannot consume the answer."""
+
+    merged: list[dict[str, object]] = []
+    seen: set[tuple[str, str, str]] = set()
+    position = 0
+    while len(merged) < limit:
+        added = False
+        for group in groups:
+            if position >= len(group):
+                continue
+            added = True
+            result = group[position]
+            occurrence = result.get("selected_occurrence")
+            if not isinstance(occurrence, dict):
+                occurrence = {}
+            key = (
+                str(result.get("project", "")),
+                str(occurrence.get("branch", "")),
+                str(result.get("chunk_id", "")),
+            )
+            if key not in seen:
+                seen.add(key)
+                merged.append(result)
+                if len(merged) >= limit:
+                    break
+        if not added:
+            break
+        position += 1
+    return merged
 
 
 def _memory_status() -> dict[str, int | float] | None:
@@ -212,6 +253,7 @@ class ApiSettings:
     state_dir: Path = Path("state")
     retrieval_config: Path | None = None
     generation_config: Path = Path("generation.toml")
+    repository_catalog: Path = Path("repositories.toml")
     allowed_access: frozenset[str] = frozenset({"public", "lab"})
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_revision: str = DEFAULT_EMBEDDING_REVISION
@@ -245,6 +287,7 @@ class RagApiService:
         retrieval_policy: RetrievalPolicy | None = None,
         generator: OpenAICompatibleGenerator | None = None,
         generation_config: GenerationConfig | None = None,
+        repository_catalog: RepositoryCatalog | None = None,
     ) -> None:
         self.settings = settings
         self.log = log or (lambda _message, _level="info": None)
@@ -259,6 +302,14 @@ class RagApiService:
             settings.generation_config,
             optional=True,
         )
+        if repository_catalog is not None:
+            self.repository_catalog = repository_catalog
+        elif settings.repository_catalog.expanduser().is_file():
+            self.repository_catalog = load_repository_catalog(
+                settings.repository_catalog
+            )
+        else:
+            self.repository_catalog = None
         if generator is not None:
             self.generator = generator
         elif self.generation_config is not None:
@@ -357,11 +408,48 @@ class RagApiService:
             revision=self.settings.embedding_revision,
             max_sequence_length=self.settings.max_sequence_length,
         )
-        return repository_status(
+        values = repository_status(
             self.settings.database_url,
             embedding_profile=profile,
             allowed_access=self._allowed_access(allowed_access),
         )
+        definitions = {
+            definition.id: definition
+            for definition in (
+                self.repository_catalog.repositories
+                if self.repository_catalog is not None
+                else ()
+            )
+        }
+        for value in values:
+            definition = definitions.get(str(value["repository_id"]))
+            branch_names = {
+                str(branch) for branch in value.get("branch_names", [])
+            }
+            canonical = [
+                str(branch) for branch in value.get("canonical_branches", [])
+            ]
+            configured = (
+                definition.preferred_branch if definition is not None else None
+            )
+            if configured is not None and configured in branch_names:
+                preferred = configured
+                preference_status = "configured"
+            elif canonical:
+                preferred = canonical[0]
+                preference_status = (
+                    "configured_branch_unavailable"
+                    if configured is not None
+                    else "canonical_fallback"
+                )
+            else:
+                preferred = None
+                preference_status = "unavailable"
+            value["preferred_branch"] = preferred
+            value["configured_preferred_branch"] = configured
+            value["preference_status"] = preference_status
+            value["aliases"] = list(definition.aliases) if definition else []
+        return values
 
     def administration_status(self) -> dict[str, object]:
         """Return operational details only for the authenticated admin UI."""
@@ -433,41 +521,77 @@ class RagApiService:
         selected_access = self._allowed_access(allowed_access)
         if "project" in selected_access and not project:
             raise ValueError("acesso project exige o filtro project")
+
+        scope_resolution: dict[str, object] = {
+            "mode": "explicit" if project or branch else "broad",
+            "automatic": False,
+            "scopes": [
+                {"project": project, "branch": branch, "reason": "explicit"}
+            ]
+            if project or branch
+            else [],
+        }
+        if project is None and branch is None and self.repository_catalog is not None:
+            catalog = self.repositories(allowed_access=selected_access)
+            scope_resolution = resolve_query_scopes(query_text, catalog)
+        raw_scopes = scope_resolution.get("scopes")
+        assert isinstance(raw_scopes, list)
+        scopes = raw_scopes or [
+            {"project": project, "branch": branch, "reason": "broad"}
+        ]
+
         common: dict[str, object] = {
             "query": query_text,
             "limit": limit,
-            "branch": branch,
-            "project": project,
             "path_prefix": path_prefix,
             "allowed_access": selected_access,
             "max_per_path": max_per_path,
             "include_duplicate_content": include_duplicate_content,
         }
+
+        def execute_scope(
+            scope: dict[str, object],
+            embedder: LocalEmbedder | None = None,
+        ) -> list[dict[str, object]]:
+            scoped = {
+                **common,
+                "branch": scope.get("branch"),
+                "project": scope.get("project"),
+            }
+            if mode == "lexical":
+                return search_postgres(self.settings.database_url, **scoped)
+            assert embedder is not None
+            if mode == "semantic":
+                return semantic_search(
+                    self.settings.database_url,
+                    embedder,
+                    **scoped,
+                )
+            return hybrid_search(
+                self.settings.database_url,
+                embedder,
+                retrieval_policy=self.retrieval_policy,
+                **scoped,
+            )
+
+        groups: list[list[dict[str, object]]] = []
         if mode == "lexical":
-            results = search_postgres(self.settings.database_url, **common)
+            groups = [execute_scope(scope) for scope in scopes]
         else:
             # SentenceTransformer and its CUDA context are shared and serialized.
             # This avoids loading one model per request and unsafe concurrent use.
             with self._model_lock:
                 if self._embedder is None:
                     self._embedder = self._embedder_factory()
-                if mode == "semantic":
-                    results = semantic_search(
-                        self.settings.database_url,
-                        self._embedder,
-                        **common,
-                    )
-                else:
-                    results = hybrid_search(
-                        self.settings.database_url,
-                        self._embedder,
-                        retrieval_policy=self.retrieval_policy,
-                        **common,
-                    )
+                groups = [
+                    execute_scope(scope, self._embedder) for scope in scopes
+                ]
+        results = _merge_scoped_results(groups, limit=limit)
         return {
             "query": query_text,
             "mode": mode,
             "count": len(results),
+            "scope_resolution": scope_resolution,
             "results": results,
         }
 
@@ -533,6 +657,7 @@ class RagApiService:
         return {
             "query": retrieval["query"],
             "mode": retrieval["mode"],
+            "scope_resolution": retrieval.get("scope_resolution"),
             "instructions": CONTEXT_INSTRUCTIONS,
             "source_count": len(sources),
             "retrieved_count": retrieval["count"],
@@ -611,6 +736,7 @@ class RagApiService:
                     "retrieved_count": context["retrieved_count"],
                     "source_count": 0,
                     "truncated": context["truncated"],
+                    "scope_resolution": context.get("scope_resolution"),
                     "requested_max_context_characters": requested_context_limit,
                     "max_context_characters": effective_context_limit,
                     "generation_attempts": 0,
@@ -717,6 +843,7 @@ class RagApiService:
                 "source_count": context["source_count"],
                 "context_characters": context["context_characters"],
                 "truncated": context["truncated"],
+                "scope_resolution": context.get("scope_resolution"),
                 "requested_max_context_characters": requested_context_limit,
                 "max_context_characters": context.get(
                     "max_context_characters", effective_context_limit

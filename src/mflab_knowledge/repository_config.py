@@ -28,6 +28,8 @@ class RepositoryDefinition:
     profile: str
     include_branches: tuple[str, ...] = ()
     exclude_branches: tuple[str, ...] = ()
+    preferred_branch: str | None = None
+    aliases: tuple[str, ...] = ()
     remote_url: str | None = None
     fetch_timeout_seconds: int = 1800
 
@@ -69,6 +71,30 @@ def _optional_patterns(value: object, field: str, record: str) -> tuple[str, ...
     ):
         raise ValueError(f"{record}.{field} deve ser uma lista de padrões")
     return tuple(dict.fromkeys(item.strip() for item in value))
+
+
+def _optional_text(value: object, field: str, record: str) -> str | None:
+    if value is None:
+        return None
+    return _required_text(value, field, record)
+
+
+def _optional_texts(value: object, field: str, record: str) -> tuple[str, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, list) or not all(
+        isinstance(item, str) and item.strip() for item in value
+    ):
+        raise ValueError(f"{record}.{field} deve ser uma lista de textos")
+    result: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        selected = item.strip()
+        key = selected.casefold()
+        if key not in seen:
+            seen.add(key)
+            result.append(selected)
+    return tuple(result)
 
 
 def _resolve_path(base: Path, value: object, field: str, record: str) -> Path:
@@ -221,6 +247,8 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
         "profile",
         "include_branches",
         "exclude_branches",
+        "preferred_branch",
+        "aliases",
         "fetch_timeout_seconds",
     }
     repositories: list[RepositoryDefinition] = []
@@ -314,6 +342,16 @@ def load_repository_catalog(path: Path) -> RepositoryCatalog:
                 ),
                 include_branches=include,
                 exclude_branches=exclude,
+                preferred_branch=_optional_text(
+                    raw_repository.get("preferred_branch"),
+                    "preferred_branch",
+                    record,
+                ),
+                aliases=_optional_texts(
+                    raw_repository.get("aliases"),
+                    "aliases",
+                    record,
+                ),
                 remote_url=remote_url,
                 fetch_timeout_seconds=_fetch_timeout(
                     raw_repository.get(

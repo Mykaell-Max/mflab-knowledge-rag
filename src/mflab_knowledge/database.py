@@ -646,6 +646,9 @@ def repository_status(
                     count(DISTINCT occurrence.branch)
                         FILTER (WHERE occurrence.branch IS NOT NULL) AS branches,
                     array_agg(DISTINCT occurrence.branch ORDER BY occurrence.branch)
+                        FILTER (WHERE occurrence.branch IS NOT NULL)
+                        AS branch_names,
+                    array_agg(DISTINCT occurrence.branch ORDER BY occurrence.branch)
                         FILTER (
                             WHERE occurrence.canonical
                               AND occurrence.branch IS NOT NULL
@@ -689,6 +692,8 @@ def repository_status(
                 coalesce(document_stats.documents, 0) AS documents,
                 coalesce(occurrence_stats.occurrences, 0) AS occurrences,
                 coalesce(occurrence_stats.branches, 0) AS branches,
+                coalesce(occurrence_stats.branch_names, ARRAY[]::text[])
+                    AS branch_names,
                 coalesce(occurrence_stats.canonical_branches, ARRAY[]::text[])
                     AS canonical_branches,
                 coalesce(chunk_stats.chunks, 0) AS chunks,
@@ -724,6 +729,7 @@ def repository_status(
         if value["last_ingestion"] is not None:
             value["last_ingestion"] = value["last_ingestion"].isoformat()
         value["canonical_branches"] = list(value["canonical_branches"] or [])
+        value["branch_names"] = list(value["branch_names"] or [])
         chunks = int(value["chunks"])
         embedded = int(value["embedded_chunks"])
         value["embedding_coverage"] = (

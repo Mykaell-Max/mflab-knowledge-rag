@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.29.1**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.30.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -261,17 +261,18 @@ permanece separada e protege os endpoints programáticos; ela não é pedida nem
 armazenada pela interface. O visual segue o site institucional: fundo claro,
 azul, bordas discretas e texto funcional, sem eyebrows ou slogans. A implantação
 LAN, a senha administrativa, a busca e o painel privado foram validados na
-Morgoth. A próxima ação é validar a correção 0.29.1 para perguntas pela
-interface. Um diagnóstico direto confirmou que o HTTP 400 vinha de excesso de
-contexto: o pedido mínimo e um pacote de 4.000 caracteres passaram no mesmo
-vLLM. A correção transfere os limites da interface para `generation.toml`,
-aplica teto configurável no backend e reduz as evidências automaticamente
-quando o provedor reporta uma janela excedida. Confirmar:
+Morgoth. A correção de contexto foi validada na interface. A versão 0.30.0
+inicia a evolução para assistente técnico: expõe todas as branches, adiciona
+aliases e branch preferencial por repositório, resolve menções explícitas e
+intercala comparações em escopos separados. A decisão aparece em
+`scope_resolution`. Confirmar na Morgoth:
 
-1. pergunta real na interface sem HTTP 400;
-2. resposta citada e apresentação das fontes;
-3. limite efetivo e número de tentativas reportados pela API;
-4. layout responsivo em outros computadores do laboratório.
+1. catálogo com 17 e 107 nomes de branches;
+2. `base` preferencial para MFSim-NG e a política escolhida para MFSim CMake;
+3. pergunta citando apenas um projeto;
+4. comparação citando os dois projetos;
+5. branch específica citada na pergunta;
+6. continuidade do índice qualitativo descrito em `docs/assistant-roadmap.md`.
 
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
