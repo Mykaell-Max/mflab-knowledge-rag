@@ -357,6 +357,12 @@ devolvida deve respeitar o projeto, a branch, o prefixo de caminho e as classes
 de acesso solicitadas. Essa verificação é genérica e detecta mistura indevida
 entre repositórios ou versões sem conhecer nomes de projetos no motor.
 
+Uma suíte pode exigir `grounding_status` exato ou declarar
+`allowed_grounding_statuses`, nunca ambos. A segunda forma é apropriada quando
+um caso aceita uma resposta explicitamente parcial, mas continua impondo uma
+cobertura textual mínima, cobertura integral dos escopos e zero citações
+inválidas. Ela não transforma qualquer resposta parcial em sucesso.
+
 ```bash
 .venv/bin/python -m mflab_knowledge api-evaluate \
   --suite evaluations/mfsim-ng-answer-pilot.json \

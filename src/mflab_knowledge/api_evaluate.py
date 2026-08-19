@@ -39,6 +39,7 @@ CASE_FIELDS = {
 EXPECTATION_FIELDS = {
     "abstained",
     "grounding_status",
+    "allowed_grounding_statuses",
     "min_valid_citations",
     "max_invalid_citations",
     "min_sources",
@@ -286,6 +287,27 @@ def _evaluate_expectations(
         expected = expectations["grounding_status"]
         actual = response.get("grounding_status")
         _check(checks, "grounding_status", expected, actual, actual == expected)
+
+    if "allowed_grounding_statuses" in expectations:
+        if "grounding_status" in expectations:
+            raise ValueError(
+                "use grounding_status ou allowed_grounding_statuses, não ambos"
+            )
+        allowed = expectations["allowed_grounding_statuses"]
+        if not isinstance(allowed, list) or not all(
+            isinstance(value, str) and value for value in allowed
+        ):
+            raise ValueError(
+                "allowed_grounding_statuses deve ser uma lista de textos"
+            )
+        actual = response.get("grounding_status")
+        _check(
+            checks,
+            "allowed_grounding_statuses",
+            allowed,
+            actual,
+            actual in allowed,
+        )
 
     valid_citations = response.get("citations_used")
     invalid_citations = response.get("invalid_citations")

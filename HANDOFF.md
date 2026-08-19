@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.31.3**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.31.4**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -294,6 +294,15 @@ projetos principais”. A 0.31.3 aceita grupos estritos de IDs e amplia a revis�
 única de visões gerais: qualquer falha de grounding, cobertura ou qualificação
 dos escopos provoca nova síntese. Se a extrapolação persistir, o retorno usa
 `scope_overclaim` em vez de aprovar silenciosamente.
+
+O reteste da 0.31.3 confirmou duas tentativas, citações agrupadas reconhecidas,
+cobertura integral dos dois escopos e MFSim-NG em `base`. O status final foi
+`partial_citations` porque o parágrafo de limitação não terminou em citação. A
+0.31.4 permite que a suíte aceite `cited` ou `partial_citations` somente com
+cobertura textual mínima de 80%, cobertura de escopos em 100%, zero IDs
+inválidos e nenhuma extrapolação proibida. A resposta permaneceu superficial;
+o próximo trabalho prioritário é o índice qualitativo hierárquico descrito em
+`docs/assistant-roadmap.md`, não novos ajustes cosméticos de prompt.
 
 1. catálogo com 17 e 107 nomes de branches;
 2. `base` preferencial para MFSim-NG e a política escolhida para MFSim CMake;

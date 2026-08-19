@@ -293,6 +293,41 @@ class ApiEvaluateTests(unittest.TestCase):
 
         self.assertEqual(report["summary"]["cases_passed"], 1)
 
+    def test_accepts_an_explicit_set_of_grounding_statuses(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite = self._suite(
+                root,
+                [
+                    {
+                        "id": "qualified-partial",
+                        "query": "Overview",
+                        "expectations": {
+                            "allowed_grounding_statuses": [
+                                "cited",
+                                "partial_citations",
+                            ],
+                            "min_citation_coverage": 0.8,
+                        },
+                    }
+                ],
+            )
+            response = {
+                "answer": "Mostly grounded [S1].",
+                "grounding_status": "partial_citations",
+                "citation_coverage": {"coverage": 0.85},
+                "citations_used": ["S1"],
+                "invalid_citations": [],
+                "sources": [{"path": "README.md"}],
+            }
+            report = evaluate_answer_suite(
+                suite_path=suite,
+                request=lambda _payload, _timeout: response,
+                metric_sampler=None,
+            )
+
+        self.assertEqual(report["summary"]["cases_passed"], 1)
+
     def test_rejects_external_endpoint_and_unknown_case_options(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
