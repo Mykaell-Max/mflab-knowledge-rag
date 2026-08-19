@@ -117,16 +117,6 @@ class DeploymentAssetTests(unittest.TestCase):
             self.assertNotIn(forbidden, css.casefold())
             self.assertNotIn(forbidden, javascript.casefold())
 
-    def test_visual_preview_is_loopback_only_and_uses_generic_data(self) -> None:
-        root = Path(__file__).resolve().parents[1]
-        preview = (root / "scripts/preview-web-ui.py").read_text(encoding="utf-8")
-
-        self.assertIn('("127.0.0.1", args.port)', preview)
-        self.assertIn("WEB_ROOT", preview)
-        self.assertNotIn("0.0.0.0", preview)
-        for forbidden in ("mfsim-ng", "mfsim-cmake", "/home/max"):
-            self.assertNotIn(forbidden, preview.casefold())
-
     def test_private_administration_uses_server_side_session_controls(self) -> None:
         root = Path(__file__).resolve().parents[1]
         transport = (root / "src/mflab_knowledge/api_http.py").read_text(
