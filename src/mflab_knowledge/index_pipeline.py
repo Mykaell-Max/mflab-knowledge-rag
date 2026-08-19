@@ -18,6 +18,7 @@ from mflab_knowledge.inventory import write_json, write_yaml
 from mflab_knowledge.multi_sync import sync_all_repositories
 from mflab_knowledge.normalize import normalize_manifest
 from mflab_knowledge.repository_config import RepositoryCatalog
+from mflab_knowledge.semantic_database import load_semantic_map
 
 LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, int, str], None]
@@ -174,6 +175,14 @@ def index_all_repositories(
                 log=repository_log,
             )
             entry["database"] = database
+            semantic_database = load_semantic_map(
+                database_url,
+                summary_path=Path(str(normalization["semantic_map_summary"])),
+                symbols_path=Path(str(normalization["symbols"])),
+                relations_path=Path(str(normalization["relations"])),
+                log=repository_log,
+            )
+            entry["semantic_map_database"] = semantic_database
             entry["pipeline_status"] = (
                 "warning" if sync_status == "warning" else "success"
             )
@@ -187,6 +196,12 @@ def index_all_repositories(
                 f"Corpus {'reutilizado' if database['reused'] else 'atualizado'} "
                 f"em {_format_duration(time.monotonic() - repository_started)}: "
                 f"{database['documents']} documentos, {database['chunks']} chunks",
+                "success",
+            )
+            repository_log(
+                f"Mapa {'reutilizado' if semantic_database['reused'] else 'atualizado'}: "
+                f"{semantic_database['symbols']} símbolos, "
+                f"{semantic_database['relations']} relações",
                 "success",
             )
         except Exception as exc:

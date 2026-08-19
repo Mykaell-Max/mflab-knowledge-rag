@@ -61,6 +61,19 @@ def _fingerprint(value: object) -> str:
     return f"sha256:{hashlib.sha256(serialized).hexdigest()}"
 
 
+def semantic_map_fingerprint(
+    symbols: Iterable[dict[str, object]],
+    relations: Iterable[dict[str, object]],
+) -> str:
+    return _fingerprint(
+        {
+            "algorithm": SEMANTIC_MAP_ALGORITHM,
+            "symbols": list(symbols),
+            "relations": list(relations),
+        }
+    )
+
+
 def _write_json(path: Path, value: object) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
@@ -426,13 +439,7 @@ def build_semantic_map(
                 }.items()
             )
         ),
-        "fingerprint": _fingerprint(
-            {
-                "algorithm": SEMANTIC_MAP_ALGORITHM,
-                "symbols": [item["symbol_id"] for item in symbols],
-                "relations": [item["relation_id"] for item in relations],
-            }
-        ),
+        "fingerprint": semantic_map_fingerprint(symbols, relations),
         "symbols_file": str(symbols_path),
         "relations_file": str(relations_path),
     }

@@ -74,6 +74,14 @@ Python for 3.14 e a inferência CUDA reclamar de `Python.h`, instale
 Uma segunda execução de `db-load` com os mesmos arquivos deve informar que o
 corpus foi reutilizado.
 
+O comando agregado `index-all` também carrega automaticamente
+`symbols.jsonl` e `relations.jsonl` nas tabelas `semantic_symbols`,
+`semantic_relations` e `semantic_relation_occurrences`. A carga possui
+fingerprint e histórico próprios em `semantic_map_runs`, portanto um corpus
+textual reutilizado ainda pode atualizar o mapa quando relações ou ocorrências
+de branch mudarem. Os artefatos continuam sendo a fonte auditável e podem ser
+comparados ao banco com `scripts/validate-semantic-database.py`.
+
 ## 5. Buscar e avaliar
 
 ```bash

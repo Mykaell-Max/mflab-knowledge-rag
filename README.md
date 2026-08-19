@@ -629,11 +629,11 @@ executa sincronização, normalização, carga no PostgreSQL e embeddings locais
 ```
 
 O pipeline é idempotente em todos os estágios: mirrors, snapshots, inventários,
-parses, corpora PostgreSQL e embeddings existentes são reutilizados. Cada corpus
-é substituído apenas dentro de seu `repository_id`; projetos diferentes
-permanecem simultaneamente no banco. Falhas são isoladas por repositório e o
-resultado auditável fica em `data/repositories/index-all.generated.yaml`, sem a
-URL do banco ou credenciais.
+parses, corpora PostgreSQL, mapas de símbolos/relações e embeddings existentes
+são reutilizados. Cada corpus e mapa derivado é substituído apenas dentro de seu
+`repository_id`; projetos diferentes permanecem simultaneamente no banco.
+Falhas são isoladas por repositório e o resultado auditável fica em
+`data/repositories/index-all.generated.yaml`, sem a URL do banco ou credenciais.
 
 Embeddings novos são persistidos em checkpoints transacionais de tamanho
 limitado. Uma interrupção preserva checkpoints anteriores e a execução seguinte

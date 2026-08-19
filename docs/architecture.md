@@ -97,6 +97,13 @@ identificadores estáveis atualizam registros existentes; chunks e documentos qu
 sumiram do corpus corrente recebem remoção em cascata. Cada carga concluída
 registra os hashes e contagens que formam o fingerprint usado na avaliação.
 
+Símbolos, relações e ocorrências relacionais são carregados em uma segunda
+transação idempotente depois do corpus primário. O fingerprint cobre os registros
+completos, inclusive proveniência, de modo que uma mudança apenas nas branches
+também invalida a reutilização. Relações obsoletas são removidas somente dentro
+do `repository_id` processado. Essa persistência ainda não participa do ranking;
+ela pode ser comparada aos JSONLs antes de habilitar consultas exploratórias.
+
 A busca textual usa `tsvector` armazenado e índice GIN com configuração
 `simple`, complementados por correspondência literal para caminhos e
 identificadores. ACL, projeto, branch e prefixo de caminho são predicados da

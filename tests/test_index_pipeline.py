@@ -66,6 +66,11 @@ class IndexPipelineTests(unittest.TestCase):
                 "chunks_count": 25,
                 "documents_parsed": 10,
                 "documents_reused": 0,
+                "symbols": str(root / "normalized/first/symbols.jsonl"),
+                "relations": str(root / "normalized/first/relations.jsonl"),
+                "semantic_map_summary": str(
+                    root / "normalized/first/semantic-map.generated.json"
+                ),
                 "errors": 0,
             }
             database = {
@@ -84,6 +89,13 @@ class IndexPipelineTests(unittest.TestCase):
                 "embedded": 25,
                 "reused": 5,
                 "total": 30,
+            }
+            semantic_database = {
+                "repository_id": "first-stable",
+                "project": "FIRST",
+                "symbols": 12,
+                "relations": 8,
+                "reused": False,
             }
             database_url = "postgresql://operator:very-secret@localhost/knowledge"
 
@@ -104,14 +116,18 @@ class IndexPipelineTests(unittest.TestCase):
                             return_value=database,
                         ) as load:
                             with mock.patch(
-                                "mflab_knowledge.index_pipeline.embed_database",
-                                return_value=embeddings,
-                            ) as embed:
-                                result = index_all_repositories(
-                                    catalog=catalog,
-                                    database_url=database_url,
-                                    refresh_remote=False,
-                                )
+                                "mflab_knowledge.index_pipeline.load_semantic_map",
+                                return_value=semantic_database,
+                            ) as load_map:
+                                with mock.patch(
+                                    "mflab_knowledge.index_pipeline.embed_database",
+                                    return_value=embeddings,
+                                ) as embed:
+                                    result = index_all_repositories(
+                                        catalog=catalog,
+                                        database_url=database_url,
+                                        refresh_remote=False,
+                                    )
 
             self.assertEqual(result["succeeded"], 1)
             self.assertEqual(result["failed"], 1)
@@ -123,6 +139,7 @@ class IndexPipelineTests(unittest.TestCase):
                 ".json",
             )
             load.assert_called_once()
+            load_map.assert_called_once()
             embed.assert_called_once()
             self.assertEqual(
                 embed.call_args.kwargs["repository_ids"],
@@ -162,6 +179,11 @@ class IndexPipelineTests(unittest.TestCase):
             normalization = {
                 "documents": str(root / "documents.jsonl"),
                 "chunks": str(root / "chunks.jsonl"),
+                "symbols": str(root / "symbols.jsonl"),
+                "relations": str(root / "relations.jsonl"),
+                "semantic_map_summary": str(
+                    root / "semantic-map.generated.json"
+                ),
                 "errors": 0,
             }
             database = {
@@ -189,13 +211,24 @@ class IndexPipelineTests(unittest.TestCase):
                                 return_value=database,
                             ):
                                 with mock.patch(
-                                    "mflab_knowledge.index_pipeline.embed_database"
-                                ) as embed:
-                                    result = index_all_repositories(
-                                        catalog=catalog,
-                                        database_url="postgresql://localhost/test",
-                                        include_embeddings=False,
-                                    )
+                                    "mflab_knowledge.index_pipeline.load_semantic_map",
+                                    return_value={
+                                        "repository_id": "first-stable",
+                                        "symbols": 1,
+                                        "relations": 1,
+                                        "reused": True,
+                                    },
+                                ):
+                                    with mock.patch(
+                                        "mflab_knowledge.index_pipeline.embed_database"
+                                    ) as embed:
+                                        result = index_all_repositories(
+                                            catalog=catalog,
+                                            database_url=(
+                                                "postgresql://localhost/test"
+                                            ),
+                                            include_embeddings=False,
+                                        )
 
             initialize.assert_called_once()
             initialize_vector.assert_not_called()

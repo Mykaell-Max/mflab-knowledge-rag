@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.35.0**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.36.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -350,8 +350,14 @@ uma resposta cuja premissa não permaneceu sustentada após a revisão.
 A 0.35.0 inicia o mapa qualitativo com `symbols.jsonl`, `relations.jsonl` e um
 resumo versionado. A extração usa somente construções genéricas das linguagens,
 preserva ACL e proveniência e não altera chunks ou embeddings. A próxima
-subetapa é carregar esses artefatos no PostgreSQL e disponibilizar consultas
-somente leitura para a exploração limitada.
+subetapa foi validada na Morgoth com 8.235 símbolos e 8.355 relações no corpus
+de 17 branches do MFSim-NG; referências ambíguas permaneceram não resolvidas.
+
+A 0.36.0 projeta o mapa no PostgreSQL em uma transação separada, idempotente e
+restrita ao `repository_id`. Símbolos apontam para chunks, relações preservam
+ocorrências próprias e o fingerprint cobre também ACL e proveniência. O mapa
+ainda não altera busca ou respostas. A próxima entrega é a consulta somente
+leitura, seguida de avaliação real antes de conectá-la ao planejador.
 
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
