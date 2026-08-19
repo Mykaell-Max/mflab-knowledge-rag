@@ -65,6 +65,15 @@ branches e commits correspondentes. Chunks preservam linhas, estratégia de
 parser, hash próprio e uma `embedding_key` baseada no texto, permitindo calcular
 um embedding uma vez e reutilizá-lo sem perder as citações.
 
+A mesma normalização produz `symbols.jsonl` e `relations.jsonl`. A extração é
+determinística e baseada em construções de linguagem, sem vocabulário
+científico ou nomes de repositórios. Símbolos apontam para o chunk que contém a
+âncora; relações de include, import, uso de módulo, build e arquivos companheiros
+preservam ACL e ocorrências por branch/commit. Referências ambíguas permanecem
+explicitamente não resolvidas em vez de serem ligadas por aproximação. O mapa é
+um índice de navegação derivado: respostas continuam exigindo evidência dos
+chunks originais.
+
 A busca lexical local aplica o filtro de acesso e filtros estruturados antes de
 retornar texto. Ela serve para avaliar corpus, metadados e perguntas reais e
 continua sendo uma das entradas da recuperação híbrida.

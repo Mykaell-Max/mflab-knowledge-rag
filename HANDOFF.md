@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.34.1**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.35.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -344,10 +344,14 @@ configurável por `provider.verification_max_attempts`. A repetição não relax
 validação nem cria nova resposta; se nenhum resultado válido for obtido, a
 resposta permanece bloqueada.
 
-A próxima validação na Morgoth deve confirmar a 0.34.1 com uma resposta correta,
-um falso positivo citado que exija revisão e a trilha aparecendo durante o
-processamento. Depois disso, a próxima implementação é a extração genérica de
-símbolos e relações descrita em `docs/assistant-roadmap.md`.
+A validação real da 0.34.1 confirmou a trilha completa e o bloqueio seguro de
+uma resposta cuja premissa não permaneceu sustentada após a revisão.
+
+A 0.35.0 inicia o mapa qualitativo com `symbols.jsonl`, `relations.jsonl` e um
+resumo versionado. A extração usa somente construções genéricas das linguagens,
+preserva ACL e proveniência e não altera chunks ou embeddings. A próxima
+subetapa é carregar esses artefatos no PostgreSQL e disponibilizar consultas
+somente leitura para a exploração limitada.
 
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam

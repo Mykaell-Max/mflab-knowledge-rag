@@ -369,8 +369,11 @@ Os resultados são:
 ```text
 data/mfsim-ng/
 ├── normalization.generated.json
+├── semantic-map.generated.json
 ├── documents.jsonl
-└── chunks.jsonl
+├── chunks.jsonl
+├── symbols.jsonl
+└── relations.jsonl
 ```
 
 Cada documento é uma versão única identificada por repositório, caminho, hash e
@@ -378,6 +381,12 @@ classe de acesso. Suas `occurrences` preservam todas as branches e commits em qu
 ela existe. Os chunks guardam texto, título/símbolo heurístico, linhas, parser,
 ACL e citações. Conteúdo textual idêntico usa a mesma `embedding_key`, preparando
 a deduplicação dos embeddings.
+
+O mapa semântico determinístico deriva símbolos das âncoras estruturais e
+relações de alta confiança, como includes, imports, módulos usados e pares
+fonte/header. Cada registro preserva documento, chunk de evidência quando
+aplicável, ACL e ocorrências por branch/commit. Esses artefatos orientam
+navegação futura; não substituem os chunks primários como evidência factual.
 
 O parser piloto respeita seções Markdown e reconhece âncoras básicas de
 C/C++/headers, Fortran, CMake e shell; arquivos sem estrutura reconhecida usam

@@ -223,6 +223,10 @@ class NormalizeTests(unittest.TestCase):
             self.assertEqual(first["documents_parsed"], 3)
             self.assertEqual(first["documents_reused"], 0)
             self.assertEqual(first["errors"], 0)
+            self.assertEqual(first["symbols_count"], 1)
+            self.assertTrue(Path(str(first["symbols"])).is_file())
+            self.assertTrue(Path(str(first["relations"])).is_file())
+            self.assertTrue(Path(str(first["semantic_map_summary"])).is_file())
 
             documents = [
                 json.loads(line)

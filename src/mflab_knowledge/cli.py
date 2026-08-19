@@ -1153,7 +1153,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         result_level = "warning" if int(result["errors"]) else "result"
         reporter.log(
             f"Corpus concluído: {result['unique_documents']} documentos, "
-            f"{result['chunks_count']} chunks, {result['documents_parsed']} "
+            f"{result['chunks_count']} chunks, {result['symbols_count']} símbolos, "
+            f"{result['relations_count']} relações, {result['documents_parsed']} "
             f"processados, {result['documents_reused']} reutilizados, "
             f"{result['errors']} erros",
             result_level,

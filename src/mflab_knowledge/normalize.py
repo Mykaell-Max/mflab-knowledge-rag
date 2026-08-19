@@ -10,6 +10,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
+from mflab_knowledge.semantic_map import build_semantic_map
+
 LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, int, str], None]
 
@@ -479,6 +481,11 @@ def normalize_manifest(
     chunks_path = destination / "chunks.jsonl"
     _write_jsonl(documents_path, documents)
     _write_jsonl(chunks_path, chunks)
+    semantic_map = build_semantic_map(
+        documents=documents,
+        chunks=chunks,
+        output_dir=destination,
+    )
     summary: dict[str, object] = {
         "schema_version": NORMALIZATION_SCHEMA_VERSION,
         "generated_at": _utc_now(),
@@ -491,18 +498,23 @@ def normalize_manifest(
         "discovered_unique_documents": total_documents,
         "deduplicated_occurrences": input_occurrences - total_documents,
         "chunks": len(chunks),
+        "symbols": semantic_map["symbols_count"],
+        "relations": semantic_map["relations_count"],
         "documents_parsed": parsed_documents,
         "documents_reused": reused_documents,
         "parser_strategies": dict(sorted(parsers.items())),
         "errors": errors,
         "documents_file": str(documents_path),
         "chunks_file": str(chunks_path),
+        "semantic_map": semantic_map,
     }
     summary_path = destination / "normalization.generated.json"
     _write_json(summary_path, summary)
     logger(
         f"Normalização: {len(documents)} documentos únicos de "
-        f"{input_occurrences} ocorrências; {len(chunks)} chunks",
+        f"{input_occurrences} ocorrências; {len(chunks)} chunks; "
+        f"{semantic_map['symbols_count']} símbolos; "
+        f"{semantic_map['relations_count']} relações",
         "result" if not errors else "warning",
     )
     return {
@@ -510,9 +522,14 @@ def normalize_manifest(
         "summary": str(summary_path),
         "documents": str(documents_path),
         "chunks": str(chunks_path),
+        "symbols": semantic_map["symbols"],
+        "relations": semantic_map["relations"],
+        "semantic_map_summary": semantic_map["summary"],
         "unique_documents": len(documents),
         "input_occurrences": input_occurrences,
         "chunks_count": len(chunks),
+        "symbols_count": semantic_map["symbols_count"],
+        "relations_count": semantic_map["relations_count"],
         "documents_parsed": parsed_documents,
         "documents_reused": reused_documents,
         "errors": len(errors),

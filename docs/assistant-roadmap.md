@@ -60,7 +60,9 @@ painel administrativo.
 5. **Primeira verificação concluída:** auditoria semântica por afirmação e fonte
    citada, uma revisão limitada e trilha de investigação acompanhada ao vivo na
    interface.
-6. Extração determinística de símbolos e relações estruturais.
+6. **Artefatos concluídos:** extração determinística de símbolos e relações
+   estruturais em JSONL, com ACL, branch, commit e chunk de evidência. A carga e
+   consulta desses artefatos no PostgreSQL formam a próxima subetapa.
 7. Resumos hierárquicos incrementais com proveniência.
 8. Planejador local com ferramentas de exploração estrutural somente leitura.
 9. Avaliações de localização, conceito, diagnóstico e comparação.
