@@ -111,6 +111,23 @@ preferenciais dos repositórios disponíveis. A resposta precisa representar e
 citar cada escopo recuperado. Se a primeira síntese omitir algum deles, uma
 única revisão automática é solicitada; a cobertura continua visível no retorno.
 
+O roteamento local pode ser ajustado sem editar ou reconstruir manualmente o
+TOML. O comando abaixo altera somente o registro indicado, preserva os demais
+campos e comentários, valida o catálogo temporário e então substitui o arquivo
+atomicamente:
+
+```bash
+.venv/bin/python -m mflab_knowledge configure-routing \
+  --config repositories.toml \
+  --repository ID \
+  --preferred-branch BRANCH \
+  --alias NOME \
+  --color always
+```
+
+`--alias` é repetível e acrescenta aliases sem remover os existentes. Os nomes
+de projetos e branches pertencem ao catálogo local, não ao motor.
+
 Depois da validação em primeiro plano, instale a API como serviço permanente:
 
 ```bash

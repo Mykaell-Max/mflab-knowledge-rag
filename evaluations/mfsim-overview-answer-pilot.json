@@ -24,7 +24,12 @@
         "max_generation_duration_seconds": 150,
         "scope_warning": true,
         "exploration_intent": "overview",
-        "required_source_projects": ["MFSim CMake", "MFSim-NG"]
+        "required_source_projects": ["MFSim CMake", "MFSim-NG"],
+        "forbidden_answer_phrases": [
+          "dois projetos principais",
+          "dois principais projetos",
+          "únicos projetos"
+        ]
       }
     }
   ]

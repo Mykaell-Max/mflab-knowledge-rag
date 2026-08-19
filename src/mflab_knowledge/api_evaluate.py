@@ -51,6 +51,7 @@ EXPECTATION_FIELDS = {
     "exploration_intent",
     "required_source_projects",
     "required_source_paths",
+    "forbidden_answer_phrases",
 }
 
 
@@ -445,6 +446,23 @@ def _evaluate_expectations(
             expected_paths,
             {"present": sorted(actual_paths), "missing": missing},
             not missing,
+        )
+    if "forbidden_answer_phrases" in expectations:
+        forbidden = expectations["forbidden_answer_phrases"]
+        if not isinstance(forbidden, list) or not all(
+            isinstance(value, str) and value for value in forbidden
+        ):
+            raise ValueError(
+                "forbidden_answer_phrases deve ser uma lista de textos"
+            )
+        answer = str(response.get("answer") or "").casefold()
+        found = [value for value in forbidden if value.casefold() in answer]
+        _check(
+            checks,
+            "forbidden_answer_phrases",
+            forbidden,
+            {"found": found},
+            not found,
         )
     return checks
 

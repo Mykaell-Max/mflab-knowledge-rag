@@ -13,6 +13,7 @@ from mflab_knowledge.api_evaluate import (
     evaluate_answer_suite,
     sample_nvidia_gpu,
 )
+from mflab_knowledge.catalog_edit import configure_repository_routing
 from mflab_knowledge.credentials import (
     ensure_api_key,
     load_admin_password,
@@ -598,6 +599,33 @@ def build_parser() -> argparse.ArgumentParser:
     )
     _add_console_options(sync_all)
 
+    configure_routing = subparsers.add_parser(
+        "configure-routing",
+        help="Configura aliases e branch preferencial sem reescrever o catálogo.",
+    )
+    configure_routing.add_argument(
+        "--config",
+        default=Path("repositories.toml"),
+        type=Path,
+        help="Catálogo TOML local (padrão: ./repositories.toml).",
+    )
+    configure_routing.add_argument(
+        "--repository",
+        required=True,
+        help="ID exato do repositório a configurar.",
+    )
+    configure_routing.add_argument(
+        "--preferred-branch",
+        help="Branch usada por padrão na recuperação automática.",
+    )
+    configure_routing.add_argument(
+        "--alias",
+        action="append",
+        default=[],
+        help="Alias adicional; repita a opção para cadastrar vários.",
+    )
+    _add_console_options(configure_routing)
+
     index_all = subparsers.add_parser(
         "index-all",
         help="Sincroniza, normaliza, carrega e gera embeddings incrementalmente.",
@@ -978,6 +1006,24 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 1
         print(json.dumps(result, ensure_ascii=False))
         return 1 if int(result["failed"]) or int(result["inventory_errors"]) else 0
+
+    if args.command == "configure-routing":
+        reporter = ConsoleReporter(args.quiet, args.color, verbose=args.verbose)
+        try:
+            result = configure_repository_routing(
+                args.config,
+                repository_id=args.repository,
+                preferred_branch=args.preferred_branch,
+                aliases=tuple(args.alias),
+            )
+        except (OSError, ValueError) as exc:
+            reporter.error(str(exc))
+            return 1
+        reporter.success(
+            f"Roteamento de {result['project']} atualizado com validação atômica"
+        )
+        print(json.dumps(result, ensure_ascii=False))
+        return 0
 
     if args.command == "index-all":
         reporter = ConsoleReporter(

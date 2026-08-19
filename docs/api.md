@@ -144,6 +144,11 @@ contexto. Se nada for mencionado, cada repositório contribui por sua branch
 preferencial. `scope_resolution` informa exatamente a decisão. Filtros
 estruturados enviados pelo cliente continuam tendo precedência e são estritos.
 
+Aliases e branch preferencial podem ser acrescentados com
+`configure-routing`. A atualização é restrita a um ID existente, preserva o
+restante do TOML e somente entra em vigor após uma validação completa e troca
+atômica do arquivo. A API deve ser reiniciada para recarregar o catálogo.
+
 As classes solicitadas precisam ser um subconjunto do teto definido quando o
 servidor iniciou. A classe `project` também exige o filtro `project`; `pending`
 nunca é recuperável.

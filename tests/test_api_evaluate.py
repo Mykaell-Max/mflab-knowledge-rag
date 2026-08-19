@@ -47,6 +47,7 @@ class ApiEvaluateTests(unittest.TestCase):
                             "min_sources": 1,
                             "min_citation_coverage": 1.0,
                             "allowed_finish_reasons": ["stop"],
+                            "forbidden_answer_phrases": ["unsupported fact"],
                             "scope_warning": False,
                             "required_source_paths": ["src/solver.cpp"],
                         },
@@ -213,6 +214,7 @@ class ApiEvaluateTests(unittest.TestCase):
                             "grounding_status": "cited",
                             "min_citation_coverage": 1.0,
                             "allowed_finish_reasons": ["stop"],
+                            "forbidden_answer_phrases": ["unsupported fact"],
                         },
                     }
                 ],
@@ -243,7 +245,7 @@ class ApiEvaluateTests(unittest.TestCase):
         self.assertEqual(failed["response"]["finish_reason"], "length")
         self.assertGreaterEqual(
             sum(not check["passed"] for check in failed["checks"]),
-            3,
+            4,
         )
 
     def test_validates_overview_scope_and_source_projects(self) -> None:
@@ -263,6 +265,7 @@ class ApiEvaluateTests(unittest.TestCase):
                                 "Solver A",
                                 "Solver B",
                             ],
+                            "forbidden_answer_phrases": ["only implementation"],
                         },
                     }
                 ],

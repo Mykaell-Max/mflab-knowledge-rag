@@ -128,6 +128,19 @@ class ConsoleReporterTests(unittest.TestCase):
                 "never",
             ]
         )
+        configure_routing = parser.parse_args(
+            [
+                "configure-routing",
+                "--repository",
+                "solver-next",
+                "--preferred-branch",
+                "integration",
+                "--alias",
+                "next",
+                "--color",
+                "always",
+            ]
+        )
         index_all = parser.parse_args(
             [
                 "index-all",
@@ -208,6 +221,8 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(sync.canonical_ref, "origin/trunk")
         self.assertEqual(sync.profile, "generic")
         self.assertEqual(sync.fetch_timeout_seconds, 2400)
+        self.assertEqual(configure_routing.preferred_branch, "integration")
+        self.assertEqual(configure_routing.alias, ["next"])
         self.assertEqual(sync_all.repository, ["solver-next"])
         self.assertFalse(sync_all.verbose)
         self.assertEqual(index_all.repository, ["solver-next"])

@@ -49,6 +49,7 @@ class ExplorationTests(unittest.TestCase):
         self.assertIn("Solver A", instruction)
         self.assertIn("Solver B", instruction)
         self.assertIn("specialized feature", instruction)
+        self.assertIn("do not claim they are the only", instruction)
 
 
 if __name__ == "__main__":

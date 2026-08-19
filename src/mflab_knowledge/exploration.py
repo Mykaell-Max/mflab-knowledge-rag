@@ -119,5 +119,7 @@ def exploration_instructions(
         f"The available project scopes are: {scopes}. Cover every available project "
         "scope and cite at least one source from each. The source IDs available per "
         f"scope are: {source_map}. If the evidence supports only a partial overview, "
-        "state that limitation explicitly."
+        "state that limitation explicitly. Describe these as the indexed or available "
+        "project scopes; do not claim they are the only, principal, or complete set "
+        "unless the evidence explicitly establishes that fact."
     )

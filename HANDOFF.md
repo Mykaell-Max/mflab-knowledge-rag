@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.31.0**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.31.1**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -272,6 +272,14 @@ visões gerais: consultas genéricas limitadas, preferência por documentos de
 entrada, balanceamento entre projeto/branch e verificação de citações por
 escopo. Uma primeira resposta incompleta recebe no máximo uma revisão. O caso
 real está em `evaluations/mfsim-overview-answer-pilot.json`.
+
+A validação inicial da 0.31.0 passou, mas revelou que o catálogo efetivamente
+carregado na Morgoth ainda usava fallback canônico e não continha aliases. A
+0.31.1 adiciona `configure-routing`, que atualiza somente esses metadados no
+TOML local, valida a configuração e grava atomicamente. A próxima validação deve
+confirmar a branch preferencial desejada após reiniciar a API. A instrução de
+visão geral também deixou de permitir que os escopos indexados sejam descritos
+como os únicos ou principais sem evidência explícita.
 
 1. catálogo com 17 e 107 nomes de branches;
 2. `base` preferencial para MFSim-NG e a política escolhida para MFSim CMake;
