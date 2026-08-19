@@ -157,8 +157,38 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertEqual(
             actions,
-            [{"tool": "search_code", "query": "Driver::advance"}],
+            [{"tool": "search_code", "query": "Driver advance"}],
         )
+
+    def test_fallback_moves_to_next_observation_after_exhausting_target(self) -> None:
+        observations = [
+            {
+                "chunk_id": "first",
+                "path": "src/grid/manager.cpp",
+                "title": "GridManager::initialize",
+                "preview": "Initialize the adaptive grid.",
+            },
+            {
+                "chunk_id": "second",
+                "path": "src/grid/factory.cpp",
+                "title": "GridFactory::create",
+                "preview": "Create cells used by the adaptive grid.",
+            },
+        ]
+        previous = [
+            {"tool": "open_neighborhood", "chunk_id": "first"},
+            {"tool": "find_symbol", "query": "GridManager::initialize"},
+            {"tool": "search_code", "query": "Grid Manager initialize"},
+        ]
+
+        actions = fallback_investigation_actions(
+            question="Explain the adaptive grid flow",
+            search_hints=["adaptive grid creation"],
+            observations=observations,
+            previous_actions=previous,
+        )
+
+        self.assertEqual(actions[0]["chunk_id"], "second")
 
 
 if __name__ == "__main__":

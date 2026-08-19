@@ -282,6 +282,11 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("open_neighborhood", payload["messages"][0]["content"])
         self.assertIn("Lexical overlap alone", payload["messages"][0]["content"])
         self.assertIn(
+            "upstream entry or integration",
+            payload["messages"][0]["content"],
+        )
+        self.assertIn("downstream operations", payload["messages"][0]["content"])
+        self.assertIn(
             "prior decision was inconclusive",
             payload["messages"][1]["content"],
         )

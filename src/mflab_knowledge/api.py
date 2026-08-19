@@ -79,6 +79,7 @@ from mflab_knowledge.verification import (
     claims_for_verification,
     emit_progress,
     normalize_verification,
+    supported_claim_subset,
     unavailable_verification,
 )
 
@@ -92,10 +93,11 @@ CONTEXT_INSTRUCTIONS = (
     "direct answer. Every prose paragraph and every bullet containing a "
     "factual statement must end with one or more supporting source_ids in "
     "square brackets, for example [S1]. Do not add generic background facts "
+    "that are absent from the evidence. "
     "Format the answer as Markdown, but never emit raw HTML. When code is useful "
     "and supported by the evidence, use a fenced code block with its programming "
     "language tag. Keep supporting citations outside code fences. "
-    "that are absent from the evidence. Preserve repository, branch, commit, "
+    "Preserve repository, branch, commit, "
     "path, and line distinctions. When sources span projects or branches, "
     "explicitly distinguish their scopes and never collapse them into one "
     "version. Prefer omitting secondary detail over ending mid-sentence. "
@@ -1286,7 +1288,11 @@ class RagApiService:
                 assert isinstance(raw_actions, list)
                 if not raw_actions and not decision["stop"]:
                     inconclusive_decisions += 1
-                    should_fallback = decision_invalid or inconclusive_decisions >= 2
+                    should_fallback = (
+                        decision_invalid
+                        or inconclusive_decisions >= 2
+                        or iteration == MAX_AGENT_ITERATIONS
+                    )
                     if should_fallback:
                         raw_hints = exploration.get("queries")
                         search_hints = (
@@ -2148,6 +2154,57 @@ class RagApiService:
                                 ),
                             },
                         )
+                    if verification.get("passed") is False:
+                        supported_answer = supported_claim_subset(verification)
+                        if (
+                            supported_answer
+                            and supported_answer.strip() != answer.strip()
+                        ):
+                            record(
+                                "revision",
+                                "Afirmações rejeitadas removidas",
+                                "Somente unidades já aprovadas pela auditoria "
+                                "foram preservadas antes da conferência final.",
+                                {
+                                    "retained_claims": len(
+                                        claims_for_verification(supported_answer)
+                                    )
+                                },
+                            )
+                            answer = supported_answer
+                            assessment = _grounding_assessment(
+                                answer,
+                                raw_sources,
+                                require_scope_coverage=require_scope_coverage,
+                            )
+                            quality_issues = overview_quality_issues(
+                                answer,
+                                (
+                                    exploration
+                                    if isinstance(exploration, dict)
+                                    else {}
+                                ),
+                            )
+                            verification = audit_with_retry(answer)
+                            subset_counts = verification.get("counts")
+                            if isinstance(subset_counts, dict):
+                                record(
+                                    "verification",
+                                    "Conjunto sustentado conferido novamente",
+                                    "A remoção determinística não dispensou uma "
+                                    "nova auditoria.",
+                                    {
+                                        "supported": int(
+                                            subset_counts.get("supported", 0)
+                                        ),
+                                        "unsupported": int(
+                                            subset_counts.get("unsupported", 0)
+                                        ),
+                                        "uncertain": int(
+                                            subset_counts.get("uncertain", 0)
+                                        ),
+                                    },
+                                )
                 except (GenerationUnavailableError, ValueError, TypeError) as exc:
                     self.log(
                         f"Revisão ou segunda auditoria indisponível: {exc}",

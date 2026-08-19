@@ -7,8 +7,8 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v3"
-MAX_AGENT_ITERATIONS = 3
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v4"
+MAX_AGENT_ITERATIONS = 4
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
 MAX_OBSERVATION_PREVIEW = 500
@@ -239,6 +239,12 @@ def _search_terms(value: object) -> set[str]:
     }
 
 
+def _humanize_identifier(value: str) -> str:
+    text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", value)
+    text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+    return " ".join(re.sub(r"[^A-Za-z0-9]+", " ", text).split())
+
+
 def fallback_investigation_actions(
     *,
     question: str,
@@ -290,8 +296,6 @@ def fallback_investigation_actions(
         # Stable retrieval order remains the final tie-breaker.
         ranked.append((score, -position, observation))
     ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
-    selected = ranked[0][2]
-
     prior = {
         (
             str(action.get("tool", "")),
@@ -299,31 +303,36 @@ def fallback_investigation_actions(
         )
         for action in previous_actions
     }
-    candidates: list[dict[str, str]] = []
-    chunk_id = str(selected.get("chunk_id", "")).strip()
-    if chunk_id:
-        candidates.append({"tool": "open_neighborhood", "chunk_id": chunk_id})
-
-    observed_title = " ".join(str(selected.get("title", "")).split()).strip()
-    if not observed_title:
-        observed_title = PurePosixPath(str(selected.get("path", ""))).stem
-    if observed_title and len(observed_title) <= 200:
-        candidates.extend(
-            [
-                {"tool": "find_symbol", "query": observed_title},
-                {"tool": "search_code", "query": observed_title},
-            ]
-        )
-
     actions: list[dict[str, str]] = []
-    for action in candidates:
-        value = str(action.get("query") or action.get("chunk_id") or "")
-        identity = (action["tool"], value.casefold())
-        if identity in prior or action in actions:
-            continue
-        actions.append(action)
-        if len(actions) >= MAX_ACTIONS_PER_ITERATION:
-            break
+    for _score, _position, selected in ranked:
+        candidates: list[dict[str, str]] = []
+        chunk_id = str(selected.get("chunk_id", "")).strip()
+        if chunk_id:
+            candidates.append(
+                {"tool": "open_neighborhood", "chunk_id": chunk_id}
+            )
+
+        observed_title = " ".join(
+            str(selected.get("title", "")).split()
+        ).strip()
+        if not observed_title:
+            observed_title = PurePosixPath(str(selected.get("path", ""))).stem
+        humanized_title = _humanize_identifier(observed_title)
+        if observed_title and len(observed_title) <= 200:
+            candidates.append({"tool": "find_symbol", "query": observed_title})
+        if humanized_title and len(humanized_title) <= 200:
+            candidates.append(
+                {"tool": "search_code", "query": humanized_title}
+            )
+
+        for action in candidates:
+            value = str(action.get("query") or action.get("chunk_id") or "")
+            identity = (action["tool"], value.casefold())
+            if identity in prior or action in actions:
+                continue
+            actions.append(action)
+            if len(actions) >= MAX_ACTIONS_PER_ITERATION:
+                return actions
     return actions
 
 

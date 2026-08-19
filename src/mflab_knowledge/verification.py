@@ -7,7 +7,7 @@ from collections.abc import Callable
 from mflab_knowledge.grounding import citation_ids, factual_units
 
 VERIFICATION_ALGORITHM = "claim_evidence_audit_v2"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v5"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v6"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -163,3 +163,24 @@ def unavailable_verification(reason: str) -> dict[str, object]:
         "claims": [],
         "counts": {"supported": 0, "unsupported": 0, "uncertain": 0},
     }
+
+
+def supported_claim_subset(verification: dict[str, object]) -> str | None:
+    """Return only claim text already approved by the bounded evidence audit."""
+
+    raw_claims = verification.get("claims")
+    if not isinstance(raw_claims, list):
+        return None
+    selected: list[str] = []
+    for raw_claim in raw_claims:
+        if not isinstance(raw_claim, dict):
+            continue
+        if raw_claim.get("verdict") != "supported":
+            continue
+        claim = str(raw_claim.get("claim", "")).strip()
+        source_ids = raw_claim.get("source_ids")
+        if not claim or not isinstance(source_ids, list) or not source_ids:
+            continue
+        if claim not in selected:
+            selected.append(claim)
+    return "\n\n".join(selected) if selected else None

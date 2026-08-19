@@ -56,6 +56,33 @@ def show_response(label: str, response: dict[str, object]) -> None:
         f" | grounding={response.get('grounding_status')}"
         f" | fontes={len(sources)}"
     )
+    rejected = verification.get("claims")
+    rejected = rejected if isinstance(rejected, list) else []
+    for raw_claim in rejected:
+        if not isinstance(raw_claim, dict):
+            continue
+        verdict = str(raw_claim.get("verdict", ""))
+        if verdict == "supported":
+            continue
+        claim = " ".join(str(raw_claim.get("claim", "")).split())[:240]
+        finding = " ".join(str(raw_claim.get("finding", "")).split())[:240]
+        print(
+            f"    - {raw_claim.get('claim_id')} {verdict}: {claim}"
+        )
+        if finding:
+            print(f"      motivo: {finding}")
+
+    source_paths = sorted(
+        {
+            str(source.get("path", ""))
+            for source in sources
+            if isinstance(source, dict) and source.get("path")
+        }
+    )
+    if source_paths:
+        print("  caminhos recuperados:")
+        for path in source_paths:
+            print(f"    - {path}")
 
 
 def build_parser() -> argparse.ArgumentParser:

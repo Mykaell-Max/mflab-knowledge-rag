@@ -46,7 +46,7 @@ o raciocínio interno do modelo e não expõe prompts ocultos.
 
 A 0.39.0 acrescenta um primeiro runtime agentivo sobre essa fundação. Depois
 da recuperação inicial, o modelo observa metadados, proveniência e previews
-limitados dos chunks reais. Em até três ciclos, escolhe até três ferramentas de
+limitados dos chunks reais. Em até quatro ciclos, escolhe até três ferramentas de
 leitura entre `search_code`, `find_symbol` e `open_neighborhood`. Resultados de
 um ciclo alimentam a decisão seguinte; ações repetidas ou fora do esquema são
 descartadas. Um caderno de cobertura registra aspectos cobertos, parciais e
@@ -80,6 +80,24 @@ orientada a preservar afirmações aprovadas com suas citações, eliminar as
 rejeitadas e não criar introduções ou conclusões factuais sem fonte. A resposta
 continua bloqueada se a segunda auditoria encontrar qualquer afirmação sem
 sustentação.
+
+A validação real da 0.40.0 confirmou a seleção genérica da definição correta e
+elevou a cobertura média da suíte de 51% para 85%, mas também mostrou que três
+ciclos não permitiam ao modelo observar os últimos resultados e continuar até
+chamadores e operações relacionadas. A 0.40.1 permite um quarto ciclo, aciona a
+contingência também na última oportunidade e passa para o próximo candidato
+observado quando as leituras do primeiro já foram usadas. Identificadores reais
+são convertidos em termos separados somente para a busca, melhorando a chance
+de encontrar usos cuja grafia difere da definição qualificada.
+
+Para perguntas de mecanismo ou fluxo, o contrato do investigador passa a tratar
+integração de entrada, coordenação e efeitos a jusante como papéis de cobertura.
+Eles não são nomes científicos nem requisitos absolutos: o agente deve buscá-los
+quando a pergunta exigir uma explicação ampla e registrar uma lacuna quando não
+houver evidência. Se a correção textual ainda acrescentar afirmações rejeitadas,
+uma consolidação determinística preserva somente as unidades já aprovadas e
+submete esse subconjunto a uma terceira auditoria. Nenhuma afirmação rejeitada é
+liberada apenas porque o restante da resposta passou.
 
 ## Próximas camadas
 

@@ -423,6 +423,23 @@ preserva o conteúdo aprovado e remove especificamente alegações rejeitadas. A
 segunda auditoria continua obrigatória e nenhuma resposta parcialmente
 sustentada é liberada.
 
+A validação real da 0.40.0 confirmou a contingência: ela selecionou
+genericamente a definição correta, executou vizinhança, símbolo e busca textual,
+e elevou a cobertura média de 51% para 85%. Ainda faltaram os pontos de
+integração e operações relacionadas esperados pelas duas avaliações. A revisão
+textual preservou a maior parte do conteúdo válido, mas acrescentou novamente
+uma a três afirmações amplas, que foram corretamente bloqueadas.
+
+A 0.40.1 amplia o orçamento limitado de três para quatro ciclos para que os
+resultados da última busca possam orientar uma nova leitura. A contingência é
+executada também no último ciclo, transforma identificadores observados em
+termos pesquisáveis e avança para o próximo candidato quando as ações do
+primeiro já foram usadas. O contrato de cobertura de perguntas amplas passa a
+procurar papéis genéricos de integração, coordenação e efeitos a jusante. Depois
+da correção pelo modelo, uma consolidação determinística pode remover somente
+as unidades rejeitadas e preservar as aprovadas; o resultado é obrigatoriamente
+auditado outra vez antes de ser entregue.
+
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
 rotas web somente leitura; administração usa senha separada. Um segredo

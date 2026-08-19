@@ -5,6 +5,7 @@ import unittest
 from mflab_knowledge.verification import (
     claims_for_verification,
     normalize_verification,
+    supported_claim_subset,
 )
 
 
@@ -98,6 +99,31 @@ class VerificationTests(unittest.TestCase):
         self.assertFalse(result["passed"])
         self.assertEqual(result["claims"][0]["verdict"], "uncertain")
         self.assertEqual(result["claims"][0]["source_ids"], [])
+
+    def test_supported_subset_removes_rejected_claims_without_new_text(self) -> None:
+        result = supported_claim_subset(
+            {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "The observed operation advances state [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                    },
+                    {
+                        "claim_id": "C2",
+                        "claim": "This is the complete architecture [S1].",
+                        "verdict": "unsupported",
+                        "source_ids": ["S1"],
+                    },
+                ]
+            }
+        )
+
+        self.assertEqual(
+            result,
+            "The observed operation advances state [S1].",
+        )
 
 
 if __name__ == "__main__":
