@@ -40,7 +40,7 @@ Na rede confiável do laboratório, a interface usa rotas próprias e somente
 leitura sob `/ui-api`. Busca e geração ficam disponíveis sem distribuir a chave
 técnica da API. A fronteira de acesso dessa área é a rede local: a porta deve
 continuar liberada somente para a sub-rede autorizada. Os endpoints normais
-`/repositories`, `/search`, `/context` e `/ask` preservam a autenticação Bearer
+`/repositories`, `/structure`, `/search`, `/context` e `/ask` preservam a autenticação Bearer
 existente para integrações programáticas externas ao servidor. As rotas web
 aceitam somente as classes `public` e `lab`, ainda que o processo seja iniciado
 com um teto adicional para integrações autenticadas.
@@ -122,6 +122,20 @@ nome de projeto somente se ele for único no catálogo. `configuration_match` e
 `catalog_repository_id` tornam essa associação visível. Projetos ambíguos não
 recebem aliases ou preferência por inferência.
 
+### `POST /structure`
+
+Recebe `project`, `branch`, `allowed_access` opcional e `anchor_limit`. O projeto
+e a branch são obrigatórios: mapas de versões distintas nunca são combinados.
+A resposta apresenta contagens de documentos e chunks, formatos indexados,
+entradas de primeiro nível, commits observados, documentos de entrada e um
+`fingerprint` determinístico. Todos os metadados e textos são filtrados pela ACL
+antes da derivação.
+
+O artefato usa `repository_structure_v1` e não chama modelo de linguagem. Suas
+afirmações se limitam à organização observável do corpus; ele não define a
+finalidade científica do repositório. `anchors` preserva os trechos primários
+com projeto, branch, commit, caminho e linhas.
+
 ### `POST /search`
 
 Exemplo híbrido:
@@ -174,6 +188,13 @@ consultas auxiliares e se todos os escopos precisam aparecer na resposta. As
 fontes são balanceadas por projeto e branch, com preferência por documentos de
 entrada e artefatos arquiteturais amplos. Nenhum termo científico é codificado
 nessa classificação.
+
+Nessas perguntas, `structural_guidance` expõe o estado e os mapas usados para
+orientar a recuperação. Uma fonte `derived_structure` pode aparecer no pacote
+para sustentar somente layout, formatos e cobertura; documentos reais marcados
+como `primary_structure_anchor` continuam sendo a evidência de finalidade e
+capacidade. Falha temporária do mapa é registrada como `partial` e não derruba a
+recuperação textual existente.
 
 ```json
 {

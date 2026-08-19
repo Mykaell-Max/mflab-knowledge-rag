@@ -18,6 +18,7 @@ from mflab_knowledge import __version__
 from mflab_knowledge.database import (
     database_status,
     repository_status,
+    repository_structures,
     search_postgres,
 )
 from mflab_knowledge.embeddings import (
@@ -54,6 +55,7 @@ from mflab_knowledge.repository_config import (
 )
 from mflab_knowledge.service_runner import read_last_run
 from mflab_knowledge.scope import resolve_query_scopes
+from mflab_knowledge.structure import STRUCTURE_ALGORITHM, structure_source
 
 LogCallback = Callable[[str, str], None]
 EmbedderFactory = Callable[[], LocalEmbedder]
@@ -224,7 +226,16 @@ def _merge_exploration_results(
                 str(occurrence.get("branch", "")),
                 str(result.get("chunk_id", "")),
             )
-            candidates.setdefault(key, result)
+            existing = candidates.get(key)
+            if existing is None:
+                candidates[key] = result
+            elif (
+                result.get("source_kind") == "primary_structure_anchor"
+                and "source_kind" not in existing
+            ):
+                enriched = dict(existing)
+                enriched["source_kind"] = "primary_structure_anchor"
+                candidates[key] = enriched
     if not overview:
         return list(candidates.values())[:limit]
 
@@ -579,6 +590,12 @@ class RagApiService:
                 "model_loaded": self.model_loaded,
             },
             "generation": self.generation_status(),
+            "qualitative_index": {
+                "status": "available",
+                "algorithm": STRUCTURE_ALGORITHM,
+                "materialization": "on_demand_from_indexed_metadata",
+                "endpoint": "/structure",
+            },
             "authentication": {
                 "configured": self.settings.api_key is not None,
                 "mode": (
@@ -691,12 +708,43 @@ class RagApiService:
             "generation": self.generation_status(),
             "indexer": indexer,
             "repositories": repositories,
+            "qualitative_index": {
+                "status": "available",
+                "algorithm": STRUCTURE_ALGORITHM,
+                "materialization": "on_demand_from_indexed_metadata",
+                "endpoint": "/structure",
+            },
             "authentication": {
                 "api_key_configured": self.settings.api_key is not None,
                 "admin_password_configured": (
                     self.settings.admin_password is not None
                 ),
             },
+        }
+
+    def structure(
+        self,
+        *,
+        project: str,
+        branch: str,
+        allowed_access: set[str] | None = None,
+        anchor_limit: int = 8,
+    ) -> dict[str, object]:
+        """Return auditable structural maps for one explicit project branch."""
+
+        structures = repository_structures(
+            self.settings.database_url,
+            project=project,
+            branch=branch,
+            allowed_access=self._allowed_access(allowed_access),
+            anchor_limit=anchor_limit,
+        )
+        return {
+            "algorithm": STRUCTURE_ALGORITHM,
+            "project": project.strip(),
+            "branch": branch.strip(),
+            "count": len(structures),
+            "structures": structures,
         }
 
     def search(
@@ -843,6 +891,74 @@ class RagApiService:
             for planned_query in planned_queries
         ]
         retrieval = retrievals[0]
+        structural_maps: list[dict[str, object]] = []
+        structural_status = "not_requested"
+        if exploration["intent"] == "overview":
+            structural_status = "success"
+            scope_resolution = retrieval.get("scope_resolution")
+            raw_scopes = (
+                scope_resolution.get("scopes")
+                if isinstance(scope_resolution, dict)
+                else None
+            )
+            scopes: set[tuple[str, str]] = set()
+            if isinstance(raw_scopes, list):
+                for scope in raw_scopes:
+                    if not isinstance(scope, dict):
+                        continue
+                    scope_project = scope.get("project")
+                    scope_branch = scope.get("branch")
+                    if scope_project and scope_branch:
+                        scopes.add((str(scope_project), str(scope_branch)))
+            if not scopes:
+                for item in retrievals:
+                    item_results = item.get("results")
+                    if not isinstance(item_results, list):
+                        continue
+                    for result in item_results:
+                        if not isinstance(result, dict):
+                            continue
+                        occurrence = result.get("selected_occurrence")
+                        if not isinstance(occurrence, dict):
+                            continue
+                        scope_project = result.get("project")
+                        scope_branch = occurrence.get("branch")
+                        if scope_project and scope_branch:
+                            scopes.add((str(scope_project), str(scope_branch)))
+            structural_results: list[dict[str, object]] = []
+            for scope_project, scope_branch in sorted(scopes):
+                try:
+                    values = repository_structures(
+                        self.settings.database_url,
+                        project=scope_project,
+                        branch=scope_branch,
+                        allowed_access=self._allowed_access(allowed_access),
+                    )
+                except Exception:
+                    structural_status = "partial"
+                    self.log(
+                        "Mapa estrutural temporariamente indisponível para um escopo",
+                        "warning",
+                    )
+                    continue
+                structural_maps.extend(values)
+                for value in values:
+                    anchors = value.get("anchors")
+                    structural_results.append(structure_source(value))
+                    if isinstance(anchors, list):
+                        structural_results.extend(
+                            anchor for anchor in anchors if isinstance(anchor, dict)
+                        )
+            if structural_results:
+                retrievals.append(
+                    {
+                        "query": query,
+                        "mode": "structural",
+                        "results": structural_results,
+                    }
+                )
+            elif scopes and structural_status == "success":
+                structural_status = "empty"
         raw_results = _merge_exploration_results(
             retrievals,
             limit=limit,
@@ -905,6 +1021,18 @@ class RagApiService:
             "mode": retrieval["mode"],
             "scope_resolution": retrieval.get("scope_resolution"),
             "exploration": exploration,
+            "structural_guidance": {
+                "status": structural_status,
+                "algorithm": STRUCTURE_ALGORITHM,
+                "maps": [
+                    {
+                        key: value
+                        for key, value in structure.items()
+                        if key != "anchors"
+                    }
+                    for structure in structural_maps
+                ],
+            },
             "instructions": instructions,
             "source_count": len(sources),
             "retrieved_count": retrieved_count,

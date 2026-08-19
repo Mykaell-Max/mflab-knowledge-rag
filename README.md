@@ -77,7 +77,8 @@ Inicie o processo de validação em primeiro plano:
 O processo não carrega o modelo na inicialização. A GPU só é ocupada na
 primeira chamada `semantic` ou `hybrid`, e a mesma instância do modelo é
 reutilizada nas consultas seguintes. Os endpoints iniciais são `/health`,
-`/status`, `/repositories`, `POST /search`, `POST /context` e `POST /ask`; a
+`/status`, `/repositories`, `POST /structure`, `POST /search`, `POST /context`
+e `POST /ask`; a
 documentação interativa fica em `/docs` e a interface em `/ui`. `/context` transforma a recuperação em
 um pacote limitado e citável, e `/ask` o envia somente a um gerador local
 configurado. O contrato completo está em
@@ -110,6 +111,14 @@ entrada em vez de rascunhos especializados e intercala as branches
 preferenciais dos repositórios disponíveis. A resposta precisa representar e
 citar cada escopo recuperado. Se a primeira síntese omitir algum deles, uma
 única revisão automática é solicitada; a cobertura continua visível no retorno.
+
+Antes dessa seleção textual, cada escopo recebe um mapa estrutural determinístico
+calculado dos metadados autorizados já presentes no PostgreSQL. O mapa enumera
+formatos, entradas de primeiro nível, volumes e documentos de entrada, tem hash
+reproduzível e preserva projeto, branch e commit. Ele pode sustentar apenas
+afirmações sobre a estrutura indexada; finalidade e capacidades continuam
+dependendo dos trechos primários. Isso melhora a navegação sem nova indexação,
+sem chamada adicional ao LLM e sem nomes científicos fixados no motor.
 
 O roteamento local pode ser ajustado sem editar ou reconstruir manualmente o
 TOML. O comando abaixo altera somente o registro indicado, preserva os demais
@@ -653,8 +662,8 @@ As regras serão transformadas em política configurável depois que o inventár
 ## Próximas entregas
 
 1. Executar e ampliar as suítes lexical e semântica com perguntas reais.
-2. Substituir âncoras heurísticas por parsing estrutural de código e casos.
-3. Expor `/search`, `/ask`, `/sources/{id}` e `/index/status`.
+2. Acrescentar símbolos e relações de código ao mapa estrutural determinístico.
+3. Expor `/sources/{id}` e `/index/status`.
 4. Receber webhooks do GitLab como aceleração da reconciliação agendada.
 
 As decisões gerais e os limites de segurança estão documentados no `HANDOFF.md` do projeto de continuidade que originou este repositório.

@@ -52,10 +52,12 @@ painel administrativo.
 
 1. **Concluído:** catálogo completo de branches, aliases e branch preferencial.
 2. **Concluído:** escopos automáticos visíveis e comparações balanceadas.
-3. **Primeira camada concluída:** planejamento determinístico e limitado para
+3. **Concluído:** planejamento determinístico e limitado para
    visões gerais, balanceamento de documentos de entrada e verificação da
    cobertura dos escopos citados.
-4. Extração determinística de símbolos e relações estruturais.
-5. Resumos hierárquicos incrementais com proveniência.
-6. Planejador local com ferramentas de exploração estrutural somente leitura.
-7. Avaliações de localização, conceito, diagnóstico e comparação.
+4. **Primeiro mapa concluído:** estrutura determinística por projeto, branch e
+   ACL, com formatos, diretórios, âncoras primárias, proveniência e fingerprint.
+5. Extração determinística de símbolos e relações estruturais.
+6. Resumos hierárquicos incrementais com proveniência.
+7. Planejador local com ferramentas de exploração estrutural somente leitura.
+8. Avaliações de localização, conceito, diagnóstico e comparação.

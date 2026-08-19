@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from mflab_knowledge.normalize import RETRIEVABLE_ACCESS_CLASSES
+from mflab_knowledge.structure import build_repository_structures
 
 LogCallback = Callable[[str, str], None]
 
@@ -739,6 +740,128 @@ def repository_status(
         value["allowed_access"] = sorted(effective_access)
         results.append(value)
     return results
+
+
+REPOSITORY_STRUCTURE_SQL = """
+WITH scoped_documents AS (
+    SELECT DISTINCT ON (document.repository_id, document.document_id)
+        repository.repository_id,
+        repository.project,
+        document.document_id,
+        document.path,
+        document.format,
+        document.size_bytes,
+        document.access_class,
+        occurrence.branch,
+        occurrence.commit_sha,
+        occurrence.canonical,
+        occurrence.requested_ref
+    FROM mflab_knowledge.repositories AS repository
+    JOIN mflab_knowledge.documents AS document
+      ON document.repository_id = repository.repository_id
+    JOIN mflab_knowledge.document_occurrences AS occurrence
+      ON occurrence.document_id = document.document_id
+    WHERE repository.project = %(project)s::text
+      AND occurrence.branch = %(branch)s::text
+      AND document.access_class = ANY(%(allowed_access)s::text[])
+    ORDER BY
+        document.repository_id,
+        document.document_id,
+        occurrence.canonical DESC,
+        occurrence.commit_sha DESC NULLS LAST
+), chunk_stats AS (
+    SELECT chunk.document_id, count(*) AS chunk_count
+    FROM mflab_knowledge.chunks AS chunk
+    JOIN scoped_documents AS document
+      ON document.document_id = chunk.document_id
+    GROUP BY chunk.document_id
+)
+SELECT
+    document.repository_id,
+    document.project,
+    document.path,
+    document.format,
+    document.size_bytes,
+    document.access_class,
+    document.branch,
+    document.commit_sha,
+    document.canonical,
+    document.requested_ref,
+    coalesce(chunk_stats.chunk_count, 0) AS chunk_count,
+    anchor.chunk_id AS anchor_chunk_id,
+    anchor.chunk_hash AS anchor_chunk_hash,
+    anchor.title AS anchor_title,
+    anchor.line_start AS anchor_line_start,
+    anchor.line_end AS anchor_line_end,
+    anchor.text AS anchor_text
+FROM scoped_documents AS document
+LEFT JOIN chunk_stats ON chunk_stats.document_id = document.document_id
+LEFT JOIN LATERAL (
+    SELECT
+        chunk.chunk_id,
+        chunk.chunk_hash,
+        chunk.title,
+        chunk.line_start,
+        chunk.line_end,
+        chunk.text
+    FROM mflab_knowledge.chunks AS chunk
+    WHERE chunk.document_id = document.document_id
+      AND (
+          strpos(document.path, '/') = 0
+          OR lower(regexp_replace(document.path, '^.*/', '')) LIKE 'readme%%'
+          OR (
+              length(document.path) - length(replace(document.path, '/', '')) <= 1
+              AND document.format = ANY(
+                  ARRAY['markdown', 'cmake', 'make', 'config', 'toml']::text[]
+              )
+          )
+      )
+    ORDER BY chunk.line_start, chunk.chunk_id
+    LIMIT 1
+) AS anchor ON true
+ORDER BY document.repository_id, document.path
+"""
+
+
+def repository_structures(
+    database_url: str,
+    *,
+    project: str,
+    branch: str,
+    allowed_access: set[str] | None = None,
+    anchor_limit: int = 8,
+) -> list[dict[str, object]]:
+    """Return deterministic branch maps without exposing unauthorized metadata."""
+
+    project_text = project.strip()
+    branch_text = branch.strip()
+    if not project_text:
+        raise ValueError("project é obrigatório para o mapa estrutural")
+    if not branch_text:
+        raise ValueError("branch é obrigatória para o mapa estrutural")
+    if anchor_limit < 1 or anchor_limit > 50:
+        raise ValueError("anchor_limit deve estar entre 1 e 50")
+    effective_access = allowed_access if allowed_access is not None else {"public"}
+    if not effective_access or not effective_access.issubset(
+        RETRIEVABLE_ACCESS_CLASSES
+    ):
+        raise ValueError("filtro de acesso inválido ou vazio")
+
+    _psycopg, dict_row = _driver()
+    parameters = {
+        "project": project_text,
+        "branch": branch_text,
+        "allowed_access": sorted(effective_access),
+    }
+    with _connect(database_url, row_factory=dict_row) as connection:
+        rows = connection.execute(REPOSITORY_STRUCTURE_SQL, parameters).fetchall()
+    return build_repository_structures(
+        rows,
+        requested_project=project_text,
+        requested_branch=branch_text,
+        allowed_access=effective_access,
+        anchor_limit=anchor_limit,
+    )
 
 
 def database_fingerprint(database_url: str) -> dict[str, object]:

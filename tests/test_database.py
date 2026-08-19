@@ -224,6 +224,28 @@ class DatabaseTests(unittest.TestCase):
             results[0]["last_ingestion"], "2026-08-17T00:00:00+00:00"
         )
 
+    def test_repository_structure_filters_project_branch_and_acl(self) -> None:
+        connection = _Connection([])
+        with mock.patch.object(database, "_driver", return_value=(object(), object())):
+            with mock.patch.object(database, "_connect", return_value=connection):
+                results = database.repository_structures(
+                    "postgresql://not-logged",
+                    project="Solver",
+                    branch="trunk",
+                    allowed_access={"public", "lab"},
+                )
+
+        self.assertEqual(results, [])
+        self.assertIn("repository.project = %(project)s::text", connection.sql)
+        self.assertIn("occurrence.branch = %(branch)s::text", connection.sql)
+        self.assertIn(
+            "document.access_class = ANY(%(allowed_access)s::text[])",
+            connection.sql,
+        )
+        self.assertEqual(connection.parameters["project"], "Solver")
+        self.assertEqual(connection.parameters["branch"], "trunk")
+        self.assertEqual(connection.parameters["allowed_access"], ["lab", "public"])
+
 
 if __name__ == "__main__":
     unittest.main()

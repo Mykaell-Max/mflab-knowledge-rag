@@ -59,6 +59,8 @@ def overview_authority(result: dict[str, object]) -> tuple[int, int, str]:
     name = path.name.casefold()
     parts = [part.casefold() for part in path.parts]
     score = 0
+    if result.get("source_kind") == "derived_structure":
+        score += 30
     if name.startswith("readme"):
         score += 12 if len(parts) == 1 else 7
     if len(parts) == 1:
@@ -116,6 +118,9 @@ def exploration_instructions(
         "evidence: purpose, major architecture or modules, implementation languages, "
         "and representative capabilities only when the sources support them. Treat a "
         "specialized feature as an example, never as the complete definition. "
+        "A source marked derived_structure is a deterministic map of indexed "
+        "metadata: use it only for layout, file-format, and coverage claims, never "
+        "as evidence of scientific purpose or capabilities. "
         f"The available project scopes are: {scopes}. Cover every available project "
         "scope and cite at least one source from each. The source IDs available per "
         f"scope are: {source_map}. If the evidence supports only a partial overview, "

@@ -593,6 +593,89 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("README.md", [source["path"] for source in context["sources"][:2]])
         self.assertIn("Cover every available project", context["instructions"])
 
+    def test_context_uses_auditable_structure_to_guide_overview(self) -> None:
+        service = api.RagApiService(self.settings())
+
+        def retrieval(**values: object) -> dict[str, object]:
+            return {
+                "query": str(values["query"]),
+                "mode": "lexical",
+                "count": 1,
+                "scope_resolution": {
+                    "mode": "preferred_defaults",
+                    "automatic": True,
+                    "scopes": [
+                        {"project": "Solver", "branch": "trunk"},
+                    ],
+                },
+                "results": [
+                    {
+                        "chunk_id": "readme",
+                        "project": "Solver",
+                        "path": "README.md",
+                        "text": "Repository purpose.",
+                        "selected_occurrence": {
+                            "branch": "trunk",
+                            "commit_sha": "a" * 40,
+                        },
+                    }
+                ],
+            }
+
+        structure = {
+            "schema_version": "0.1",
+            "algorithm": "repository_structure_v1",
+            "repository_id": "solver-a1",
+            "project": "Solver",
+            "branch": "trunk",
+            "commits": [{"commit_sha": "a" * 40, "documents": 2}],
+            "documents": 2,
+            "chunks": 4,
+            "bytes": 100,
+            "formats": [{"format": "cpp", "documents": 2}],
+            "top_level": [
+                {"name": "src", "kind": "directory", "documents": 2}
+            ],
+            "access_class": "lab",
+            "allowed_access": ["lab"],
+            "anchors": [],
+            "fingerprint": "sha256:structure",
+            "derived_only_from_indexed_metadata": True,
+        }
+        with mock.patch.object(service, "search", side_effect=retrieval):
+            with mock.patch.object(
+                api, "repository_structures", return_value=[structure]
+            ) as maps:
+                context = service.context(
+                    query="O que é o Solver?",
+                    mode="lexical",
+                    limit=4,
+                    allowed_access={"lab"},
+                )
+
+        maps.assert_called_once()
+        self.assertEqual(context["structural_guidance"]["status"], "success")
+        self.assertNotIn("anchors", context["structural_guidance"]["maps"][0])
+        self.assertEqual(context["sources"][0]["source_kind"], "derived_structure")
+        self.assertIn("derived_structure", context["instructions"])
+
+    def test_structural_anchor_marks_an_existing_search_result(self) -> None:
+        result = {
+            "chunk_id": "shared",
+            "project": "Solver",
+            "path": "README.md",
+            "selected_occurrence": {"branch": "trunk"},
+        }
+        anchor = {**result, "source_kind": "primary_structure_anchor"}
+
+        merged = api._merge_exploration_results(
+            [{"results": [result]}, {"results": [anchor]}],
+            limit=2,
+            overview=True,
+        )
+
+        self.assertEqual(merged[0]["source_kind"], "primary_structure_anchor")
+
     def test_ask_validates_citations_and_reports_distinct_scopes(self) -> None:
         generator = _Generator("Compare [S1] with [S2]; ignore [S99].")
         service = api.RagApiService(

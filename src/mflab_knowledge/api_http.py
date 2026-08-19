@@ -31,7 +31,9 @@ class SearchRequest(BaseModel):
     branch: str | None = Field(default=None, max_length=512)
     project: str | None = Field(default=None, max_length=512)
     path_prefix: str | None = Field(default=None, max_length=2048)
-    allowed_access: set[Literal["public", "lab", "project", "restricted"]] | None = None
+    allowed_access: (
+        set[Literal["public", "lab", "project", "restricted"]] | None
+    ) = None
     max_per_path: int = Field(default=2, ge=1, le=20)
     include_duplicate_content: bool = False
 
@@ -43,6 +45,15 @@ class ContextRequest(SearchRequest):
 class AskRequest(ContextRequest):
     max_output_tokens: int | None = Field(default=None, ge=64, le=8192)
     temperature: float | None = Field(default=None, ge=0, le=1)
+
+
+class StructureRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project: str = Field(min_length=1, max_length=512)
+    branch: str = Field(min_length=1, max_length=512)
+    allowed_access: set[Literal["public", "lab", "project", "restricted"]] | None = None
+    anchor_limit: int = Field(default=8, ge=1, le=50)
 
 
 class AdminLoginRequest(BaseModel):
@@ -238,6 +249,7 @@ def create_app(service: RagApiService) -> FastAPI:
                 "/health",
                 "/status",
                 "/repositories",
+                "/structure",
                 "/search",
                 "/context",
                 "/ask",
@@ -296,6 +308,18 @@ def create_app(service: RagApiService) -> FastAPI:
             raise HTTPException(
                 status_code=500,
                 detail="falha interna durante a recuperação",
+            ) from None
+
+    @app.post("/structure")
+    def structure(request: StructureRequest) -> dict[str, object]:
+        try:
+            return service.structure(**request.model_dump())
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        except Exception:
+            raise HTTPException(
+                status_code=500,
+                detail="falha interna durante o mapeamento estrutural",
             ) from None
 
     @app.post("/ui-api/search", include_in_schema=False)

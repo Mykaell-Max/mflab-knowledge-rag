@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.31.4**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.32.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -102,8 +102,8 @@ treinamento.
 - Geração local via API compatível com OpenAI.
 - Verificação de citações, cobertura, abstenção sem evidência e aviso de múltiplos
   escopos.
-- API local com `/health`, `/status`, `/repositories`, `/search`, `/context` e
-  `/ask`.
+- API local com `/health`, `/status`, `/repositories`, `/structure`, `/search`,
+  `/context` e `/ask`.
 - Interface web integrada em `/ui`, com painel operacional, busca, perguntas e
   fontes, preenchida dinamicamente pela API.
 - Bind LAN opt-in protegido por chave Bearer forte criada em `.env`; loopback
@@ -300,16 +300,28 @@ cobertura integral dos dois escopos e MFSim-NG em `base`. O status final foi
 `partial_citations` porque o parágrafo de limitação não terminou em citação. A
 0.31.4 permite que a suíte aceite `cited` ou `partial_citations` somente com
 cobertura textual mínima de 80%, cobertura de escopos em 100%, zero IDs
-inválidos e nenhuma extrapolação proibida. A resposta permaneceu superficial;
-o próximo trabalho prioritário é o índice qualitativo hierárquico descrito em
-`docs/assistant-roadmap.md`, não novos ajustes cosméticos de prompt.
+inválidos e nenhuma extrapolação proibida. A resposta permaneceu superficial e
+motivou o índice qualitativo hierárquico descrito em
+`docs/assistant-roadmap.md`.
 
-1. catálogo com 17 e 107 nomes de branches;
-2. `base` preferencial para MFSim-NG e a política escolhida para MFSim CMake;
-3. pergunta citando apenas um projeto;
-4. comparação citando os dois projetos;
-5. branch específica citada na pergunta;
-6. continuidade do índice qualitativo descrito em `docs/assistant-roadmap.md`.
+A 0.32.0 inicia esse índice qualitativo com um mapa estrutural genérico por
+projeto, branch e ACL. Ele é derivado sob demanda dos metadados já carregados no
+PostgreSQL, possui fingerprint determinístico e enumera formatos, entradas de
+primeiro nível, commits e âncoras documentais. Perguntas amplas recebem uma
+fonte `derived_structure`, limitada explicitamente a layout e formatos, seguida
+das fontes primárias. `/structure` torna o mapa auditável sem nova carga ou uso
+do LLM. Ainda faltam símbolos, relações e resumos hierárquicos incrementais.
+
+A próxima validação na Morgoth deve confirmar:
+
+1. `/structure` para a branch preferencial de cada corpus;
+2. `structural_guidance.status=success` em uma pergunta ampla;
+3. uma fonte derivada e pelo menos uma fonte primária por escopo;
+4. ausência do mapa em perguntas diretas;
+5. continuidade das regressões multi-repositório e multi-branch.
+
+Depois disso, a próxima implementação é a extração genérica de símbolos e
+relações descrita em `docs/assistant-roadmap.md`.
 
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
