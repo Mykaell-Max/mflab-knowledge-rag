@@ -95,6 +95,11 @@ Parágrafos, listas, ênfase, código inline e blocos cercados com linguagem sã
 renderizados localmente. IDs como `[S1]` permanecem na resposta auditável da
 API, mas a interface os transforma em referências com arquivo e linhas; cada
 referência leva ao cartão completo da fonte e o destaca.
+O mesmo componente de código é usado nos trechos recuperados por **Buscar** e
+nas fontes exibidas abaixo de uma resposta. A linguagem vem do formato indexado,
+do caminho do arquivo ou da marcação cercada e recebe realce léxico local com
+paleta inspirada no editor VS Code. A implementação não usa CDN ou JavaScript
+de terceiros.
 Os limites de geração pertencem ao backend: a interface não fixa orçamento de
 contexto ou saída, e `generation.toml` controla o teto de evidências conforme a
 janela do modelo local. Respostas de excesso de contexto causam redução segura

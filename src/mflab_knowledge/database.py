@@ -451,6 +451,7 @@ WITH query_input AS (
         r.project,
         d.repository_id,
         d.path,
+        d.format,
         c.title,
         c.line_start,
         c.line_end,
@@ -526,7 +527,7 @@ WITH query_input AS (
     WHERE %(include_duplicates)s OR content_rank = 1
 )
 SELECT
-    score, chunk_id, chunk_hash, project, path, title, line_start, line_end,
+    score, chunk_id, chunk_hash, project, path, format, title, line_start, line_end,
     access_class, branch, commit_sha, occurrences, text
 FROM path_ranked
 WHERE path_rank <= %(max_per_path)s

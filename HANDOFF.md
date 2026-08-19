@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.33.0**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.33.1**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -319,6 +319,12 @@ produzir Markdown e blocos de código com linguagem; a interface usa um
 renderizador seguro sem `innerHTML` e apresenta citações como referências
 clicáveis com arquivo e linhas. Os IDs `[Sx]` continuam intactos na API para
 grounding e avaliações.
+
+A 0.33.1 aplica um realce léxico seguro com paleta inspirada no VS Code aos
+blocos cercados da resposta, aos resultados de busca e aos cartões de fonte. A
+linguagem é derivada do campo genérico `format`, do caminho ou da cerca
+Markdown. O realce cria somente nós de texto e `span`, não usa CDN, `innerHTML`
+ou nomes de projetos.
 
 A próxima validação na Morgoth deve confirmar a 0.33.0 na interface real: texto
 Markdown, blocos cercados com linguagem e referências clicáveis que levam à

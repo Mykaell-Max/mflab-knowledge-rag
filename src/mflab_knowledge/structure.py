@@ -87,6 +87,7 @@ def build_repository_structures(
                 "project": str(row["project"]),
                 "repository_id": repository_id,
                 "path": path,
+                "format": format_name,
                 "title": str(row.get("anchor_title") or ""),
                 "line_start": int(row.get("anchor_line_start") or 1),
                 "line_end": int(row.get("anchor_line_end") or 1),

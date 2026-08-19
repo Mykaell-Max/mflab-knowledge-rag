@@ -157,10 +157,23 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 17, 17
 .markdown-body blockquote { margin: 1rem 0; padding: 0.7rem 0.9rem; color: var(--muted); background: var(--paper); border-left: 3px solid var(--line-strong); }
 .markdown-body hr { margin: 1.25rem 0; border: 0; border-top: 1px solid var(--line); }
 .inline-code { padding: 0.12rem 0.3rem; color: #152049; background: #edf0f7; border: 1px solid #d9deea; border-radius: 3px; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.84em; }
-.code-block { margin: 1rem 0; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 4px; background: #10162a; }
-.code-language { padding: 0.4rem 0.7rem; color: #4b5673; background: #edf0f6; border-bottom: 1px solid var(--line-strong); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.65rem; }
-.code-block pre { max-height: 34rem; margin: 0; overflow: auto; padding: 1rem; color: #eef1f8; background: #10162a; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.78rem; line-height: 1.6; tab-size: 2; }
+.code-block { margin: 1rem 0; overflow: hidden; border: 1px solid #3c3c3c; border-radius: 4px; background: #1e1e1e; }
+.code-language { padding: 0.4rem 0.7rem; color: #cccccc; background: #252526; border-bottom: 1px solid #3c3c3c; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.68rem; }
+.code-block pre { max-height: 34rem; margin: 0; overflow: auto; padding: 1rem; color: #d4d4d4; background: #1e1e1e; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.78rem; line-height: 1.6; tab-size: 2; }
 .code-block code { font: inherit; white-space: pre; }
+.code-block.compact { margin: 0.8rem 0 0; }
+.code-block.compact pre { max-height: 24rem; padding: 0.85rem; font-size: 0.74rem; }
+.syntax-comment { color: #6a9955; }
+.syntax-keyword { color: #c586c0; }
+.syntax-type { color: #4ec9b0; }
+.syntax-string { color: #ce9178; }
+.syntax-number { color: #b5cea8; }
+.syntax-literal { color: #569cd6; }
+.syntax-function { color: #dcdcaa; }
+.syntax-property { color: #9cdcfe; }
+.syntax-meta { color: #c586c0; }
+.syntax-operator,
+.syntax-punctuation { color: #d4d4d4; }
 .citation-group { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; margin-inline: 0.15rem; vertical-align: 0.08em; }
 .inline-citation { display: inline-flex; align-items: center; max-width: min(32rem, 100%); padding: 0.12rem 0.38rem; overflow: hidden; color: var(--accent); background: var(--accent-soft); border: 1px solid rgba(0, 17, 173, 0.18); border-radius: 3px; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.74rem; line-height: 1.45; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .inline-citation:hover { color: #fff; background: var(--accent); border-color: var(--accent); }

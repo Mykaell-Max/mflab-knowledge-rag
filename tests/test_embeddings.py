@@ -460,6 +460,7 @@ class EmbeddingTests(unittest.TestCase):
             sql,
         )
         self.assertIn("row_number() OVER", sql)
+        self.assertIn("document.format", sql)
         self.assertIn("path_candidate_rank = 1", sql)
         self.assertEqual(parameters["allowed_access"], ["lab"])
         self.assertEqual(parameters["branch"], "diagnostic/dpm")
@@ -823,6 +824,7 @@ class EmbeddingTests(unittest.TestCase):
         )
         self.assertIn("occurrence.branch = %(branch)s::text", sql)
         self.assertIn("repository.project = %(project)s::text", sql)
+        self.assertIn("document.format", sql)
         self.assertLess(
             sql.index("WHERE embedding.model_id"),
             sql.rindex("ORDER BY embedding.embedding"),

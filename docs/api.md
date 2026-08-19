@@ -233,6 +233,11 @@ auditoria. A interface substitui visualmente cada ID válido pelo nome do arquiv
 e intervalo de linhas, com navegação para o cartão da fonte. O renderizador web
 aceita apenas uma parte segura de Markdown e cria elementos DOM com
 `textContent`; HTML retornado pelo modelo é exibido como texto, nunca executado.
+Resultados de `/search` e fontes de `/ask` agora incluem `format`. A interface
+combina esse campo com a extensão do caminho para escolher um realce léxico
+local. C, C++, Fortran, Python, shell, JavaScript, TypeScript, JSON, YAML, TOML,
+CMake, Make e SQL possuem vocabulários visuais genéricos; formatos não
+reconhecidos continuam como texto simples.
 
 ```json
 {

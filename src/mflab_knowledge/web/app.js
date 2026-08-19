@@ -70,6 +70,224 @@ function element(name, className, text) {
   return node;
 }
 
+const languageAliases = {
+  "c++": "cpp", cxx: "cpp", cc: "cpp", hpp: "cpp", hxx: "cpp",
+  c: "c", h: "c", cpp: "cpp", cuda: "cpp", cu: "cpp",
+  f: "fortran", f90: "fortran", f95: "fortran", f03: "fortran", f08: "fortran", fortran: "fortran",
+  py: "python", python: "python",
+  sh: "shell", bash: "shell", shell: "shell", dockerfile: "shell",
+  js: "javascript", jsx: "javascript", javascript: "javascript",
+  ts: "typescript", tsx: "typescript", typescript: "typescript",
+  json: "json", yaml: "yaml", yml: "yaml", toml: "toml",
+  cmake: "cmake", make: "make", makefile: "make",
+  sql: "sql", text: "text", txt: "text", markdown: "text", md: "text",
+};
+
+const formatLanguages = {
+  c: "c", cpp: "cpp", cpp_header: "cpp", fortran: "fortran",
+  python: "python", shell: "shell", dockerfile: "shell",
+  json: "json", yaml: "yaml", toml: "toml", cmake: "cmake", make: "make",
+};
+
+const extensionLanguages = {
+  c: "c", h: "c", cc: "cpp", cpp: "cpp", cxx: "cpp", hpp: "cpp", hxx: "cpp",
+  cu: "cpp", cuh: "cpp", f: "fortran", f90: "fortran", f95: "fortran",
+  f03: "fortran", f08: "fortran", py: "python", sh: "shell", bash: "shell",
+  js: "javascript", jsx: "javascript", ts: "typescript", tsx: "typescript",
+  json: "json", yaml: "yaml", yml: "yaml", toml: "toml", cmake: "cmake", sql: "sql",
+};
+
+const keywordGroups = {
+  c: "auto break case const continue default do else enum extern for goto if inline register restrict return sizeof static struct switch typedef union volatile while",
+  cpp: "alignas alignof and and_eq asm bitand bitor break case catch class compl concept const consteval constexpr constinit const_cast continue co_await co_return co_yield decltype default delete do dynamic_cast else enum explicit export extern for friend goto if inline mutable namespace new noexcept not not_eq operator or or_eq private protected public register reinterpret_cast requires return sizeof static static_assert static_cast struct switch template this thread_local throw try typedef typeid typename union using virtual volatile while xor xor_eq",
+  fortran: "allocate allocatable associate backspace block call case character class close common contains continue cycle data deallocate dimension do else elseif elsewhere end enddo endif entry enum equivalence error exit external final flush forall format function generic goto if implicit import in include inquire intent interface intrinsic module namelist none nullify only open operator optional parameter pause pointer print private procedure program protected public pure read recursive result return rewind save select sequence stop submodule subroutine target then use value volatile wait where while write",
+  python: "and as assert async await break case class continue def del elif else except finally for from global if import in is lambda match nonlocal not or pass raise return try while with yield",
+  shell: "case do done elif else esac fi for function if in select then time until while",
+  javascript: "async await break case catch class const continue debugger default delete do else export extends finally for from function get if import in instanceof let new of return set static super switch this throw try typeof var void while with yield",
+  typescript: "abstract any as asserts async await bigint boolean break case catch class const constructor continue debugger declare default delete do else enum export extends finally for from function get if implements import in infer instanceof interface is keyof let module namespace never new null number object of override private protected public readonly require return set static string super switch symbol this throw try type typeof undefined unique unknown var void while with yield",
+  cmake: "and break cache command continue elseif else endforeach endfunction endif endmacro endwhile false function if macro not or parent_scope return set true unset while",
+  make: "define else endef endif export ifdef ifeq ifndef ifneq include override private sinclude undefine unexport vpath",
+  sql: "all alter and any as asc begin between by case check column commit constraint create database default delete desc distinct drop else end exists foreign from full grant group having in index inner insert into is join key left like limit not null on or order outer primary references right rollback select set table then union unique update values view when where with",
+};
+
+const keywords = Object.fromEntries(
+  Object.entries(keywordGroups).map(([language, words]) => [language, new Set(words.split(" "))]),
+);
+keywords.cpp = new Set([...keywords.c, ...keywords.cpp]);
+
+const typeWords = new Set(
+  "bool byte char character complex double float int integer logical long real short signed size_t string unsigned void wchar_t".split(" "),
+);
+const literalWords = new Set("false none null nullptr true undefined".split(" "));
+
+function normalizeLanguage(language) {
+  const value = String(language || "text").trim().toLowerCase();
+  return languageAliases[value] || (languageAliases[value.replace(/^language-/, "")] || "text");
+}
+
+function languageForResult(result) {
+  const byFormat = formatLanguages[String(result.format || "").toLowerCase()];
+  if (byFormat) return byFormat;
+  const path = String(result.path || "").toLowerCase();
+  const filename = path.split("/").pop() || "";
+  if (filename === "cmakelists.txt") return "cmake";
+  if (filename === "makefile" || filename.startsWith("makefile.")) return "make";
+  if (filename === "dockerfile" || filename.startsWith("dockerfile.")) return "shell";
+  const extension = filename.includes(".") ? filename.split(".").pop() : "";
+  return extensionLanguages[extension] || "text";
+}
+
+function syntaxToken(target, className, text) {
+  if (!text) return;
+  target.append(className ? element("span", className, text) : document.createTextNode(text));
+}
+
+function commentRules(language) {
+  if (["c", "cpp", "javascript", "typescript"].includes(language)) {
+    return { line: "//", blockStart: "/*", blockEnd: "*/" };
+  }
+  if (["python", "shell", "cmake", "make", "yaml", "toml"].includes(language)) {
+    return { line: "#" };
+  }
+  if (language === "fortran") return { line: "!" };
+  if (language === "sql") return { line: "--", blockStart: "/*", blockEnd: "*/" };
+  return {};
+}
+
+function highlightCode(target, code, requestedLanguage) {
+  const language = normalizeLanguage(requestedLanguage);
+  const rules = commentRules(language);
+  const words = keywords[language] || new Set();
+  const source = String(code || "");
+  let index = 0;
+  let lineStart = true;
+
+  while (index < source.length) {
+    const remaining = source.slice(index);
+    const whitespace = remaining.match(/^\s+/);
+    if (whitespace) {
+      syntaxToken(target, "", whitespace[0]);
+      lineStart = whitespace[0].includes("\n")
+        ? !whitespace[0].slice(whitespace[0].lastIndexOf("\n") + 1).trim()
+        : lineStart;
+      index += whitespace[0].length;
+      continue;
+    }
+
+    if (["c", "cpp"].includes(language) && lineStart && source[index] === "#") {
+      const end = source.indexOf("\n", index);
+      const length = (end < 0 ? source.length : end) - index;
+      syntaxToken(target, "syntax-meta", source.slice(index, index + length));
+      index += length;
+      lineStart = false;
+      continue;
+    }
+
+    if (rules.blockStart && source.startsWith(rules.blockStart, index)) {
+      const end = source.indexOf(rules.blockEnd, index + rules.blockStart.length);
+      const stop = end < 0 ? source.length : end + rules.blockEnd.length;
+      syntaxToken(target, "syntax-comment", source.slice(index, stop));
+      lineStart = source.slice(index, stop).endsWith("\n");
+      index = stop;
+      continue;
+    }
+
+    if (rules.line && source.startsWith(rules.line, index)) {
+      const end = source.indexOf("\n", index);
+      const stop = end < 0 ? source.length : end;
+      syntaxToken(target, "syntax-comment", source.slice(index, stop));
+      index = stop;
+      lineStart = false;
+      continue;
+    }
+
+    const quote = source[index];
+    if (quote === "\"" || quote === "'" || (quote === "`" && ["javascript", "typescript"].includes(language))) {
+      let stop = index + 1;
+      while (stop < source.length) {
+        if (source[stop] === "\\") {
+          stop += 2;
+          continue;
+        }
+        if (source[stop] === quote) {
+          if (source[stop + 1] === quote) {
+            stop += 2;
+            continue;
+          }
+          stop += 1;
+          break;
+        }
+        stop += 1;
+      }
+      const after = source.slice(stop).match(/^\s*/)?.[0].length || 0;
+      const isProperty = ["json", "yaml", "toml"].includes(language)
+        && [":", "="].includes(source[stop + after]);
+      syntaxToken(target, isProperty ? "syntax-property" : "syntax-string", source.slice(index, stop));
+      lineStart = false;
+      index = stop;
+      continue;
+    }
+
+    const number = remaining.match(/^(?:0x[\da-f]+|0b[01]+|\d+(?:\.\d*)?(?:e[+-]?\d+)?)/i);
+    if (number) {
+      syntaxToken(target, "syntax-number", number[0]);
+      index += number[0].length;
+      lineStart = false;
+      continue;
+    }
+
+    const identifier = remaining.match(/^[A-Za-z_][A-Za-z0-9_]*/);
+    if (identifier) {
+      const value = identifier[0];
+      const folded = value.toLowerCase();
+      const tail = source.slice(index + value.length);
+      const next = tail.match(/^\s*(.)/)?.[1] || "";
+      let tokenClass = "";
+      if (literalWords.has(folded)) tokenClass = "syntax-literal";
+      else if (typeWords.has(folded)) tokenClass = "syntax-type";
+      else if (words.has(folded)) tokenClass = "syntax-keyword";
+      else if (["json", "yaml", "toml"].includes(language) && [":", "="].includes(next)) tokenClass = "syntax-property";
+      else if (next === "(") tokenClass = "syntax-function";
+      syntaxToken(target, tokenClass, value);
+      index += value.length;
+      lineStart = false;
+      continue;
+    }
+
+    const operator = remaining.match(/^(?:===|!==|<<=|>>=|=>|::|->|\*\*|\/\/|==|!=|<=|>=|&&|\|\||\+\+|--|\+=|-=|\*=|\/=|%=|<<|>>|[-+*/%=&|!<>^~?:]+)/);
+    if (operator) {
+      syntaxToken(target, "syntax-operator", operator[0]);
+      index += operator[0].length;
+      lineStart = false;
+      continue;
+    }
+
+    const punctuation = remaining.match(/^[{}()[\];,.]+/);
+    if (punctuation) {
+      syntaxToken(target, "syntax-punctuation", punctuation[0]);
+      index += punctuation[0].length;
+      lineStart = false;
+      continue;
+    }
+
+    syntaxToken(target, "", source[index]);
+    lineStart = false;
+    index += 1;
+  }
+}
+
+function createCodeBlock(code, requestedLanguage, compact = false) {
+  const language = normalizeLanguage(requestedLanguage);
+  const block = element("div", `code-block${compact ? " compact" : ""}`);
+  block.append(element("div", "code-language", language));
+  const pre = element("pre");
+  const codeNode = element("code", `language-${language}`);
+  highlightCode(codeNode, code, language);
+  pre.append(codeNode);
+  block.append(pre);
+  return block;
+}
+
 function sourceLabel(source, sourceId) {
   if (!source) return sourceId;
   if (source.source_kind === "derived_structure") {
@@ -167,13 +385,7 @@ function renderMarkdown(markdown, sources) {
         index += 1;
       }
       if (index < lines.length) index += 1;
-      const block = element("div", "code-block");
-      block.append(element("div", "code-language", language));
-      const pre = element("pre");
-      const code = element("code", `language-${language}`, codeLines.join("\n"));
-      pre.append(code);
-      block.append(pre);
-      container.append(block);
+      container.append(createCodeBlock(codeLines.join("\n"), language));
       continue;
     }
 
@@ -324,7 +536,14 @@ function resultCard(result, sourceId = "") {
     .forEach((value, index) => meta.append(element("span", `chip ${index === 0 && sourceId ? "accent" : ""}`, value)));
   card.append(meta);
   card.append(element("h3", "", result.path || "Fonte sem caminho"));
-  if (result.text) card.append(element("p", "", result.text));
+  if (result.text) {
+    const language = languageForResult(result);
+    card.append(
+      language === "text"
+        ? element("p", "", result.text)
+        : createCodeBlock(result.text, language, true),
+    );
+  }
   card.append(element("p", "citation", result.citation || ""));
   return card;
 }

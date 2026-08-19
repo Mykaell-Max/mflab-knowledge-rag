@@ -116,6 +116,7 @@ class DatabaseTests(unittest.TestCase):
                     "chunk_hash": "sha256:chunk",
                     "project": "MFSim-NG",
                     "path": "src/dpm.cpp",
+                    "format": "cpp",
                     "title": "DPMManager",
                     "line_start": 10,
                     "line_end": 20,
@@ -151,6 +152,7 @@ class DatabaseTests(unittest.TestCase):
             results[0]["selected_occurrence"],
             {"branch": "master", "commit_sha": "a" * 40},
         )
+        self.assertEqual(results[0]["format"], "cpp")
         self.assertNotIn("commit_sha", results[0])
 
     def test_postgres_search_rejects_pending_access(self) -> None:
