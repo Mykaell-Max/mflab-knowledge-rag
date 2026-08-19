@@ -57,7 +57,19 @@ def _json_object(value: str) -> dict[str, object]:
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", candidate, re.DOTALL)
     if fenced:
         candidate = fenced.group(1)
-    parsed = json.loads(candidate)
+    try:
+        parsed = json.loads(candidate)
+    except json.JSONDecodeError:
+        decoder = json.JSONDecoder()
+        parsed = None
+        for match in re.finditer(r"\{", candidate):
+            try:
+                possible, _end = decoder.raw_decode(candidate, match.start())
+            except json.JSONDecodeError:
+                continue
+            if isinstance(possible, dict) and "claims" in possible:
+                parsed = possible
+                break
     if not isinstance(parsed, dict):
         raise ValueError("auditoria de evidência não retornou um objeto JSON")
     return parsed

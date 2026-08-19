@@ -38,6 +38,7 @@ class GenerationConfig:
     max_context_characters: int = 8000
     verify_evidence: bool = True
     verification_max_tokens: int = 768
+    verification_max_attempts: int = 2
     max_repair_attempts: int = 1
 
     @property
@@ -96,6 +97,7 @@ def load_generation_config(
         "max_context_characters",
         "verify_evidence",
         "verification_max_tokens",
+        "verification_max_attempts",
         "max_repair_attempts",
     }
     unknown_provider = set(provider) - allowed_provider
@@ -118,6 +120,7 @@ def load_generation_config(
     max_context_characters = provider.get("max_context_characters", 8000)
     verify_evidence = provider.get("verify_evidence", True)
     verification_max_tokens = provider.get("verification_max_tokens", 768)
+    verification_max_attempts = provider.get("verification_max_attempts", 2)
     max_repair_attempts = provider.get("max_repair_attempts", 1)
     if not isinstance(timeout_seconds, int) or not 1 <= timeout_seconds <= 900:
         raise ValueError("provider.timeout_seconds deve estar entre 1 e 900")
@@ -153,6 +156,14 @@ def load_generation_config(
         or not 0 <= max_repair_attempts <= 1
     ):
         raise ValueError("provider.max_repair_attempts deve ser 0 ou 1")
+    if (
+        not isinstance(verification_max_attempts, int)
+        or isinstance(verification_max_attempts, bool)
+        or not 1 <= verification_max_attempts <= 3
+    ):
+        raise ValueError(
+            "provider.verification_max_attempts deve estar entre 1 e 3"
+        )
     return GenerationConfig(
         path=resolved,
         base_url=_validate_local_base_url(base_url),
@@ -163,6 +174,7 @@ def load_generation_config(
         max_context_characters=max_context_characters,
         verify_evidence=verify_evidence,
         verification_max_tokens=verification_max_tokens,
+        verification_max_attempts=verification_max_attempts,
         max_repair_attempts=max_repair_attempts,
     )
 

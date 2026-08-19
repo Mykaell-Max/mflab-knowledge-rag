@@ -57,6 +57,19 @@ class VerificationTests(unittest.TestCase):
 
         self.assertTrue(result["passed"])
 
+    def test_accepts_valid_audit_object_wrapped_in_provider_text(self) -> None:
+        claims = claims_for_verification("The implementation is here [S1].")
+        result = normalize_verification(
+            "Audit result follows:\n"
+            '{"claims":[{"claim_id":"C1","verdict":"supported",'
+            '"source_ids":["S1"],"finding":"The definition is present."}]}\n'
+            "End of result.",
+            claims=claims,
+            valid_source_ids={"S1"},
+        )
+
+        self.assertTrue(result["passed"])
+
     def test_supported_verdict_must_reference_the_claims_own_source(self) -> None:
         claims = claims_for_verification(
             "First statement [S1].\n\nSecond statement [S2]."

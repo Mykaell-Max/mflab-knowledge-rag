@@ -908,6 +908,64 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("does not establish", result["answer"])
         self.assertIn("revision", [step["stage"] for step in progress])
 
+    def test_ask_retries_a_malformed_verification_without_regenerating(self) -> None:
+        generator = _VerifyingGenerator(
+            answers=["The implementation is located here [S1]."],
+            audits=[
+                "not valid structured output",
+                '{"claims":[{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"The definition is present."}]}',
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+            ),
+        )
+        progress: list[dict[str, object]] = []
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Where is the implementation?",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 20,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                        "path": "src/model.cpp",
+                        "text": "void implementation() {}",
+                    }
+                ],
+            },
+        ):
+            result = service.ask(
+                query="Where is the implementation?",
+                progress_callback=progress.append,
+            )
+
+        self.assertFalse(result["abstained"])
+        self.assertTrue(result["verification"]["passed"])
+        self.assertEqual(len(generator.calls), 1)
+        self.assertEqual(len(generator.verify_calls), 2)
+        self.assertIn(
+            "Conferência estruturada será repetida",
+            [step["title"] for step in progress],
+        )
+
     def test_ask_abstains_when_repair_remains_unsupported(self) -> None:
         audit = (
             '{"claims":[{"claim_id":"C1","verdict":"unsupported",'

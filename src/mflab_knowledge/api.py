@@ -1444,6 +1444,26 @@ class RagApiService:
                 valid_source_ids=valid_source_ids,
             )
 
+        def audit_with_retry(candidate_answer: str) -> dict[str, object]:
+            last_error: Exception | None = None
+            for attempt in range(self.generation_config.verification_max_attempts):
+                try:
+                    return audit(candidate_answer)
+                except (GenerationUnavailableError, ValueError, TypeError) as exc:
+                    last_error = exc
+                    if attempt + 1 < self.generation_config.verification_max_attempts:
+                        record(
+                            "verification",
+                            "Conferência estruturada será repetida",
+                            "O retorno anterior não pôde ser validado; a resposta ainda não foi liberada.",
+                            {
+                                "attempt": attempt + 2,
+                                "maximum_attempts": self.generation_config.verification_max_attempts,
+                            },
+                        )
+            assert last_error is not None
+            raise last_error
+
         if verification_expected:
             record(
                 "verification",
@@ -1451,7 +1471,7 @@ class RagApiService:
                 "Cada afirmação será confrontada somente com as fontes que ela cita.",
             )
             try:
-                verification = audit(answer)
+                verification = audit_with_retry(answer)
             except (GenerationUnavailableError, ValueError, TypeError) as exc:
                 self.log(
                     f"Auditoria de evidência indisponível: {exc}",
@@ -1460,7 +1480,9 @@ class RagApiService:
                 verification = unavailable_verification("audit_unavailable")
 
             audit_counts = verification.get("counts")
-            if isinstance(audit_counts, dict):
+            if verification.get("performed") is True and isinstance(
+                audit_counts, dict
+            ):
                 record(
                     "verification",
                     "Primeira conferência das afirmações concluída",
@@ -1470,6 +1492,12 @@ class RagApiService:
                         "unsupported": int(audit_counts.get("unsupported", 0)),
                         "uncertain": int(audit_counts.get("uncertain", 0)),
                     },
+                )
+            elif verification.get("performed") is not True:
+                record(
+                    "verification",
+                    "Conferência das afirmações indisponível",
+                    "Nenhuma resposta será entregue sem um resultado de auditoria válido.",
                 )
 
             if (
@@ -1506,7 +1534,7 @@ class RagApiService:
                         answer,
                         exploration if isinstance(exploration, dict) else {},
                     )
-                    verification = audit(answer)
+                    verification = audit_with_retry(answer)
                 except (GenerationUnavailableError, ValueError, TypeError) as exc:
                     self.log(
                         f"Revisão ou segunda auditoria indisponível: {exc}",

@@ -12,4 +12,6 @@ max_context_characters = 8000
 # Audita cada afirmação contra as fontes citadas e permite uma única correção.
 verify_evidence = true
 verification_max_tokens = 768
+# Repete somente a auditoria estruturada quando o provedor devolve saída inválida.
+verification_max_attempts = 2
 max_repair_attempts = 1

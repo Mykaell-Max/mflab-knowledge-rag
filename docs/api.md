@@ -227,7 +227,11 @@ Para visões gerais com mais de um escopo, omitir um projeto ou branch produz
 `quality_retry` registra essa revisão.
 Por padrão, cada unidade factual passa ainda por uma auditoria semântica contra
 somente os IDs que ela cita. O servidor valida o JSON dessa auditoria e aceita
-no máximo uma nova síntese. `verification` devolve achados curtos e
+uma repetição limitada da auditoria quando o provedor devolve um formato
+inválido; `provider.verification_max_attempts` controla esse limite entre um e
+três. Essa repetição não gera uma resposta nova. O servidor aceita no máximo
+uma nova síntese quando uma auditoria válida encontra afirmações sem suporte.
+`verification` devolve achados curtos e
 `context.evidence_repair` informa se houve revisão. Se a conclusão continuar
 sem sustentação, `answer` será nulo, `abstained` será verdadeiro e `reason`
 será `evidence_not_supported`.

@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.34.0**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.34.1**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -338,7 +338,13 @@ O teste real correspondente está concentrado em
 `scripts/validate-investigation.py`; RunBlocks devem chamá-lo em vez de repetir
 Python extenso dentro de heredocs aninhados.
 
-A próxima validação na Morgoth deve confirmar a 0.34.0 com uma resposta correta,
+A 0.34.1 tornou a auditoria tolerante a um objeto JSON válido envolvido por
+texto auxiliar do provedor e adicionou repetição estruturada limitada,
+configurável por `provider.verification_max_attempts`. A repetição não relaxa a
+validação nem cria nova resposta; se nenhum resultado válido for obtido, a
+resposta permanece bloqueada.
+
+A próxima validação na Morgoth deve confirmar a 0.34.1 com uma resposta correta,
 um falso positivo citado que exija revisão e a trilha aparecendo durante o
 processamento. Depois disso, a próxima implementação é a extração genérica de
 símbolos e relações descrita em `docs/assistant-roadmap.md`.

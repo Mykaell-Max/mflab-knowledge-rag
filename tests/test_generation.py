@@ -60,6 +60,7 @@ class GenerationTests(unittest.TestCase):
             self.assertEqual(config.model, "local-test-model")
             self.assertEqual(config.max_context_characters, 8000)
             self.assertTrue(config.verify_evidence)
+            self.assertEqual(config.verification_max_attempts, 2)
             self.assertEqual(config.max_repair_attempts, 1)
 
             with self.assertRaisesRegex(ValueError, "127.0.0.1"):
