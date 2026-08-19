@@ -89,6 +89,10 @@ como Bearer; chamadas do próprio servidor continuam disponíveis para a
 automação local. A interface em `/ui` abre diretamente em perguntas e buscas.
 O painel **Administração** concentra saúde do PostgreSQL, máquina, GPU,
 indexação e cobertura do corpus; ele exige `MFLAB_ADMIN_PASSWORD` no `.env`.
+Os limites de geração pertencem ao backend: a interface não fixa orçamento de
+contexto ou saída, e `generation.toml` controla o teto de evidências conforme a
+janela do modelo local. Respostas de excesso de contexto causam redução segura
+e nova tentativa, sem remover a proveniência das fontes.
 As classes `public` e `lab` são o teto padrão do processo, e cada requisição
 pode apenas restringir esse conjunto, nunca ampliá-lo.
 

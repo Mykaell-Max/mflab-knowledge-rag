@@ -33,6 +33,7 @@ from mflab_knowledge.embeddings import (
 from mflab_knowledge.normalize import RETRIEVABLE_ACCESS_CLASSES
 from mflab_knowledge.generation import (
     GenerationConfig,
+    GenerationContextTooLargeError,
     GenerationNotConfiguredError,
     OpenAICompatibleGenerator,
     load_generation_api_key,
@@ -59,6 +60,52 @@ CONTEXT_INSTRUCTIONS = (
     "If the sources are insufficient, say that the indexed "
     "evidence is insufficient instead of inventing an answer."
 )
+
+
+def _reduce_context_evidence(
+    context: dict[str, object],
+    *,
+    max_context_characters: int,
+) -> dict[str, object]:
+    """Return a smaller evidence package without changing source order."""
+
+    raw_sources = context.get("sources")
+    if not isinstance(raw_sources, list):
+        raise ValueError("pacote de contexto inválido")
+    sources: list[dict[str, object]] = []
+    used_characters = 0
+    for original in raw_sources:
+        if not isinstance(original, dict):
+            continue
+        original_text = str(original.get("text", ""))
+        remaining = max_context_characters - used_characters
+        if remaining <= 0:
+            break
+        text = original_text
+        if len(text) > remaining:
+            if sources:
+                break
+            text = text[:remaining]
+        source = dict(original)
+        source["source_id"] = f"S{len(sources) + 1}"
+        source["text"] = text
+        source["text_truncated"] = bool(
+            original.get("text_truncated")
+        ) or len(text) < len(original_text)
+        sources.append(source)
+        used_characters += len(text)
+
+    reduced = dict(context)
+    reduced.update(
+        {
+            "source_count": len(sources),
+            "context_characters": used_characters,
+            "max_context_characters": max_context_characters,
+            "truncated": True,
+            "sources": sources,
+        }
+    )
+    return reduced
 
 
 def _memory_status() -> dict[str, int | float] | None:
@@ -295,6 +342,9 @@ class RagApiService:
             "provider": "openai_compatible",
             "model": self.generation_config.model,
             "local_only": True,
+            "max_context_characters": (
+                self.generation_config.max_context_characters
+            ),
         }
 
     def repositories(
@@ -512,6 +562,15 @@ class RagApiService:
             raise GenerationNotConfiguredError(
                 "geração local não configurada; crie generation.toml"
             )
+        if max_context_characters < 1000 or max_context_characters > 100000:
+            raise ValueError(
+                "max_context_characters deve estar entre 1000 e 100000"
+            )
+        requested_context_limit = max_context_characters
+        effective_context_limit = min(
+            requested_context_limit,
+            self.generation_config.max_context_characters,
+        )
         context = self.context(
             query=query,
             mode=mode,
@@ -522,7 +581,7 @@ class RagApiService:
             allowed_access=allowed_access,
             max_per_path=max_per_path,
             include_duplicate_content=include_duplicate_content,
-            max_context_characters=max_context_characters,
+            max_context_characters=effective_context_limit,
         )
         raw_sources = context["sources"]
         assert isinstance(raw_sources, list)
@@ -552,16 +611,45 @@ class RagApiService:
                     "retrieved_count": context["retrieved_count"],
                     "source_count": 0,
                     "truncated": context["truncated"],
+                    "requested_max_context_characters": requested_context_limit,
+                    "max_context_characters": effective_context_limit,
+                    "generation_attempts": 0,
+                    "reduced_for_generation": False,
                 },
             }
         started = time.monotonic()
-        generated = self.generator.generate(
-            question=str(context["query"]),
-            instructions=str(context["instructions"]),
-            sources=raw_sources,
-            max_output_tokens=max_output_tokens,
-            temperature=temperature,
-        )
+        generation_attempts = 0
+        reduced_for_generation = False
+        while True:
+            raw_sources = context["sources"]
+            assert isinstance(raw_sources, list)
+            generation_attempts += 1
+            try:
+                generated = self.generator.generate(
+                    question=str(context["query"]),
+                    instructions=str(context["instructions"]),
+                    sources=raw_sources,
+                    max_output_tokens=max_output_tokens,
+                    temperature=temperature,
+                )
+                break
+            except GenerationContextTooLargeError:
+                current_size = int(context["context_characters"])
+                next_limit = max(1000, current_size // 2)
+                if generation_attempts >= 3 or next_limit >= current_size:
+                    raise
+                reduced_for_generation = True
+                self.log(
+                    "Gerador recusou o tamanho do contexto; reduzindo evidências "
+                    f"de {current_size} para até {next_limit} caracteres",
+                    "warning",
+                )
+                context = _reduce_context_evidence(
+                    context,
+                    max_context_characters=next_limit,
+                )
+        raw_sources = context["sources"]
+        assert isinstance(raw_sources, list)
         answer = str(generated["answer"])
         valid_source_ids = {
             str(source["source_id"])
@@ -629,6 +717,12 @@ class RagApiService:
                 "source_count": context["source_count"],
                 "context_characters": context["context_characters"],
                 "truncated": context["truncated"],
+                "requested_max_context_characters": requested_context_limit,
+                "max_context_characters": context.get(
+                    "max_context_characters", effective_context_limit
+                ),
+                "generation_attempts": generation_attempts,
+                "reduced_for_generation": reduced_for_generation,
             },
         }
 

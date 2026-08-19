@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import io
 import json
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
 from unittest import mock
 
@@ -56,6 +58,7 @@ class GenerationTests(unittest.TestCase):
                 "http://127.0.0.1:8000/v1/chat/completions",
             )
             self.assertEqual(config.model, "local-test-model")
+            self.assertEqual(config.max_context_characters, 8000)
 
             with self.assertRaisesRegex(ValueError, "127.0.0.1"):
                 generation.load_generation_config(
@@ -132,6 +135,36 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(result["answer"], "Resposta baseada em [S1].")
         self.assertEqual(result["model"], "served-model")
         self.assertNotIn("secret-never-returned", str(result))
+
+    def test_identifies_provider_context_limit_without_exposing_body(self) -> None:
+        config = generation.GenerationConfig(
+            path=Path("generation.toml"),
+            base_url="http://127.0.0.1:8000/v1",
+            model="local-test-model",
+        )
+
+        def opener(request: object, *, timeout: int) -> object:
+            del request, timeout
+            raise urllib.error.HTTPError(
+                config.endpoint,
+                400,
+                "Bad Request",
+                hdrs=None,
+                fp=io.BytesIO(
+                    b'{"error":{"message":"maximum context length exceeded"}}'
+                ),
+            )
+
+        generator = generation.OpenAICompatibleGenerator(config, opener=opener)
+        with self.assertRaisesRegex(
+            generation.GenerationContextTooLargeError,
+            "janela",
+        ):
+            generator.generate(
+                question="question",
+                instructions="instructions",
+                sources=[{"source_id": "S1", "text": "evidence"}],
+            )
 
 
 if __name__ == "__main__":

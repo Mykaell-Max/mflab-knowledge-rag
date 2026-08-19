@@ -169,9 +169,6 @@ async function submitAsk(event) {
     query: byId("ask-query").value.trim(),
     mode: "hybrid",
     limit: 10,
-    max_context_characters: 16000,
-    max_output_tokens: 900,
-    temperature: 0,
   };
   if (byId("ask-project").value) payload.project = byId("ask-project").value;
   if (byId("ask-branch").value) payload.branch = byId("ask-branch").value;

@@ -88,7 +88,9 @@ compatível com `POST /v1/chat/completions`, mas rejeita hosts que não sejam
 literalmente `127.0.0.1` ou `::1`, URLs com credenciais e redirecionamentos. Se o
 servidor local exigir chave, use `MFLAB_LLM_API_KEY` no `.env`; a chave nunca
 entra no TOML nem nas respostas. Depois de alterar a configuração, reinicie a
-API.
+API. `provider.max_context_characters` define o teto de evidência enviado ao
+modelo e possui padrão seguro de 8.000 caracteres; ele pode ser ajustado à
+janela efetiva do servidor sem alterar código ou interface.
 
 ## Endpoints
 
@@ -163,7 +165,11 @@ instrução não substitui isolamento ou ACL.
 Aceita os campos de `/context` e, opcionalmente, `max_output_tokens` (64 a
 8.192) e `temperature` (0 a 1). A recuperação e a ACL ocorrem antes de qualquer
 texto chegar ao gerador. Se nenhuma fonte for encontrada, o serviço se abstém
-sem chamar o modelo.
+sem chamar o modelo. O orçamento solicitado nunca ultrapassa
+`provider.max_context_characters`. Se um provedor OpenAI-compatible ainda
+recusar a janela, o backend reduz o pacote de evidências preservando sua ordem e
+IDs, e tenta novamente até duas vezes. Os campos `generation_attempts` e
+`reduced_for_generation` tornam esse comportamento observável na resposta.
 
 ```json
 {
@@ -244,6 +250,7 @@ model = "modelo-local"
 timeout_seconds = 180
 max_output_tokens = 1024
 temperature = 0.1
+max_context_characters = 8000
 ```
 
 Depois de criar ou alterar esse arquivo, reinicie a API. Comandos

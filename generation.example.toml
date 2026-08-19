@@ -7,3 +7,5 @@ model = "replace-with-the-model-served-locally"
 timeout_seconds = 180
 max_output_tokens = 1024
 temperature = 0.1
+# Limite de evidência textual enviado ao modelo; ajuste à janela do servidor.
+max_context_characters = 8000

@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.29.0**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.29.1**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -132,8 +132,7 @@ Ambiente do piloto:
 
 Serviços locais:
 
-- RAG API: `127.0.0.1:8765` na instalação validada; a versão 0.29.0 acrescenta
-  bind LAN opt-in ainda pendente de validação integrada na Morgoth;
+- RAG API: `0.0.0.0:8765` na instalação LAN validada;
 - vLLM: `127.0.0.1:8000`;
 - indexação: `mflab-knowledge-index.service` e timer associado;
 - API: `mflab-knowledge-api.service`;
@@ -260,17 +259,19 @@ retiradas da área principal e concentradas em **Administração**, protegida po
 `MFLAB_ADMIN_PASSWORD` e sessão `HttpOnly`. A chave técnica `MFLAB_API_KEY`
 permanece separada e protege os endpoints programáticos; ela não é pedida nem
 armazenada pela interface. O visual segue o site institucional: fundo claro,
-azul, bordas discretas e texto funcional, sem eyebrows ou slogans. A próxima
-ação é validar a versão 0.29.0 na Morgoth, configurar a senha local, reinstalar
-apenas a unidade da API com bind LAN opt-in e confirmar:
+azul, bordas discretas e texto funcional, sem eyebrows ou slogans. A implantação
+LAN, a senha administrativa, a busca e o painel privado foram validados na
+Morgoth. A próxima ação é validar a correção 0.29.1 para perguntas pela
+interface. Um diagnóstico direto confirmou que o HTTP 400 vinha de excesso de
+contexto: o pedido mínimo e um pacote de 4.000 caracteres passaram no mesmo
+vLLM. A correção transfere os limites da interface para `generation.toml`,
+aplica teto configurável no backend e reduz as evidências automaticamente
+quando o provedor reporta uma janela excedida. Confirmar:
 
-1. saúde da API, banco, modelo e indexador;
-2. pergunta e busca sem distribuição da chave técnica da API;
-3. filtros dinâmicos de projeto e branch;
-4. respostas citadas e apresentação das fontes;
-5. login e encerramento da sessão administrativa;
-6. máquina, GPU, PostgreSQL, embeddings e última indexação no painel privado;
-7. layout responsivo em outros computadores do laboratório.
+1. pergunta real na interface sem HTTP 400;
+2. resposta citada e apresentação das fontes;
+3. limite efetivo e número de tentativas reportados pela API;
+4. layout responsivo em outros computadores do laboratório.
 
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam

@@ -12,6 +12,7 @@ from urllib.parse import urlsplit
 
 GENERATION_CONFIG_SCHEMA_VERSION = "0.1"
 MAX_GENERATION_RESPONSE_BYTES = 4 * 1024 * 1024
+MAX_GENERATION_ERROR_BYTES = 64 * 1024
 
 
 class GenerationNotConfiguredError(RuntimeError):
@@ -22,6 +23,10 @@ class GenerationUnavailableError(RuntimeError):
     """Raised when the configured local generation server cannot answer."""
 
 
+class GenerationContextTooLargeError(GenerationUnavailableError):
+    """Raised when the local provider rejects an oversized prompt."""
+
+
 @dataclass(frozen=True)
 class GenerationConfig:
     path: Path
@@ -30,6 +35,7 @@ class GenerationConfig:
     timeout_seconds: int = 180
     max_output_tokens: int = 1024
     temperature: float = 0.1
+    max_context_characters: int = 8000
 
     @property
     def endpoint(self) -> str:
@@ -84,6 +90,7 @@ def load_generation_config(
         "timeout_seconds",
         "max_output_tokens",
         "temperature",
+        "max_context_characters",
     }
     unknown_provider = set(provider) - allowed_provider
     if unknown_provider:
@@ -102,6 +109,7 @@ def load_generation_config(
     timeout_seconds = provider.get("timeout_seconds", 180)
     max_output_tokens = provider.get("max_output_tokens", 1024)
     temperature = provider.get("temperature", 0.1)
+    max_context_characters = provider.get("max_context_characters", 8000)
     if not isinstance(timeout_seconds, int) or not 1 <= timeout_seconds <= 900:
         raise ValueError("provider.timeout_seconds deve estar entre 1 e 900")
     if not isinstance(max_output_tokens, int) or not 64 <= max_output_tokens <= 8192:
@@ -112,6 +120,14 @@ def load_generation_config(
         or not 0 <= float(temperature) <= 1
     ):
         raise ValueError("provider.temperature deve estar entre 0 e 1")
+    if (
+        not isinstance(max_context_characters, int)
+        or isinstance(max_context_characters, bool)
+        or not 1000 <= max_context_characters <= 100000
+    ):
+        raise ValueError(
+            "provider.max_context_characters deve estar entre 1000 e 100000"
+        )
     return GenerationConfig(
         path=resolved,
         base_url=_validate_local_base_url(base_url),
@@ -119,7 +135,29 @@ def load_generation_config(
         timeout_seconds=timeout_seconds,
         max_output_tokens=max_output_tokens,
         temperature=float(temperature),
+        max_context_characters=max_context_characters,
     )
+
+
+def _is_context_length_error(error: urllib.error.HTTPError) -> bool:
+    if error.code not in {400, 413, 422}:
+        return False
+    try:
+        raw = error.read(MAX_GENERATION_ERROR_BYTES + 1)
+    except OSError:
+        return False
+    if len(raw) > MAX_GENERATION_ERROR_BYTES:
+        return False
+    text = raw.decode("utf-8", errors="replace").casefold()
+    markers = (
+        "maximum context length",
+        "context length",
+        "max_model_len",
+        "too many tokens",
+        "input is too long",
+        "prompt is too long",
+    )
+    return any(marker in text for marker in markers)
 
 
 def load_generation_api_key(env_file: Path) -> str | None:
@@ -225,6 +263,10 @@ class OpenAICompatibleGenerator:
             with response:
                 raw = response.read(MAX_GENERATION_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
+            if _is_context_length_error(exc):
+                raise GenerationContextTooLargeError(
+                    "contexto excedeu a janela do gerador local"
+                ) from exc
             raise GenerationUnavailableError(
                 f"servidor local de geração respondeu HTTP {exc.code}"
             ) from exc

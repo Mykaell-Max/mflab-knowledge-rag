@@ -5,7 +5,10 @@ from pathlib import Path
 from unittest import mock
 
 from mflab_knowledge import api
-from mflab_knowledge.generation import GenerationConfig
+from mflab_knowledge.generation import (
+    GenerationConfig,
+    GenerationContextTooLargeError,
+)
 
 
 class _Embedder:
@@ -19,6 +22,19 @@ class _Generator:
 
     def generate(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
+        return {
+            "answer": self.answer,
+            "model": "local-test-model",
+            "finish_reason": "stop",
+            "usage": {"total_tokens": 20},
+        }
+
+
+class _RetryGenerator(_Generator):
+    def generate(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        if len(self.calls) == 1:
+            raise GenerationContextTooLargeError("context too large")
         return {
             "answer": self.answer,
             "model": "local-test-model",
@@ -429,6 +445,63 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["citation_coverage"]["units"], 2)
         self.assertEqual(result["citation_coverage"]["cited_units"], 1)
         self.assertEqual(result["citation_coverage"]["coverage"], 0.5)
+
+    def test_ask_caps_and_reduces_context_when_provider_rejects_it(self) -> None:
+        generator = _RetryGenerator()
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_context_characters=4000,
+            ),
+        )
+        sources = [
+            {
+                "source_id": f"S{index}",
+                "project": "Solver",
+                "selected_occurrence": {
+                    "branch": "trunk",
+                    "commit_sha": "a" * 40,
+                },
+                "path": f"src/{index}.cpp",
+                "text": character * 2000,
+            }
+            for index, character in ((1, "A"), (2, "B"))
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "explain",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 4000,
+                "max_context_characters": 4000,
+                "truncated": False,
+                "sources": sources,
+            },
+        ) as context:
+            result = service.ask(
+                query="explain",
+                max_context_characters=16000,
+            )
+
+        self.assertEqual(
+            context.call_args.kwargs["max_context_characters"], 4000
+        )
+        self.assertEqual(len(generator.calls), 2)
+        self.assertEqual(len(generator.calls[1]["sources"]), 1)
+        self.assertEqual(result["context"]["generation_attempts"], 2)
+        self.assertTrue(result["context"]["reduced_for_generation"])
+        self.assertEqual(result["context"]["context_characters"], 2000)
+        self.assertEqual(
+            result["context"]["requested_max_context_characters"], 16000
+        )
 
 
 if __name__ == "__main__":
