@@ -1,16 +1,11 @@
 "use strict";
 
 const state = {
-  key: sessionStorage.getItem("mflab-api-key") || "",
   repositories: [],
+  adminAuthenticated: false,
 };
 
-const views = {
-  overview: "Visão geral",
-  search: "Buscar",
-  ask: "Perguntar",
-};
-
+const views = new Set(["ask", "search", "admin"]);
 const byId = (id) => document.getElementById(id);
 const formatNumber = (value) => new Intl.NumberFormat("pt-BR").format(Number(value || 0));
 const formatPercent = (value) => `${(Number(value || 0) * 100).toFixed(1).replace(".0", "")}%`;
@@ -25,36 +20,45 @@ function formatStatus(value) {
   return statusLabels[value] || value || "Não disponível";
 }
 
-function setComponentState(id, text, healthy = true) {
-  const target = byId(id);
-  target.textContent = text;
-  const dot = target.closest("div")?.querySelector(".service-dot");
-  if (dot) dot.classList.toggle("ok", healthy);
+function formatBytes(value) {
+  const bytes = Number(value);
+  if (!Number.isFinite(bytes) || bytes < 0) return "Não disponível";
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let selected = bytes;
+  let index = 0;
+  while (selected >= 1024 && index < units.length - 1) {
+    selected /= 1024;
+    index += 1;
+  }
+  const digits = index > 2 ? 1 : 0;
+  return `${selected.toFixed(digits)} ${units[index]}`;
 }
 
-function apiHeaders(hasBody = false) {
-  const headers = {};
-  if (hasBody) headers["Content-Type"] = "application/json";
-  if (state.key) headers.Authorization = `Bearer ${state.key}`;
-  return headers;
+function formatDuration(seconds) {
+  const value = Math.max(0, Number(seconds || 0));
+  if (value < 60) return `${Math.round(value)} s`;
+  if (value < 3600) return `${Math.floor(value / 60)} min`;
+  if (value < 86400) return `${Math.floor(value / 3600)} h ${Math.floor((value % 3600) / 60)} min`;
+  return `${Math.floor(value / 86400)} d ${Math.floor((value % 86400) / 3600)} h`;
 }
 
 async function api(path, options = {}) {
+  const headers = { ...(options.headers || {}) };
+  if (options.body) headers["Content-Type"] = "application/json";
   const response = await fetch(path, {
     ...options,
-    headers: { ...apiHeaders(Boolean(options.body)), ...(options.headers || {}) },
+    credentials: "same-origin",
+    headers,
   });
-  if (response.status === 401) {
-    showAuth();
-    throw new Error("A chave de acesso é necessária ou não foi aceita.");
-  }
   if (!response.ok) {
     let message = `Falha HTTP ${response.status}`;
     try {
       const body = await response.json();
       if (body.detail) message = body.detail;
     } catch (_) { /* resposta sem JSON */ }
-    throw new Error(message);
+    const error = new Error(message);
+    error.status = response.status;
+    throw error;
   }
   return response.json();
 }
@@ -73,55 +77,18 @@ function showToast(message) {
   window.setTimeout(() => toast.classList.add("hidden"), 4500);
 }
 
-function showAuth(message = "") {
-  byId("auth-error").textContent = message;
-  byId("auth-overlay").classList.remove("hidden");
-  window.setTimeout(() => byId("api-key").focus(), 0);
-}
-
-function hideAuth() {
-  byId("auth-overlay").classList.add("hidden");
-  byId("auth-error").textContent = "";
-  byId("api-key").value = "";
-}
-
 function switchView(name) {
-  if (!views[name]) return;
+  if (!views.has(name)) return;
   document.querySelectorAll(".view").forEach((view) => view.classList.remove("active"));
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
   byId(`view-${name}`).classList.add("active");
   document.querySelector(`[data-view="${name}"]`).classList.add("active");
+  window.history.replaceState(null, "", `#${name}`);
   window.scrollTo({ top: 0, behavior: "smooth" });
+  if (name === "admin") loadAdministration({ promptOnUnauthorized: true });
 }
 
-function repositoryRow(repository) {
-  const row = element("article", "repository-row");
-  const identity = element("div");
-  identity.append(element("strong", "", repository.project));
-  identity.append(element("small", "", repository.repository_id));
-  row.append(identity);
-
-  const metrics = [
-    ["Branches", repository.branches],
-    ["Chunks", formatNumber(repository.chunks)],
-    ["Vetores", formatPercent(repository.embedding_coverage)],
-  ];
-  metrics.forEach(([label, value]) => {
-    const cell = element("div", "repository-stat");
-    cell.append(element("strong", "", String(value)));
-    cell.append(element("small", "", label));
-    row.append(cell);
-  });
-  return row;
-}
-
-function renderRepositories(repositories) {
-  const list = byId("repository-list");
-  list.classList.remove("loading-block");
-  list.replaceChildren();
-  repositories.forEach((repository) => list.append(repositoryRow(repository)));
-  if (!repositories.length) list.append(element("p", "", "Nenhum repositório visível."));
-
+function populateFilters(repositories) {
   const projects = [...new Set(repositories.map((repository) => repository.project))].sort();
   ["search-project", "ask-project"].forEach((id) => {
     const select = byId(id);
@@ -141,64 +108,10 @@ function updateBranches(projectSelectId, branchSelectId) {
   (repository?.canonical_branches || []).forEach((branch) => select.add(new Option(branch, branch)));
 }
 
-function renderRun(indexer) {
-  const target = byId("run-summary");
-  target.classList.remove("loading-block");
-  target.replaceChildren();
-  if (!indexer) {
-    target.append(element("p", "", "Nenhuma execução registrada."));
-    return;
-  }
-  const status = element("div", "run-status");
-  status.append(element("span", "pulse"));
-  status.append(element("strong", "", formatStatus(indexer.status)));
-  target.append(status);
-
-  const details = element("div", "run-detail");
-  const entries = [
-    ["Run ID", indexer.run_id || "—"],
-    ["Etapa", indexer.stage || indexer.last_event?.message || "Concluída"],
-    ["Duração", indexer.duration_seconds == null ? "—" : `${indexer.duration_seconds}s`],
-    ["Atualizado", indexer.updated_at ? new Date(indexer.updated_at).toLocaleString("pt-BR") : "—"],
-  ];
-  entries.forEach(([label, value]) => {
-    const row = element("div");
-    row.append(element("span", "", label));
-    row.append(element("span", "", String(value)));
-    details.append(row);
-  });
-  target.append(details);
-  if (indexer.progress?.percent != null) {
-    const track = element("div", "progress-track");
-    const bar = element("div", "progress-bar");
-    bar.style.width = `${Math.max(0, Math.min(100, indexer.progress.percent))}%`;
-    track.append(bar);
-    target.append(track);
-  }
-}
-
-async function refreshOverview() {
-  const [health, status, catalog] = await Promise.all([
-    api("/health"),
-    api("/status"),
-    api("/repositories"),
-  ]);
+async function loadCatalog() {
+  const catalog = await api("/ui-api/repositories");
   state.repositories = catalog.repositories || [];
-  byId("metric-repositories").textContent = formatNumber(health.repositories);
-  byId("metric-chunks").textContent = formatNumber(health.chunks);
-  const chunks = state.repositories.reduce((sum, item) => sum + Number(item.chunks || 0), 0);
-  const embedded = state.repositories.reduce((sum, item) => sum + Number(item.embedded_chunks || 0), 0);
-  byId("metric-coverage").textContent = chunks ? formatPercent(embedded / chunks) : "—";
-  byId("metric-indexer").textContent = formatStatus(status.indexer?.status);
-  byId("metric-indexer-detail").textContent = status.indexer?.run_id || "sem execução registrada";
-  setComponentState("database-state", health.database === "ok" ? "Conectado" : "Indisponível", health.database === "ok");
-  setComponentState("embedding-state", status.search?.model_loaded ? "Modelo carregado" : "Carregamento sob demanda");
-  setComponentState("generation-state", status.generation?.configured ? "Configurado" : "Não configurado", Boolean(status.generation?.configured));
-  setComponentState("authentication-state", status.authentication?.configured ? "Chave de rede ativa" : "Somente local");
-  byId("health-badge").textContent = "Operacional";
-  byId("health-badge").className = "status-badge ok";
-  renderRepositories(state.repositories);
-  renderRun(status.indexer);
+  populateFilters(state.repositories);
 }
 
 function resultCard(result, sourceId = "") {
@@ -219,8 +132,10 @@ async function submitSearch(event) {
   event.preventDefault();
   const feedback = byId("search-feedback");
   const results = byId("search-results");
+  const submit = event.submitter;
   feedback.textContent = "Buscando evidências…";
   results.replaceChildren();
+  if (submit) submit.disabled = true;
   const payload = {
     query: byId("search-query").value.trim(),
     mode: byId("search-mode").value,
@@ -229,11 +144,13 @@ async function submitSearch(event) {
   if (byId("search-project").value) payload.project = byId("search-project").value;
   if (byId("search-branch").value) payload.branch = byId("search-branch").value;
   try {
-    const response = await api("/search", { method: "POST", body: JSON.stringify(payload) });
+    const response = await api("/ui-api/search", { method: "POST", body: JSON.stringify(payload) });
     feedback.textContent = `${response.count} trechos encontrados.`;
     response.results.forEach((result) => results.append(resultCard(result)));
   } catch (error) {
     feedback.textContent = error.message;
+  } finally {
+    if (submit) submit.disabled = false;
   }
 }
 
@@ -242,10 +159,12 @@ async function submitAsk(event) {
   const feedback = byId("ask-feedback");
   const card = byId("answer-card");
   const sources = byId("answer-sources");
+  const submit = event.submitter;
   feedback.textContent = "Recuperando evidências e elaborando a resposta…";
   card.classList.add("hidden");
   card.replaceChildren();
   sources.replaceChildren();
+  if (submit) submit.disabled = true;
   const payload = {
     query: byId("ask-query").value.trim(),
     mode: "hybrid",
@@ -257,7 +176,7 @@ async function submitAsk(event) {
   if (byId("ask-project").value) payload.project = byId("ask-project").value;
   if (byId("ask-branch").value) payload.branch = byId("ask-branch").value;
   try {
-    const response = await api("/ask", { method: "POST", body: JSON.stringify(payload) });
+    const response = await api("/ui-api/ask", { method: "POST", body: JSON.stringify(payload) });
     feedback.textContent = response.abstained ? "Não há evidência indexada suficiente." : "Resposta concluída.";
     card.append(element("h3", "", response.abstained ? "Evidência insuficiente" : "Resposta"));
     card.append(element("div", "answer-text", response.answer || "A base indexada não sustenta uma resposta."));
@@ -270,41 +189,214 @@ async function submitAsk(event) {
     (response.sources || []).forEach((source) => sources.append(resultCard(source, source.source_id)));
   } catch (error) {
     feedback.textContent = error.message;
+  } finally {
+    if (submit) submit.disabled = false;
   }
 }
 
-async function bootstrap() {
+function showAdminAuth(message = "") {
+  byId("admin-auth-error").textContent = message;
+  byId("admin-auth-overlay").classList.remove("hidden");
+  window.setTimeout(() => byId("admin-password").focus(), 0);
+}
+
+function hideAdminAuth() {
+  byId("admin-auth-overlay").classList.add("hidden");
+  byId("admin-auth-error").textContent = "";
+  byId("admin-password").value = "";
+}
+
+function showAdminLocked() {
+  state.adminAuthenticated = false;
+  byId("admin-locked").classList.remove("hidden");
+  byId("admin-content").classList.add("hidden");
+  byId("admin-actions").classList.add("hidden");
+}
+
+function showAdminContent() {
+  state.adminAuthenticated = true;
+  byId("admin-locked").classList.add("hidden");
+  byId("admin-content").classList.remove("hidden");
+  byId("admin-actions").classList.remove("hidden");
+}
+
+function statusCard(label, value, detail, tone = "ok") {
+  const card = element("article", `status-card ${tone}`);
+  card.append(element("span", "", label));
+  card.append(element("strong", "", value));
+  card.append(element("small", "", detail));
+  return card;
+}
+
+function renderServices(data) {
+  const target = byId("admin-service-grid");
+  target.replaceChildren();
+  const repositoryChunks = (data.repositories || []).reduce((sum, item) => sum + Number(item.chunks || 0), 0);
+  const embeddedChunks = (data.repositories || []).reduce((sum, item) => sum + Number(item.embedded_chunks || 0), 0);
+  const coverage = repositoryChunks ? embeddedChunks / repositoryChunks : 0;
+  const databaseOk = data.database?.status === "ok";
+  const indexStatus = data.indexer?.status || "Não registrada";
+  const indexTone = data.indexer?.status === "failed" ? "error" : (data.indexer?.status === "warning" ? "warning" : "ok");
+  target.append(statusCard("API RAG", data.service?.status === "ok" ? "Disponível" : "Indisponível", `versão ${data.service?.version || "—"}`, data.service?.status === "ok" ? "ok" : "error"));
+  target.append(statusCard("PostgreSQL", databaseOk ? "Conectado" : "Indisponível", `${formatNumber(data.database?.chunks)} chunks`, databaseOk ? "ok" : "error"));
+  target.append(statusCard("Embeddings", formatPercent(coverage), `${formatNumber(embeddedChunks)} de ${formatNumber(repositoryChunks)} chunks`, coverage >= 0.99 ? "ok" : "warning"));
+  target.append(statusCard("Gerador local", data.generation?.configured ? "Configurado" : "Não configurado", data.generation?.model || "sem modelo informado", data.generation?.configured ? "ok" : "warning"));
+  target.append(statusCard("Indexação automática", formatStatus(indexStatus), data.indexer?.run_id || "sem execução registrada", indexTone));
+  target.append(statusCard("Processo da API", `PID ${data.service?.process_id || "—"}`, `ativo há ${formatDuration(data.service?.uptime_seconds)}`, "ok"));
+}
+
+function appendDetail(target, label, value) {
+  const row = element("div", "detail-row");
+  row.append(element("span", "", label));
+  row.append(element("span", "", value));
+  target.append(row);
+}
+
+function renderMachine(machine) {
+  const target = byId("machine-details");
+  target.classList.remove("loading-block");
+  target.replaceChildren();
+  appendDetail(target, "Host", machine.hostname || "Não disponível");
+  appendDetail(target, "Sistema", [machine.operating_system, machine.release, machine.architecture].filter(Boolean).join(" · ") || "Não disponível");
+  appendDetail(target, "Python", machine.python || "Não disponível");
+  appendDetail(target, "Processadores lógicos", String(machine.logical_cpus ?? "Não disponível"));
+  const memory = machine.memory;
+  appendDetail(target, "Memória", memory ? `${formatBytes(memory.used_bytes)} de ${formatBytes(memory.total_bytes)} (${memory.used_percent}%)` : "Não disponível");
+  const disk = machine.disk;
+  appendDetail(target, "Armazenamento", disk ? `${formatBytes(disk.used_bytes)} de ${formatBytes(disk.total_bytes)} (${disk.used_percent}%)` : "Não disponível");
+  const gpus = machine.gpus || [];
+  appendDetail(target, "GPU", gpus.length ? gpus.map((gpu) => `${gpu.name}: ${formatNumber(gpu.memory_used_mib)} de ${formatNumber(gpu.memory_total_mib)} MiB, ${gpu.utilization_percent}%, ${gpu.temperature_c} °C`).join("; ") : "Não detectada");
+}
+
+function renderRun(indexer) {
+  const target = byId("run-summary");
+  target.classList.remove("loading-block");
+  target.replaceChildren();
+  if (!indexer) {
+    target.append(element("p", "", "Nenhuma execução registrada."));
+    return;
+  }
+  const tone = indexer.status === "failed" ? "error" : (indexer.status === "warning" ? "warning" : "");
+  const status = element("div", "run-status");
+  status.append(element("span", `pulse ${tone}`));
+  status.append(element("strong", "", formatStatus(indexer.status)));
+  target.append(status);
+  const details = element("div", "run-detail");
+  [
+    ["Run ID", indexer.run_id || "—"],
+    ["Etapa", indexer.stage || indexer.last_event?.message || "Concluída"],
+    ["Duração", indexer.duration_seconds == null ? "—" : formatDuration(indexer.duration_seconds)],
+    ["Atualizado", indexer.updated_at ? new Date(indexer.updated_at).toLocaleString("pt-BR") : "—"],
+  ].forEach(([label, value]) => {
+    const row = element("div");
+    row.append(element("span", "", label));
+    row.append(element("span", "", String(value)));
+    details.append(row);
+  });
+  target.append(details);
+  if (indexer.progress?.percent != null) {
+    const track = element("div", "progress-track");
+    const bar = element("div", "progress-bar");
+    bar.style.width = `${Math.max(0, Math.min(100, indexer.progress.percent))}%`;
+    track.append(bar);
+    target.append(track);
+  }
+}
+
+function renderAdminRepositories(repositories) {
+  const target = byId("admin-repository-list");
+  target.classList.remove("loading-block");
+  target.replaceChildren();
+  repositories.forEach((repository) => {
+    const row = element("article", "repository-row");
+    const identity = element("div");
+    identity.append(element("strong", "", repository.project));
+    identity.append(element("small", "", repository.repository_id));
+    row.append(identity);
+    [
+      ["Branches", repository.branches],
+      ["Documentos", formatNumber(repository.documents)],
+      ["Chunks", formatNumber(repository.chunks)],
+      ["Vetores", formatPercent(repository.embedding_coverage)],
+    ].forEach(([label, value]) => {
+      const cell = element("div", "repository-stat");
+      cell.append(element("strong", "", String(value)));
+      cell.append(element("small", "", label));
+      row.append(cell);
+    });
+    target.append(row);
+  });
+  if (!repositories.length) target.append(element("p", "", "Nenhum repositório disponível."));
+}
+
+function renderAdministration(data) {
+  showAdminContent();
+  renderServices(data);
+  renderMachine(data.machine || {});
+  renderRun(data.indexer);
+  renderAdminRepositories(data.repositories || []);
+}
+
+async function loadAdministration({ promptOnUnauthorized = false } = {}) {
   try {
-    await refreshOverview();
-    hideAuth();
+    const data = await api("/ui-api/admin/status");
+    renderAdministration(data);
   } catch (error) {
-    byId("health-badge").textContent = "Acesso necessário";
-    byId("health-badge").className = "status-badge pending";
-    if (String(error.message).includes("chave")) showAuth(error.message);
-    else showToast(error.message);
+    if (error.status === 401) {
+      showAdminLocked();
+      if (promptOnUnauthorized) showAdminAuth();
+      return;
+    }
+    showAdminLocked();
+    showToast(error.message);
+  }
+}
+
+async function submitAdminLogin(event) {
+  event.preventDefault();
+  const submit = event.submitter;
+  if (submit) submit.disabled = true;
+  try {
+    await api("/ui-api/admin/session", {
+      method: "POST",
+      body: JSON.stringify({ password: byId("admin-password").value }),
+    });
+    hideAdminAuth();
+    await loadAdministration();
+  } catch (error) {
+    byId("admin-auth-error").textContent = error.message;
+  } finally {
+    if (submit) submit.disabled = false;
+  }
+}
+
+async function logoutAdministration() {
+  try {
+    await api("/ui-api/admin/session", { method: "DELETE" });
+  } catch (_) { /* a sessão local será encerrada mesmo sem resposta */ }
+  showAdminLocked();
+  showToast("Sessão administrativa encerrada.");
+}
+
+async function bootstrap() {
+  const requestedView = window.location.hash.slice(1);
+  if (views.has(requestedView)) switchView(requestedView);
+  try {
+    await loadCatalog();
+  } catch (error) {
+    showToast(`Não foi possível carregar os projetos: ${error.message}`);
   }
 }
 
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
-byId("refresh-button").addEventListener("click", () => refreshOverview().catch((error) => showToast(error.message)));
 byId("search-project").addEventListener("change", () => updateBranches("search-project", "search-branch"));
 byId("ask-project").addEventListener("change", () => updateBranches("ask-project", "ask-branch"));
 byId("search-form").addEventListener("submit", submitSearch);
 byId("ask-form").addEventListener("submit", submitAsk);
-byId("auth-button").addEventListener("click", () => showAuth());
-byId("auth-form").addEventListener("submit", async (event) => {
-  event.preventDefault();
-  state.key = byId("api-key").value.trim();
-  try {
-    await api("/status");
-    sessionStorage.setItem("mflab-api-key", state.key);
-    hideAuth();
-    await refreshOverview();
-  } catch (error) {
-    state.key = "";
-    sessionStorage.removeItem("mflab-api-key");
-    showAuth(error.message);
-  }
-});
+byId("admin-login-button").addEventListener("click", () => showAdminAuth());
+byId("admin-auth-form").addEventListener("submit", submitAdminLogin);
+byId("admin-auth-cancel").addEventListener("click", hideAdminAuth);
+byId("admin-refresh").addEventListener("click", () => loadAdministration().catch((error) => showToast(error.message)));
+byId("admin-logout").addEventListener("click", logoutAdministration);
 
 bootstrap();

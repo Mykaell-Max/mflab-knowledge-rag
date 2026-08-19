@@ -107,6 +107,15 @@ class ApiServiceTests(unittest.TestCase):
             )
         )
 
+    def test_repository_summary_can_be_narrowed_for_the_web_interface(self) -> None:
+        service = api.RagApiService(self.settings())
+        with mock.patch.object(api, "repository_status", return_value=[]) as status:
+            service.repositories(allowed_access={"public"})
+
+        self.assertEqual(status.call_args.kwargs["allowed_access"], {"public"})
+        with self.assertRaisesRegex(ValueError, "não liberada"):
+            service.repositories(allowed_access={"restricted"})
+
     def test_non_loopback_host_is_rejected_before_importing_server(self) -> None:
         with self.assertRaisesRegex(ValueError, "exige MFLAB_API_KEY"):
             api.run_api(self.settings(), host="0.0.0.0")
@@ -157,6 +166,54 @@ class ApiServiceTests(unittest.TestCase):
             api_key=secret,
         )
         self.assertNotIn(secret, repr(settings))
+
+    def test_admin_password_is_not_exposed_by_settings_repr(self) -> None:
+        secret = "admin-password-never-printed"
+        settings = api.ApiSettings(
+            database_url="postgresql:///test",
+            admin_password=secret,
+        )
+        self.assertNotIn(secret, repr(settings))
+
+    def test_administration_status_survives_unavailable_backends(self) -> None:
+        service = api.RagApiService(
+            api.ApiSettings(
+                database_url="postgresql:///test",
+                admin_password="strong-local-password",
+            )
+        )
+        with mock.patch.object(
+            service,
+            "health",
+            return_value={
+                "status": "unavailable",
+                "version": "test",
+                "database": "unavailable",
+            },
+        ):
+            with mock.patch.object(
+                api,
+                "embedding_status",
+                side_effect=RuntimeError("database unavailable"),
+            ):
+                with mock.patch.object(
+                    service,
+                    "repositories",
+                    side_effect=RuntimeError("database unavailable"),
+                ):
+                    with mock.patch.object(api, "read_last_run", return_value=None):
+                        with mock.patch.object(
+                            api,
+                            "_machine_status",
+                            return_value={"hostname": "test-host"},
+                        ):
+                            result = service.administration_status()
+
+        self.assertEqual(result["service"]["status"], "unavailable")
+        self.assertEqual(result["database"]["status"], "unavailable")
+        self.assertEqual(result["embeddings"]["status"], "unavailable")
+        self.assertEqual(result["repositories"], [])
+        self.assertEqual(result["machine"]["hostname"], "test-host")
 
     def test_context_assigns_source_ids_and_obeys_budget(self) -> None:
         service = api.RagApiService(self.settings())

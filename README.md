@@ -58,7 +58,9 @@ O inventário inicial não instala bibliotecas e não precisa acessar a rede.
 Para revisar somente o visual da interface fora do servidor, sem banco,
 modelos, GitLab ou credenciais, execute `python scripts/preview-web-ui.py
 --open`. A prévia usa dados genéricos em memória, escuta apenas em
-`127.0.0.1:8766` e não representa o conteúdo científico real.
+`127.0.0.1:8766` e não representa o conteúdo científico real. A senha padrão do
+painel administrativo da prévia é `preview-admin`; ela pode ser substituída com
+`--admin-password`.
 
 ## API RAG local
 
@@ -89,10 +91,13 @@ configurado. O contrato completo está em
 [`docs/api.md`](docs/api.md).
 
 Sem uma `MFLAB_API_KEY` forte, o comando recusa endereços que não sejam
-loopback. Em acesso direto pela LAN, a API exige a chave como Bearer; chamadas
-do próprio servidor continuam disponíveis para a automação local. A interface
-mantém a chave apenas na sessão do navegador. As classes `public` e `lab` são o teto padrão do processo, e cada
-requisição pode apenas restringir esse conjunto, nunca ampliá-lo.
+loopback. Em acesso direto pela LAN, os endpoints programáticos exigem a chave
+como Bearer; chamadas do próprio servidor continuam disponíveis para a
+automação local. A interface em `/ui` abre diretamente em perguntas e buscas.
+O painel **Administração** concentra saúde do PostgreSQL, máquina, GPU,
+indexação e cobertura do corpus; ele exige `MFLAB_ADMIN_PASSWORD` no `.env`.
+As classes `public` e `lab` são o teto padrão do processo, e cada requisição
+pode apenas restringir esse conjunto, nunca ampliá-lo.
 
 Depois da validação em primeiro plano, instale a API como serviço permanente:
 

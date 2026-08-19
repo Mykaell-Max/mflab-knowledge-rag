@@ -104,8 +104,13 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertIn('viewBox="0 0 64 50"', logo)
         self.assertNotIn("eyebrow", html.casefold())
         self.assertNotIn("uma única superfície", html.casefold())
-        self.assertIn("sessionStorage", javascript)
-        self.assertIn('api("/repositories")', javascript)
+        self.assertIn("Perguntar à base do MFLab", html)
+        self.assertIn("Administração", html)
+        self.assertNotIn("Operacional", html)
+        self.assertNotIn("sessionStorage", javascript)
+        self.assertIn('api("/ui-api/repositories")', javascript)
+        self.assertIn('api("/ui-api/admin/status")', javascript)
+        self.assertIn("credentials: \"same-origin\"", javascript)
         self.assertIn("--accent", css)
         for forbidden in ("mfsim-ng", "mfsim-cmake", "/home/max"):
             self.assertNotIn(forbidden, html.casefold())
@@ -121,6 +126,26 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertNotIn("0.0.0.0", preview)
         for forbidden in ("mfsim-ng", "mfsim-cmake", "/home/max"):
             self.assertNotIn(forbidden, preview.casefold())
+
+    def test_private_administration_uses_server_side_session_controls(self) -> None:
+        root = Path(__file__).resolve().parents[1]
+        transport = (root / "src/mflab_knowledge/api_http.py").read_text(
+            encoding="utf-8"
+        )
+        javascript = (root / "src/mflab_knowledge/web/app.js").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('"/ui-api/search"', transport)
+        self.assertIn('"/ui-api/ask"', transport)
+        self.assertIn('"/ui-api/admin/status"', transport)
+        self.assertIn("httponly=True", transport)
+        self.assertIn('samesite="strict"', transport)
+        self.assertIn("maximum_failures = 5", transport)
+        self.assertIn('{"public", "lab"}', transport)
+        self.assertNotIn("MFLAB_ADMIN_PASSWORD", javascript)
+        self.assertNotIn("localStorage", javascript)
+        self.assertNotIn("sessionStorage", javascript)
 
     def test_llm_systemd_assets_are_loopback_only_and_generic(self) -> None:
         root = Path(__file__).resolve().parents[1]

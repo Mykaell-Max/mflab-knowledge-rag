@@ -26,98 +26,50 @@
         </div>
 
         <nav class="nav-list" aria-label="Navegação principal">
-          <button class="nav-item active" data-view="overview" type="button">Visão geral</button>
-          <button class="nav-item" data-view="search" type="button">Busca</button>
-          <button class="nav-item" data-view="ask" type="button">Perguntar</button>
+          <button class="nav-item active" data-view="ask" type="button">Perguntar</button>
+          <button class="nav-item" data-view="search" type="button">Buscar</button>
+          <button class="nav-item" data-view="admin" type="button">Administração</button>
         </nav>
-
-        <div class="header-actions">
-          <span id="health-badge" class="status-badge pending">Verificando</span>
-          <button id="auth-button" class="button secondary compact" type="button">Acesso</button>
-        </div>
       </div>
     </header>
 
     <main id="main-content" class="page-container" tabindex="-1">
-      <section id="view-overview" class="view active">
-        <header class="page-header">
+      <section id="view-ask" class="view active">
+        <header class="page-header user-page-header">
           <div>
-            <h1>Visão geral</h1>
-            <p>Estado da API, da indexação e dos repositórios disponíveis para consulta.</p>
+            <h1>Perguntar à base do MFLab</h1>
+            <p>Receba uma resposta baseada nos repositórios indexados e confira as fontes utilizadas.</p>
           </div>
-          <button id="refresh-button" class="button secondary" type="button">Atualizar dados</button>
         </header>
 
-        <div class="metric-grid" aria-label="Métricas do serviço">
-          <article class="metric-card">
-            <span>Repositórios</span>
-            <strong id="metric-repositories">—</strong>
-            <small>fontes indexadas</small>
-          </article>
-          <article class="metric-card">
-            <span>Chunks</span>
-            <strong id="metric-chunks">—</strong>
-            <small>trechos consultáveis</small>
-          </article>
-          <article class="metric-card">
-            <span>Cobertura de embeddings</span>
-            <strong id="metric-coverage">—</strong>
-            <small>chunks com vetor</small>
-          </article>
-          <article class="metric-card">
-            <span>Última indexação</span>
-            <strong id="metric-indexer">—</strong>
-            <small id="metric-indexer-detail">sem execução registrada</small>
-          </article>
-        </div>
-
-        <section class="panel service-panel" aria-labelledby="components-title">
-          <div class="panel-heading">
-            <div>
-              <h2 id="components-title">Componentes</h2>
-              <p>Estado dos serviços usados nas consultas.</p>
+        <form id="ask-form" class="query-panel primary-query-panel">
+          <label class="query-box">
+            <span>Pergunta</span>
+            <textarea id="ask-query" name="query" required maxlength="2000" rows="7"
+              placeholder="Descreva a sua dúvida técnica."></textarea>
+          </label>
+          <div class="form-footer">
+            <div class="filter-row ask-filters">
+              <label><span>Projeto</span><select id="ask-project"><option value="">Todos</option></select></label>
+              <label><span>Branch</span><select id="ask-branch"><option value="">Todas</option></select></label>
             </div>
+            <button class="button primary" type="submit">Gerar resposta</button>
           </div>
-          <div class="service-list">
-            <div><span class="service-dot ok"></span><span><strong>PostgreSQL</strong><small id="database-state">Verificando</small></span></div>
-            <div><span class="service-dot"></span><span><strong>Embeddings</strong><small id="embedding-state">Verificando</small></span></div>
-            <div><span class="service-dot"></span><span><strong>Gerador local</strong><small id="generation-state">Verificando</small></span></div>
-            <div><span class="service-dot"></span><span><strong>Autenticação</strong><small id="authentication-state">Verificando</small></span></div>
-          </div>
-        </section>
-
-        <div class="content-grid">
-          <section class="panel repositories-panel">
-            <div class="panel-heading">
-              <div>
-                <h2>Repositórios indexados</h2>
-                <p>Contagens e branches canônicas informadas pelo banco.</p>
-              </div>
-            </div>
-            <div id="repository-list" class="repository-list loading-block">Carregando repositórios…</div>
-          </section>
-
-          <section class="panel run-panel">
-            <div class="panel-heading">
-              <div>
-                <h2>Execução do indexador</h2>
-                <p>Resultado mais recente registrado pelo serviço automático.</p>
-              </div>
-            </div>
-            <div id="run-summary" class="run-summary loading-block">Carregando estado…</div>
-          </section>
-        </div>
+        </form>
+        <div id="ask-feedback" class="feedback" aria-live="polite"></div>
+        <article id="answer-card" class="answer-card hidden"></article>
+        <div id="answer-sources" class="result-list"></div>
       </section>
 
       <section id="view-search" class="view">
-        <header class="page-header">
+        <header class="page-header user-page-header">
           <div>
-            <h1>Busca</h1>
-            <p>Pesquise código e documentação com filtros de projeto, branch e modo de recuperação.</p>
+            <h1>Buscar nos repositórios</h1>
+            <p>Localize código e documentação com filtros de projeto, branch e modo de recuperação.</p>
           </div>
         </header>
 
-        <form id="search-form" class="query-panel">
+        <form id="search-form" class="query-panel primary-query-panel">
           <label class="query-box">
             <span>Consulta</span>
             <span class="query-control">
@@ -143,47 +95,78 @@
         <div id="search-results" class="result-list"></div>
       </section>
 
-      <section id="view-ask" class="view">
+      <section id="view-admin" class="view">
         <header class="page-header">
           <div>
-            <h1>Perguntar</h1>
-            <p>Gere uma resposta baseada nas fontes indexadas e confira as citações utilizadas.</p>
+            <h1>Administração</h1>
+            <p>Informações operacionais da máquina, dos serviços e da indexação.</p>
+          </div>
+          <div id="admin-actions" class="header-actions hidden">
+            <button id="admin-refresh" class="button secondary" type="button">Atualizar dados</button>
+            <button id="admin-logout" class="button secondary" type="button">Sair</button>
           </div>
         </header>
 
-        <form id="ask-form" class="query-panel">
-          <label class="query-box">
-            <span>Pergunta</span>
-            <textarea id="ask-query" name="query" required maxlength="2000" rows="5"
-              placeholder="Descreva a dúvida técnica."></textarea>
-          </label>
-          <div class="form-footer">
-            <div class="filter-row ask-filters">
-              <label><span>Projeto</span><select id="ask-project"><option value="">Todos</option></select></label>
-              <label><span>Branch</span><select id="ask-branch"><option value="">Todas</option></select></label>
-            </div>
-            <button class="button primary" type="submit">Gerar resposta</button>
+        <section id="admin-locked" class="panel access-panel">
+          <h2>Acesso restrito</h2>
+          <p>Este painel contém detalhes de infraestrutura e exige a senha administrativa.</p>
+          <button id="admin-login-button" class="button primary" type="button">Entrar no painel</button>
+        </section>
+
+        <div id="admin-content" class="hidden">
+          <div id="admin-service-grid" class="status-grid" aria-label="Estado dos serviços"></div>
+
+          <div class="admin-grid">
+            <section class="panel" aria-labelledby="machine-title">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="machine-title">Máquina</h2>
+                  <p>Recursos e utilização informados pelo servidor.</p>
+                </div>
+              </div>
+              <div id="machine-details" class="detail-list loading-block">Carregando dados…</div>
+            </section>
+
+            <section class="panel" aria-labelledby="indexer-title">
+              <div class="panel-heading">
+                <div>
+                  <h2 id="indexer-title">Última indexação</h2>
+                  <p>Execução mais recente registrada pelo serviço automático.</p>
+                </div>
+              </div>
+              <div id="run-summary" class="run-summary loading-block">Carregando estado…</div>
+            </section>
           </div>
-        </form>
-        <div id="ask-feedback" class="feedback" aria-live="polite"></div>
-        <article id="answer-card" class="answer-card hidden"></article>
-        <div id="answer-sources" class="result-list"></div>
+
+          <section class="panel repositories-panel" aria-labelledby="repositories-title">
+            <div class="panel-heading">
+              <div>
+                <h2 id="repositories-title">Repositórios indexados</h2>
+                <p>Branches, documentos, chunks e cobertura vetorial por fonte.</p>
+              </div>
+            </div>
+            <div id="admin-repository-list" class="repository-list loading-block">Carregando repositórios…</div>
+          </section>
+        </div>
       </section>
     </main>
 
-    <div id="auth-overlay" class="auth-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="auth-title">
-      <form id="auth-form" class="auth-card">
+    <div id="admin-auth-overlay" class="auth-overlay hidden" role="dialog" aria-modal="true" aria-labelledby="admin-auth-title">
+      <form id="admin-auth-form" class="auth-card">
         <div class="auth-heading">
           <img class="brand-logo auth-logo" src="/ui/mflab-logo.svg" alt="">
-          <div><h2 id="auth-title">Chave de acesso</h2><p>Informe a chave fornecida pelo laboratório.</p></div>
+          <div><h2 id="admin-auth-title">Acesso administrativo</h2><p>Informe a senha configurada no servidor.</p></div>
         </div>
         <label>
-          <span>Chave da API</span>
-          <input id="api-key" type="password" autocomplete="off" required minlength="32">
+          <span>Senha</span>
+          <input id="admin-password" type="password" autocomplete="current-password" required maxlength="512">
         </label>
-        <p class="form-note">A chave permanece somente nesta aba e é removida ao encerrar a sessão.</p>
-        <p id="auth-error" class="error-text" aria-live="polite"></p>
-        <button class="button primary full" type="submit">Entrar</button>
+        <p class="form-note">A senha é validada no servidor e não é armazenada pelo navegador.</p>
+        <p id="admin-auth-error" class="error-text" aria-live="polite"></p>
+        <div class="dialog-actions">
+          <button id="admin-auth-cancel" class="button secondary" type="button">Cancelar</button>
+          <button class="button primary" type="submit">Entrar</button>
+        </div>
       </form>
     </div>
 

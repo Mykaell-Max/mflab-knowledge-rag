@@ -232,11 +232,16 @@ aceita exclusivamente endereços loopback. Um bind direto na LAN é opt-in e
 depende de chave Bearer forte local; requisições originadas no próprio servidor
 permanecem liberadas para não distribuir esse segredo à automação interna.
 
-A interface web é um cliente estático da mesma API e descobre repositórios e
-branches pelo banco. Interface e endpoints compartilham a mesma origem, sem
-CORS. A chave da demonstração fica somente na sessão da aba. Essa fronteira é
-adequada ao piloto em uma rede confiável, mas não substitui identidade
-individual, TLS, grupos e auditoria.
+A interface web descobre repositórios e branches pelo banco e compartilha a
+origem da API, sem CORS. Perguntas e buscas usam rotas somente leitura sob
+`/ui-api`, liberadas apenas porque o bind e o firewall limitam o serviço à rede
+confiável do laboratório; a chave Bearer técnica continua restrita às
+integrações programáticas. Essas rotas web aplicam um teto fixo de classes
+`public` e `lab`, além do teto configurado no processo. Dados operacionais usam uma rota administrativa
+separada. A senha vem de `MFLAB_ADMIN_PASSWORD`, é comparada no servidor e cria
+uma sessão aleatória em cookie `HttpOnly` e `SameSite=Strict`; o navegador não
+armazena a senha. Essa fronteira é adequada ao piloto, mas não substitui
+identidade individual, TLS, grupos, limites por usuário e auditoria.
 
 Buscas lexicais não inicializam o runtime de embeddings. Na primeira busca
 semântica ou híbrida, uma única instância local do modelo é carregada e

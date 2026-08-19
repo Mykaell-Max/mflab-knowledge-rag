@@ -3,6 +3,11 @@ from __future__ import annotations
 import importlib
 import hmac
 import ipaddress
+import os
+import platform
+import shutil
+import socket
+import subprocess
 import threading
 import time
 from dataclasses import dataclass, field
@@ -56,6 +61,103 @@ CONTEXT_INSTRUCTIONS = (
 )
 
 
+def _memory_status() -> dict[str, int | float] | None:
+    """Read Linux memory counters without adding a runtime dependency."""
+
+    try:
+        values: dict[str, int] = {}
+        for raw_line in Path("/proc/meminfo").read_text(
+            encoding="utf-8"
+        ).splitlines():
+            name, raw_value = raw_line.split(":", 1)
+            values[name] = int(raw_value.strip().split()[0]) * 1024
+        total = values["MemTotal"]
+        available = values["MemAvailable"]
+    except (OSError, KeyError, ValueError):
+        return None
+    used = max(0, total - available)
+    return {
+        "total_bytes": total,
+        "available_bytes": available,
+        "used_bytes": used,
+        "used_percent": round((used / total) * 100, 1) if total else 0,
+    }
+
+
+def _existing_path(path: Path) -> Path:
+    selected = path.expanduser().resolve()
+    while not selected.exists() and selected != selected.parent:
+        selected = selected.parent
+    return selected
+
+
+def _disk_status(path: Path) -> dict[str, int | float] | None:
+    try:
+        usage = shutil.disk_usage(_existing_path(path))
+    except OSError:
+        return None
+    used = usage.total - usage.free
+    return {
+        "total_bytes": usage.total,
+        "free_bytes": usage.free,
+        "used_bytes": used,
+        "used_percent": round((used / usage.total) * 100, 1)
+        if usage.total
+        else 0,
+    }
+
+
+def _gpu_status() -> list[dict[str, object]]:
+    command = [
+        "nvidia-smi",
+        "--query-gpu=name,memory.total,memory.used,utilization.gpu,temperature.gpu",
+        "--format=csv,noheader,nounits",
+    ]
+    try:
+        completed = subprocess.run(
+            command,
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+
+    devices: list[dict[str, object]] = []
+    for line in completed.stdout.splitlines():
+        fields = [value.strip() for value in line.split(",")]
+        if len(fields) != 5:
+            continue
+        try:
+            devices.append(
+                {
+                    "name": fields[0],
+                    "memory_total_mib": int(fields[1]),
+                    "memory_used_mib": int(fields[2]),
+                    "utilization_percent": int(fields[3]),
+                    "temperature_c": int(fields[4]),
+                }
+            )
+        except ValueError:
+            continue
+    return devices
+
+
+def _machine_status(state_dir: Path) -> dict[str, object]:
+    return {
+        "hostname": socket.gethostname(),
+        "operating_system": platform.system(),
+        "release": platform.release(),
+        "architecture": platform.machine(),
+        "python": platform.python_version(),
+        "logical_cpus": os.cpu_count(),
+        "memory": _memory_status(),
+        "disk": _disk_status(state_dir),
+        "gpus": _gpu_status(),
+    }
+
+
 @dataclass(frozen=True)
 class ApiSettings:
     database_url: str
@@ -69,6 +171,7 @@ class ApiSettings:
     device: str = "auto"
     max_sequence_length: int = DEFAULT_MAX_SEQUENCE_LENGTH
     api_key: str | None = field(default=None, repr=False)
+    admin_password: str | None = field(default=None, repr=False)
 
     def __post_init__(self) -> None:
         if not self.allowed_access or not self.allowed_access.issubset(
@@ -77,6 +180,10 @@ class ApiSettings:
             raise ValueError("classes de acesso do serviço inválidas ou vazias")
         if self.api_key is not None and len(self.api_key) < 32:
             raise ValueError("api_key deve possuir pelo menos 32 caracteres")
+        if self.admin_password is not None and len(self.admin_password) < 12:
+            raise ValueError(
+                "admin_password deve possuir pelo menos 12 caracteres"
+            )
 
 
 class RagApiService:
@@ -100,6 +207,7 @@ class RagApiService:
         self._embedder_factory = embedder_factory or self._build_embedder
         self._embedder: LocalEmbedder | None = None
         self._model_lock = threading.Lock()
+        self._started_at = time.monotonic()
         self.generation_config = generation_config or load_generation_config(
             settings.generation_config,
             optional=True,
@@ -189,7 +297,11 @@ class RagApiService:
             "local_only": True,
         }
 
-    def repositories(self) -> list[dict[str, object]]:
+    def repositories(
+        self,
+        *,
+        allowed_access: set[str] | None = None,
+    ) -> list[dict[str, object]]:
         profile = embedding_profile_id(
             self.settings.embedding_model,
             revision=self.settings.embedding_revision,
@@ -198,8 +310,50 @@ class RagApiService:
         return repository_status(
             self.settings.database_url,
             embedding_profile=profile,
-            allowed_access=set(self.settings.allowed_access),
+            allowed_access=self._allowed_access(allowed_access),
         )
+
+    def administration_status(self) -> dict[str, object]:
+        """Return operational details only for the authenticated admin UI."""
+
+        health = self.health()
+        try:
+            indexer = read_last_run(self.settings.state_dir)
+        except (OSError, ValueError):
+            indexer = None
+        try:
+            embeddings = embedding_status(self.settings.database_url)
+        except Exception:
+            embeddings = {"status": "unavailable", "models": []}
+        try:
+            repositories = self.repositories()
+        except Exception:
+            repositories = []
+
+        return {
+            "service": {
+                "status": health["status"],
+                "version": __version__,
+                "uptime_seconds": round(time.monotonic() - self._started_at, 1),
+                "process_id": os.getpid(),
+            },
+            "machine": _machine_status(self.settings.state_dir),
+            "database": {
+                "status": health["database"],
+                "repositories": health.get("repositories"),
+                "chunks": health.get("chunks"),
+            },
+            "embeddings": embeddings,
+            "generation": self.generation_status(),
+            "indexer": indexer,
+            "repositories": repositories,
+            "authentication": {
+                "api_key_configured": self.settings.api_key is not None,
+                "admin_password_configured": (
+                    self.settings.admin_password is not None
+                ),
+            },
+        }
 
     def search(
         self,

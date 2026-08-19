@@ -15,6 +15,7 @@ from mflab_knowledge.api_evaluate import (
 )
 from mflab_knowledge.credentials import (
     ensure_api_key,
+    load_admin_password,
     load_api_key,
     load_database_url,
     load_git_credentials,
@@ -1227,6 +1228,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                 device=args.device,
                 max_sequence_length=args.max_sequence_length,
                 api_key=load_api_key(args.env_file, optional=True),
+                admin_password=load_admin_password(
+                    args.env_file,
+                    optional=True,
+                ),
             )
             reporter.section("SERVIÇO HTTP LOCAL")
             reporter.log(

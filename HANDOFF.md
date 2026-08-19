@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.28.1**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.29.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -132,7 +132,7 @@ Ambiente do piloto:
 
 Serviços locais:
 
-- RAG API: `127.0.0.1:8765` na instalação validada; a versão 0.28.1 acrescenta
+- RAG API: `127.0.0.1:8765` na instalação validada; a versão 0.29.0 acrescenta
   bind LAN opt-in ainda pendente de validação integrada na Morgoth;
 - vLLM: `127.0.0.1:8000`;
 - indexação: `mflab-knowledge-index.service` e timer associado;
@@ -254,25 +254,29 @@ Caminhos usados durante o piloto:
 ## 11. Próxima ação recomendada
 
 O piloto de recuperação e respostas dos dois repositórios foi validado. A
-interface web inicial e a autenticação compartilhada foram implementadas no
-workspace e passaram nos testes unitários. A interface foi alinhada à identidade
-visual sóbria do site institucional: fundo claro, azul, bordas discretas e texto
-funcional, sem eyebrows ou slogans. A próxima ação é validar a versão
-0.28.1 na Morgoth, reinstalando apenas a unidade da API com bind LAN opt-in e
-confirmando:
+interface web foi reorganizada para abrir diretamente em **Perguntar**, com
+**Buscar** como segunda função pública. Métricas da máquina e do pipeline foram
+retiradas da área principal e concentradas em **Administração**, protegida por
+`MFLAB_ADMIN_PASSWORD` e sessão `HttpOnly`. A chave técnica `MFLAB_API_KEY`
+permanece separada e protege os endpoints programáticos; ela não é pedida nem
+armazenada pela interface. O visual segue o site institucional: fundo claro,
+azul, bordas discretas e texto funcional, sem eyebrows ou slogans. A próxima
+ação é validar a versão 0.29.0 na Morgoth, configurar a senha local, reinstalar
+apenas a unidade da API com bind LAN opt-in e confirmar:
 
 1. saúde da API, banco, modelo e indexador;
-2. repositórios, branches, documentos, chunks e cobertura de embeddings;
-3. busca com filtros de projeto, branch e modo;
-4. chat por `/ask`, com citações e apresentação das fontes;
-5. progresso e resultado da última indexação;
-6. layout responsivo para demonstração em outros computadores do laboratório.
+2. pergunta e busca sem distribuição da chave técnica da API;
+3. filtros dinâmicos de projeto e branch;
+4. respostas citadas e apresentação das fontes;
+5. login e encerramento da sessão administrativa;
+6. máquina, GPU, PostgreSQL, embeddings e última indexação no painel privado;
+7. layout responsivo em outros computadores do laboratório.
 
-O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in, exige
-segredo local forte e serve interface e API na mesma origem, evitando CORS e
-armazenamento persistente do segredo no navegador. Um segredo compartilhado
-atende apenas à demonstração inicial; usuários individuais, HTTPS, grupos e
-auditoria serão necessários antes do uso institucional.
+O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
+porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
+rotas web somente leitura; administração usa senha separada. Um segredo
+compartilhado atende apenas à demonstração inicial; usuários individuais, HTTPS,
+grupos e auditoria serão necessários antes do uso institucional.
 
 Depois da interface demonstrável, a ordem recomendada é:
 

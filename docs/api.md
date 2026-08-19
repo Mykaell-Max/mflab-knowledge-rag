@@ -31,11 +31,33 @@ selecionado com `--retrieval-config`. O teto padrão de acesso é `public` e `la
 
 ## Interface web e acesso pela LAN
 
-A interface responsiva é servida em `/ui` pela mesma origem da API. Ela mostra
-saúde, contagens, repositórios, branches canônicas, cobertura vetorial e a última
-execução do indexador, além de oferecer busca e perguntas citadas. Nenhum nome
-de repositório ou branch está fixado na interface: os filtros vêm de
-`/repositories`.
+A interface responsiva é servida em `/ui` pela mesma origem da API. A área de
+uso começa em **Perguntar** e também oferece **Buscar**; ela não exibe métricas
+operacionais. Nenhum nome de repositório ou branch está fixado: os filtros vêm
+do catálogo atual do banco.
+
+Na rede confiável do laboratório, a interface usa rotas próprias e somente
+leitura sob `/ui-api`. Busca e geração ficam disponíveis sem distribuir a chave
+técnica da API. A fronteira de acesso dessa área é a rede local: a porta deve
+continuar liberada somente para a sub-rede autorizada. Os endpoints normais
+`/repositories`, `/search`, `/context` e `/ask` preservam a autenticação Bearer
+existente para integrações programáticas externas ao servidor. As rotas web
+aceitam somente as classes `public` e `lab`, ainda que o processo seja iniciado
+com um teto adicional para integrações autenticadas.
+
+Detalhes da máquina, PostgreSQL, embeddings, gerador, indexador e repositórios
+ficam em **Administração**. Configure no `.env` uma senha exclusiva com pelo
+menos 12 caracteres e reinicie a API:
+
+```dotenv
+MFLAB_ADMIN_PASSWORD=uma-senha-local-forte
+```
+
+A senha é enviada somente no login administrativo. O servidor cria uma sessão
+aleatória em cookie `HttpOnly`, `SameSite=Strict`, válida por oito horas e
+perdida quando o processo reinicia. Cinco falhas do mesmo endereço em cinco
+minutos suspendem temporariamente novas tentativas. A senha e o cookie não são
+incluídos nas respostas, no JavaScript ou no repositório.
 
 O modo seguro padrão continua loopback. Para preparar a chave sem exibi-la:
 
@@ -43,12 +65,11 @@ O modo seguro padrão continua loopback. Para preparar a chave sem exibi-la:
 .venv/bin/python -m mflab_knowledge api-key-init --env-file .env
 ```
 
-Ao usar `--host 0.0.0.0`, `MFLAB_API_KEY` passa a ser obrigatória. Requisições
-vindas de fora do loopback devem enviar `Authorization: Bearer <chave>`; `/health`
-e os arquivos estáticos da tela permanecem públicos para permitir diagnóstico e
-carregamento. A chave é digitada na tela e guardada apenas em `sessionStorage`,
-portanto desaparece quando a sessão do navegador é encerrada. Não a coloque em
-URL, bookmark, log ou arquivo versionado.
+Ao usar `--host 0.0.0.0`, `MFLAB_API_KEY` passa a ser obrigatória para os
+endpoints programáticos. Requisições vindas de fora do loopback devem enviar
+`Authorization: Bearer <chave>`; `/health`, os arquivos estáticos e as rotas de
+uso da interface permanecem públicos dentro da rede autorizada. Não coloque a
+chave em URL, bookmark, log, JavaScript ou arquivo versionado.
 
 Chamadas originadas no próprio servidor são aceitas sem a chave, preservando o
 timer, as avaliações e os comandos administrativos existentes. Essa exceção

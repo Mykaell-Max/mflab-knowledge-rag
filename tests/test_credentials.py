@@ -9,6 +9,7 @@ from unittest import mock
 from mflab_knowledge.credentials import (
     GitCredentials,
     ensure_api_key,
+    load_admin_password,
     load_api_key,
     load_database_url,
     load_git_credentials,
@@ -143,6 +144,39 @@ class CredentialTests(unittest.TestCase):
             file_key = env_file.read_text(encoding="utf-8").split("=", 1)[1].strip()
             self.assertGreaterEqual(len(file_key), 32)
             self.assertNotEqual(file_key, os.environ.get("MFLAB_API_KEY"))
+
+    def test_admin_password_is_loaded_without_entering_process_environment(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            env_file.write_text(
+                "MFLAB_ADMIN_PASSWORD='senha-local-segura'\n",
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"MFLAB_ADMIN_PASSWORD": ""},
+                clear=False,
+            ):
+                self.assertEqual(
+                    load_admin_password(env_file),
+                    "senha-local-segura",
+                )
+                self.assertEqual(os.environ["MFLAB_ADMIN_PASSWORD"], "")
+
+    def test_admin_password_rejects_short_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            env_file = Path(temporary_directory) / ".env"
+            env_file.write_text(
+                "MFLAB_ADMIN_PASSWORD=curta\n",
+                encoding="utf-8",
+            )
+            with mock.patch.dict(
+                os.environ,
+                {"MFLAB_ADMIN_PASSWORD": ""},
+                clear=False,
+            ):
+                with self.assertRaisesRegex(ValueError, "12 caracteres"):
+                    load_admin_password(env_file)
 
 
 if __name__ == "__main__":

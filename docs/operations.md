@@ -119,6 +119,17 @@ sub-rede confiável no firewall continua sendo uma etapa da máquina, não do
 template genérico. A autenticação compartilhada é transitória; o uso
 institucional requer usuários individuais, HTTPS e auditoria.
 
+Antes de reiniciar a API, configure também no `.env` a senha exclusiva do painel
+privado, com no mínimo 12 caracteres:
+
+```dotenv
+MFLAB_ADMIN_PASSWORD=uma-senha-local-forte
+```
+
+Essa senha não substitui `MFLAB_API_KEY`: a primeira protege apenas a área de
+administração no navegador; a segunda continua protegendo os endpoints
+programáticos expostos na LAN.
+
 Para alterar intervalo, usuário, batch ou dispositivo do indexador, execute novamente
 `install-systemd.sh`. Para alterar a porta da API, execute novamente
 `install-api-systemd.sh`. Cada instalador substitui somente as unidades sob sua

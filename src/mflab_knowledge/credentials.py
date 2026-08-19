@@ -16,6 +16,9 @@ MFLAB_DATABASE_URL=
 
 # Chave compartilhada exigida somente quando a API é exposta fora do loopback.
 MFLAB_API_KEY=
+
+# Senha do painel administrativo da interface web.
+MFLAB_ADMIN_PASSWORD=
 """
 
 
@@ -49,6 +52,7 @@ def _read_env_file(path: Path) -> dict[str, str]:
             "MFLAB_GIT_READ_TOKEN",
             "MFLAB_DATABASE_URL",
             "MFLAB_API_KEY",
+            "MFLAB_ADMIN_PASSWORD",
         }:
             values[name] = _unquote(value)
     return values
@@ -168,6 +172,34 @@ def load_api_key(env_file: Path, *, optional: bool = False) -> str | None:
     if len(api_key) < 32:
         raise ValueError("MFLAB_API_KEY deve possuir pelo menos 32 caracteres")
     return api_key
+
+
+def load_admin_password(
+    env_file: Path,
+    *,
+    optional: bool = False,
+) -> str | None:
+    """Load the web administration password without exposing it in settings."""
+
+    path = env_file.expanduser().resolve()
+    password = os.environ.get("MFLAB_ADMIN_PASSWORD", "").strip()
+    if not password and path.exists():
+        _protect_env_file(path)
+        password = _read_env_file(path).get("MFLAB_ADMIN_PASSWORD", "").strip()
+    if not password:
+        if optional:
+            return None
+        raise ValueError(
+            "senha administrativa não configurada em "
+            f"{path}: preencha MFLAB_ADMIN_PASSWORD"
+        )
+    if "\n" in password or "\r" in password:
+        raise ValueError("MFLAB_ADMIN_PASSWORD contém quebra de linha inválida")
+    if len(password) < 12:
+        raise ValueError(
+            "MFLAB_ADMIN_PASSWORD deve possuir pelo menos 12 caracteres"
+        )
+    return password
 
 
 def ensure_api_key(env_file: Path) -> bool:
