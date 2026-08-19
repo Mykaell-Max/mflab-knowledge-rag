@@ -74,6 +74,25 @@ class _InvestigatingGenerator:
         )
 
 
+class _ReplanningGenerator:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, object]] = []
+
+    def investigate(self, **kwargs: object) -> str:
+        self.calls.append(kwargs)
+        if len(self.calls) == 1:
+            return (
+                '{"coverage":[{"aspect":"entry point","status":"covered",'
+                '"chunk_ids":["weak"]}],"actions":[],'
+                '"keep_chunk_ids":["weak"],"stop":false}'
+            )
+        return (
+            '{"coverage":[{"aspect":"entry point","status":"covered",'
+            '"chunk_ids":["weak"]}],"actions":[],'
+            '"keep_chunk_ids":["weak"],"stop":true}'
+        )
+
+
 class _RetryGenerator(_Generator):
     def generate(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
@@ -880,12 +899,69 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(context["sources"][0]["path"], "src/domain.cpp")
         self.assertIn("agent", {step["stage"] for step in progress})
 
+    def test_context_replans_an_inconclusive_agent_decision(self) -> None:
+        investigator = _ReplanningGenerator()
+        service = api.RagApiService(self.settings(), generator=investigator)
+        initial = {
+            "query": "How does the component work?",
+            "mode": "hybrid",
+            "count": 1,
+            "scope_resolution": {
+                "mode": "explicit",
+                "automatic": False,
+                "scopes": [{"project": "Solver", "branch": "trunk"}],
+            },
+            "results": [
+                {
+                    "chunk_id": "weak",
+                    "project": "Solver",
+                    "path": "src/component.cpp",
+                    "title": "Component::run",
+                    "text": "void Component::run() {}",
+                    "selected_occurrence": {
+                        "branch": "trunk",
+                        "commit_sha": "a" * 40,
+                    },
+                }
+            ],
+        }
+        progress: list[dict[str, object]] = []
+        with mock.patch.object(service, "search", return_value=initial):
+            with mock.patch.object(api, "search_semantic_map", return_value=[]):
+                context = service.context(
+                    query="How does the component work?",
+                    project="Solver",
+                    branch="trunk",
+                    allowed_access={"lab"},
+                    query_plan={
+                        "algorithm": "test",
+                        "generated": True,
+                        "queries": ["How does the component work?"],
+                        "identifiers": [],
+                    },
+                    progress_callback=progress.append,
+                )
+
+        self.assertEqual(len(investigator.calls), 2)
+        self.assertEqual(
+            investigator.calls[0].get("decision_feedback"), ""
+        )
+        self.assertIn(
+            "neither stopped nor selected a tool",
+            str(investigator.calls[1].get("decision_feedback")),
+        )
+        self.assertEqual(context["agent_investigation"]["status"], "sufficient")
+        self.assertIn(
+            "Decisão inconclusiva será reavaliada",
+            [step["title"] for step in progress],
+        )
+
     def test_ask_audits_long_answers_in_bounded_batches(self) -> None:
         answer = "\n\n".join(
             f"Claim {position} is supported [S1]." for position in range(1, 8)
         )
         audits = []
-        for identifiers in ((1, 2, 3, 4, 5), (6, 7)):
+        for identifiers in ((1, 2, 3), (4, 5, 6), (7,)):
             items = ",".join(
                 '{"claim_id":"C%s","verdict":"supported",'
                 '"source_ids":["S1"],"finding":"Present."}' % identifier
@@ -931,9 +1007,9 @@ class ApiServiceTests(unittest.TestCase):
             result = service.ask(query="Explain the flow")
 
         self.assertTrue(result["verification"]["passed"])
-        self.assertEqual(result["verification"]["batches"], 2)
+        self.assertEqual(result["verification"]["batches"], 3)
         self.assertEqual(result["verification"]["counts"]["supported"], 7)
-        self.assertEqual(len(generator.verify_calls), 2)
+        self.assertEqual(len(generator.verify_calls), 3)
 
     def test_ask_uses_local_query_planner_for_location_questions(self) -> None:
         generator = _PlanningGenerator()

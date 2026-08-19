@@ -58,6 +58,14 @@ síntese, respostas longas são auditadas em lotes de até cinco afirmações. I
 mantém cada retorno estruturado dentro de um orçamento previsível sem reduzir a
 exigência de que todas as afirmações sejam ligadas às fontes que citam.
 
+A 0.39.1 corrige achados da primeira execução real: perguntas formuladas como
+“como funciona” ou que pedem um fluxo passam pelo mesmo runtime; uma decisão
+que não encerra a investigação nem escolhe ferramenta é devolvida ao modelo
+para replanejamento; todos os chunks associados ao caderno de cobertura são
+preservados na seleção; e a auditoria usa lotes de até três afirmações com um
+contrato de saída mais explícito. Menções genéricas a objetos ou métodos não
+podem, por si sós, contar como evidência da operação qualificada na pergunta.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

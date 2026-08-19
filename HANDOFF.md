@@ -393,6 +393,14 @@ relaxar a conferência de nenhuma afirmação.
 A interface recebe as etapas durante a execução em tempo real. O painel de
 investigação abre no início, pode ser recolhido pelo usuário sem interromper o
 job e não volta a abrir sozinho durante as atualizações seguintes.
+A primeira execução real da 0.39.0 encontrou quatro defeitos distintos: uma
+decisão sem ação ficou parada após confundir menções a `Mesh` com a operação
+qualificada, uma pergunta “como funciona” caiu no modo direto, o auditor não
+conseguiu produzir o JSON esperado em lotes de cinco afirmações e o resumo do
+RunBlock continha escape Python inválido. A 0.39.1 generaliza a classificação
+de mecanismo, reconsulta decisões inconclusivas, preserva toda evidência do
+caderno de cobertura e reduz a auditoria para lotes de três com contrato mais
+explícito. Os termos científicos continuam restritos ao handoff e às avaliações.
 A regressão agora inclui tanto a malha adaptativa quanto a pergunta ampla sobre
 o fluxo atual de um subsistema; os nomes científicos permanecem apenas na
 suíte de avaliação.

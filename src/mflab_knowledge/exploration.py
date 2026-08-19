@@ -41,10 +41,12 @@ LOCATION_PATTERNS = (
 )
 
 MECHANISM_PATTERNS = (
-    r"\bcomo .+\b(?:funciona|opera|implementad[oa]|resolvid[oa]|calculad[oa])\b",
+    r"\bcomo(?: .+)? (?:funciona|opera|implementad[oa]|resolvid[oa]|calculad[oa])\b",
     r"\bexplique (?:como|o funcionamento)\b",
+    r"\bexplique .+\b(?:fluxo|ciclo|arquitetura|integracao)\b",
     r"\bhow (?:does|is|are)\b",
     r"\bexplain how\b",
+    r"\bexplain .+\b(?:flow|lifecycle|architecture|integration)\b",
 )
 
 

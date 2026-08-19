@@ -1183,6 +1183,7 @@ class RagApiService:
         ):
             agent_status = "running"
             executed_actions: set[tuple[str, str]] = set()
+            decision_feedback = ""
             for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
                 observations = build_observations(retrievals)
                 observable_ids = {
@@ -1207,6 +1208,7 @@ class RagApiService:
                         observations=observations,
                         previous_actions=agent_actions,
                         previous_coverage=agent_coverage,
+                        decision_feedback=decision_feedback,
                     )
                     decision = normalize_investigation_decision(
                         raw_decision,
@@ -1233,6 +1235,11 @@ class RagApiService:
                 for chunk_id in decision["keep_chunk_ids"]:
                     if chunk_id not in kept_chunk_ids:
                         kept_chunk_ids.append(str(chunk_id))
+                for coverage_item in decision["coverage"]:
+                    assert isinstance(coverage_item, dict)
+                    for chunk_id in coverage_item.get("chunk_ids", []):
+                        if str(chunk_id) not in kept_chunk_ids:
+                            kept_chunk_ids.append(str(chunk_id))
 
                 raw_actions = decision["actions"]
                 assert isinstance(raw_actions, list)
@@ -1259,9 +1266,24 @@ class RagApiService:
                     )
                     break
                 if not actions:
-                    agent_status = "stalled"
+                    agent_status = "replanning"
                     agent_iterations = iteration
-                    break
+                    decision_feedback = (
+                        "The previous decision neither stopped nor selected a tool. "
+                        "Reassess the exact qualified operation in the question. "
+                        "Choose a new read-only action when direct evidence is missing, "
+                        "or set stop=true only when every requested aspect is directly "
+                        "supported by the observed primary code."
+                    )
+                    record(
+                        "agent",
+                        "Decisão inconclusiva será reavaliada",
+                        "O servidor solicitou uma nova decisão sem aceitar cobertura por mera semelhança textual.",
+                        {"iteration": iteration},
+                    )
+                    continue
+
+                decision_feedback = ""
 
                 iteration_results: list[dict[str, object]] = []
                 completed_actions: list[dict[str, str]] = []
@@ -1379,7 +1401,8 @@ class RagApiService:
                 agent_status = "budget_exhausted"
             elif (
                 agent_iterations == MAX_AGENT_ITERATIONS
-                and agent_status in {"expanded", "empty_action_results"}
+                and agent_status
+                in {"expanded", "empty_action_results", "replanning"}
             ):
                 agent_status = "budget_exhausted"
             if kept_chunk_ids:
@@ -1880,7 +1903,9 @@ class RagApiService:
                 for source in raw_sources
                 if isinstance(source, dict)
             }
-            batch_size = 5
+            # Small batches keep the local model's constrained JSON short and
+            # deterministic while still auditing every factual unit.
+            batch_size = 3
             findings: list[dict[str, object]] = []
             counts = {"supported": 0, "unsupported": 0, "uncertain": 0}
             batches = 0

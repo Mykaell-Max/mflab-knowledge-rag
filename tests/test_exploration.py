@@ -39,9 +39,13 @@ class ExplorationTests(unittest.TestCase):
 
     def test_mechanism_and_comparison_have_bounded_distinct_plans(self) -> None:
         mechanism = plan_exploration("Como o método é resolvido no código?")
+        direct_mechanism = plan_exploration("Como funciona o componente atualmente?")
+        flow_mechanism = plan_exploration("Explique o fluxo do componente no código")
         comparison = plan_exploration("Compare o método entre A e B")
 
         self.assertEqual(mechanism["intent"], "mechanism")
+        self.assertEqual(direct_mechanism["intent"], "mechanism")
+        self.assertEqual(flow_mechanism["intent"], "mechanism")
         self.assertEqual(len(mechanism["queries"]), 3)
         self.assertIn(
             "general domain knowledge",

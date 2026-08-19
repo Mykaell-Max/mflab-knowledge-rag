@@ -4,7 +4,7 @@ import json
 import re
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v1"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v2"
 MAX_AGENT_ITERATIONS = 3
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
