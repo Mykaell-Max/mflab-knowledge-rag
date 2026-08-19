@@ -132,6 +132,7 @@ class ApiServiceTests(unittest.TestCase):
         return api.ApiSettings(
             database_url="postgresql://secret@example/test",
             state_dir=Path("missing-state-for-test"),
+            generation_config=Path("missing-generation-for-test.toml"),
         )
 
     def test_unit_settings_do_not_implicitly_load_working_directory_catalog(
@@ -142,6 +143,7 @@ class ApiServiceTests(unittest.TestCase):
 
         load.assert_not_called()
         self.assertIsNone(service.repository_catalog)
+        self.assertIsNone(service.generator)
 
     def test_resolved_branch_rejects_an_occurrence_from_another_branch(self) -> None:
         result = {
