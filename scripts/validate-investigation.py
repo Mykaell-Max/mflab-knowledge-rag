@@ -193,19 +193,21 @@ def main() -> int:
         job_id,
         timeout_seconds=args.timeout_seconds,
     )
-    validate_result(
-        result,
-        require_navigation=args.require_navigation,
-        require_agent=args.require_agent,
-    )
-    validate_interface(args.base_url)
-
+    # Preserve the complete response even when a quality assertion below fails.
+    # A failed investigation is evidence for the next iteration, not disposable
+    # terminal output.
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(
             json.dumps(result, ensure_ascii=False, indent=2),
             encoding="utf-8",
         )
+    validate_result(
+        result,
+        require_navigation=args.require_navigation,
+        require_agent=args.require_agent,
+    )
+    validate_interface(args.base_url)
 
     context = result.get("context")
     context = context if isinstance(context, dict) else {}
