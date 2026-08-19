@@ -130,10 +130,15 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 17, 17
 
 .feedback { min-height: 2.6rem; padding: 0.85rem 0; color: var(--muted); font-size: 0.76rem; }
 .investigation-panel { margin: 0 0 0.9rem; padding: 1.1rem 1.25rem; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
-.investigation-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
-.investigation-heading h2 { margin: 0; font-size: 0.95rem; }
-.investigation-heading p { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.72rem; }
+.investigation-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; cursor: pointer; list-style: none; }
+.investigation-heading::-webkit-details-marker { display: none; }
+.investigation-heading:focus-visible { outline: 2px solid var(--accent); outline-offset: 0.35rem; }
+.investigation-title { display: grid; gap: 0.3rem; }
+.investigation-title strong { color: var(--ink); font-size: 0.95rem; }
+.investigation-title small { color: var(--muted); font-size: 0.72rem; font-weight: 400; }
+.investigation-heading-meta { display: flex; align-items: center; gap: 0.8rem; white-space: nowrap; }
 .investigation-time { color: var(--muted); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.67rem; white-space: nowrap; }
+.investigation-toggle-label { color: var(--accent); font-size: 0.68rem; font-weight: 650; }
 .investigation-steps { display: grid; gap: 0; margin: 1rem 0 0; padding: 0; list-style: none; counter-reset: investigation; }
 .investigation-step { position: relative; min-height: 2.6rem; padding: 0 0 0.85rem 2rem; counter-increment: investigation; }
 .investigation-step::before { position: absolute; top: 0; left: 0; display: grid; width: 1.25rem; height: 1.25rem; place-items: center; color: var(--accent); background: var(--accent-soft); border-radius: 50%; content: counter(investigation); font-size: 0.62rem; font-weight: 700; }
@@ -277,6 +282,8 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 17, 17
   .page-container { padding-block: 2.25rem 4rem; }
   .page-header { align-items: flex-start; flex-direction: column; gap: 1rem; }
   .page-header h1 { font-size: 1.9rem; }
+  .investigation-heading { align-items: flex-start; }
+  .investigation-heading-meta { align-items: flex-end; flex-direction: column; gap: 0.25rem; }
   .filter-row { grid-template-columns: 1fr; }
   .query-control { align-items: stretch; flex-direction: column; }
   .form-footer { align-items: stretch; flex-direction: column; }

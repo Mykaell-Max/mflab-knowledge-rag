@@ -390,6 +390,9 @@ e uma falha da auditoria de reparo não apaga mais o primeiro laudo válido.
 Hipóteses com zero resultados voltam ao ciclo como observações, e respostas
 longas são auditadas em lotes limitados para evitar truncamento do JSON sem
 relaxar a conferência de nenhuma afirmação.
+A interface recebe as etapas durante a execução em tempo real. O painel de
+investigação abre no início, pode ser recolhido pelo usuário sem interromper o
+job e não volta a abrir sozinho durante as atualizações seguintes.
 A regressão agora inclui tanto a malha adaptativa quanto a pergunta ampla sobre
 o fluxo atual de um subsistema; os nomes científicos permanecem apenas na
 suíte de avaliação.

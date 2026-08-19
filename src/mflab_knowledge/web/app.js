@@ -109,6 +109,11 @@ function renderInvestigation(steps, running = false) {
   const panel = byId("ask-investigation");
   const list = byId("ask-investigation-steps");
   const time = byId("ask-investigation-time");
+  const hasSteps = Boolean((steps || []).length);
+  const hadSteps = panel.dataset.hasSteps === "true";
+  if (hasSteps && !hadSteps) panel.open = true;
+  if (!hasSteps) panel.open = false;
+  panel.dataset.hasSteps = String(hasSteps);
   list.replaceChildren();
   (steps || []).forEach((step, index) => {
     const item = element(
@@ -122,7 +127,14 @@ function renderInvestigation(steps, running = false) {
   });
   const last = (steps || [])[steps.length - 1];
   time.textContent = last ? formatDuration(last.elapsed_seconds || 0) : "";
-  panel.classList.toggle("hidden", !(steps || []).length);
+  panel.classList.toggle("hidden", !hasSteps);
+}
+
+function updateInvestigationToggleLabel() {
+  const panel = byId("ask-investigation");
+  byId("ask-investigation-toggle-label").textContent = panel.open
+    ? "Ocultar etapas"
+    : "Mostrar etapas";
 }
 
 async function runAskJob(payload) {
@@ -906,6 +918,7 @@ byId("search-project").addEventListener("change", () => updateBranches("search-p
 byId("ask-project").addEventListener("change", () => updateBranches("ask-project", "ask-branch"));
 byId("search-form").addEventListener("submit", submitSearch);
 byId("ask-form").addEventListener("submit", submitAsk);
+byId("ask-investigation").addEventListener("toggle", updateInvestigationToggleLabel);
 byId("admin-login-button").addEventListener("click", () => showAdminAuth());
 byId("admin-auth-form").addEventListener("submit", submitAdminLogin);
 byId("admin-auth-cancel").addEventListener("click", hideAdminAuth);
