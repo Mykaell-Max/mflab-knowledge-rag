@@ -54,6 +54,15 @@ class ApiServiceTests(unittest.TestCase):
             state_dir=Path("missing-state-for-test"),
         )
 
+    def test_unit_settings_do_not_implicitly_load_working_directory_catalog(
+        self,
+    ) -> None:
+        with mock.patch.object(api, "load_repository_catalog") as load:
+            service = api.RagApiService(self.settings())
+
+        load.assert_not_called()
+        self.assertIsNone(service.repository_catalog)
+
     def test_health_is_safe_when_database_is_unavailable(self) -> None:
         service = api.RagApiService(self.settings())
         with mock.patch.object(

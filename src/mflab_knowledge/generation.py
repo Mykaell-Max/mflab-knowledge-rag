@@ -146,6 +146,8 @@ def _is_context_length_error(error: urllib.error.HTTPError) -> bool:
         raw = error.read(MAX_GENERATION_ERROR_BYTES + 1)
     except OSError:
         return False
+    finally:
+        error.close()
     if len(raw) > MAX_GENERATION_ERROR_BYTES:
         return False
     text = raw.decode("utf-8", errors="replace").casefold()

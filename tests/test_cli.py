@@ -227,6 +227,10 @@ class ConsoleReporterTests(unittest.TestCase):
             serve.generation_config,
             Path("local-generation.toml"),
         )
+        self.assertEqual(
+            serve.repository_catalog,
+            Path("repositories.toml"),
+        )
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
         self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))

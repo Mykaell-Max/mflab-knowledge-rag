@@ -253,7 +253,7 @@ class ApiSettings:
     state_dir: Path = Path("state")
     retrieval_config: Path | None = None
     generation_config: Path = Path("generation.toml")
-    repository_catalog: Path = Path("repositories.toml")
+    repository_catalog: Path | None = None
     allowed_access: frozenset[str] = frozenset({"public", "lab"})
     embedding_model: str = DEFAULT_EMBEDDING_MODEL
     embedding_revision: str = DEFAULT_EMBEDDING_REVISION
@@ -304,7 +304,10 @@ class RagApiService:
         )
         if repository_catalog is not None:
             self.repository_catalog = repository_catalog
-        elif settings.repository_catalog.expanduser().is_file():
+        elif (
+            settings.repository_catalog is not None
+            and settings.repository_catalog.expanduser().is_file()
+        ):
             self.repository_catalog = load_repository_catalog(
                 settings.repository_catalog
             )
