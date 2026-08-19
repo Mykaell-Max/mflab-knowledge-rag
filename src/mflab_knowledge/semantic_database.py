@@ -5,12 +5,166 @@ from pathlib import Path
 from typing import Callable, Iterable
 
 from mflab_knowledge.database import _connect, _driver, _read_jsonl, _schema_sql
+from mflab_knowledge.normalize import RETRIEVABLE_ACCESS_CLASSES
 from mflab_knowledge.semantic_map import (
     SEMANTIC_MAP_ALGORITHM,
     semantic_map_fingerprint,
 )
 
 LogCallback = Callable[[str, str], None]
+
+
+SYMBOL_SEARCH_SQL = """
+WITH query_input AS (
+    SELECT
+        websearch_to_tsquery('simple', %(query)s) AS parsed,
+        lower(%(query)s) AS raw
+)
+SELECT
+    (
+        ts_rank_cd(symbol.search_vector, query_input.parsed, 32) * 10.0
+        + CASE
+            WHEN lower(symbol.qualified_name) = query_input.raw THEN 20.0
+            WHEN lower(symbol.name) = query_input.raw THEN 16.0
+            WHEN strpos(lower(symbol.qualified_name), query_input.raw) > 0 THEN 8.0
+            ELSE 0.0
+          END
+        + CASE WHEN strpos(lower(document.path), query_input.raw) > 0
+               THEN 4.0 ELSE 0.0 END
+        + CASE WHEN preferred.canonical THEN 0.25 ELSE 0.0 END
+    ) AS score,
+    'symbol'::text AS result_type,
+    symbol.symbol_id AS item_id,
+    repository.project,
+    document.repository_id,
+    document.path,
+    document.format,
+    document.access_class,
+    symbol.kind,
+    symbol.name,
+    symbol.qualified_name,
+    symbol.line_start,
+    symbol.line_end,
+    symbol.evidence_chunk_id,
+    NULL::text AS target_kind,
+    NULL::text AS target_document_id,
+    NULL::text AS target_path,
+    preferred.branch,
+    preferred.commit_sha
+FROM mflab_knowledge.semantic_symbols AS symbol
+JOIN mflab_knowledge.documents AS document
+  ON document.document_id = symbol.document_id
+JOIN mflab_knowledge.repositories AS repository
+  ON repository.repository_id = document.repository_id
+CROSS JOIN query_input
+JOIN LATERAL (
+    SELECT
+        occurrence.branch,
+        occurrence.commit_sha,
+        occurrence.canonical
+    FROM mflab_knowledge.document_occurrences AS occurrence
+    WHERE occurrence.document_id = document.document_id
+      AND (%(branch)s::text IS NULL
+           OR occurrence.branch = %(branch)s::text)
+    ORDER BY occurrence.canonical DESC, occurrence.branch NULLS LAST
+    LIMIT 1
+) AS preferred ON true
+WHERE document.access_class = ANY(%(allowed_access)s::text[])
+  AND (%(project)s::text IS NULL
+       OR repository.project = %(project)s::text)
+  AND (%(path_prefix)s::text IS NULL
+       OR document.path LIKE %(path_prefix)s::text || '%%')
+  AND (%(kind)s::text IS NULL OR symbol.kind = %(kind)s::text)
+  AND (
+      symbol.search_vector @@ query_input.parsed
+      OR strpos(lower(symbol.qualified_name), query_input.raw) > 0
+      OR strpos(lower(document.path), query_input.raw) > 0
+  )
+ORDER BY score DESC, document.path, symbol.line_start, symbol.symbol_id
+LIMIT %(candidate_limit)s
+"""
+
+
+RELATION_SEARCH_SQL = """
+WITH query_input AS (
+    SELECT
+        websearch_to_tsquery('simple', %(query)s) AS parsed,
+        lower(%(query)s) AS raw
+)
+SELECT
+    (
+        ts_rank_cd(relation.search_vector, query_input.parsed, 32) * 10.0
+        + CASE
+            WHEN lower(relation.target_name) = query_input.raw THEN 20.0
+            WHEN strpos(lower(relation.target_name), query_input.raw) > 0 THEN 8.0
+            ELSE 0.0
+          END
+        + CASE WHEN strpos(lower(source.path), query_input.raw) > 0
+               THEN 4.0 ELSE 0.0 END
+        + CASE WHEN preferred.canonical THEN 0.25 ELSE 0.0 END
+    ) AS score,
+    'relation'::text AS result_type,
+    relation.relation_id AS item_id,
+    repository.project,
+    source.repository_id,
+    source.path,
+    source.format,
+    relation.access_class,
+    relation.kind,
+    relation.target_name AS name,
+    relation.target_name AS qualified_name,
+    coalesce(relation.line, evidence.line_start, 1) AS line_start,
+    coalesce(relation.line, evidence.line_end, 1) AS line_end,
+    relation.evidence_chunk_id,
+    CASE
+        WHEN relation.target_document_id IS NULL OR target.document_id IS NOT NULL
+        THEN relation.target_kind
+        ELSE 'unresolved_reference'
+    END AS target_kind,
+    CASE WHEN target.document_id IS NOT NULL
+         THEN relation.target_document_id ELSE NULL END AS target_document_id,
+    target.path AS target_path,
+    preferred.branch,
+    preferred.commit_sha
+FROM mflab_knowledge.semantic_relations AS relation
+JOIN mflab_knowledge.documents AS source
+  ON source.document_id = relation.source_document_id
+JOIN mflab_knowledge.repositories AS repository
+  ON repository.repository_id = source.repository_id
+LEFT JOIN mflab_knowledge.documents AS target
+  ON target.document_id = relation.target_document_id
+ AND target.access_class = ANY(%(allowed_access)s::text[])
+LEFT JOIN mflab_knowledge.chunks AS evidence
+  ON evidence.chunk_id = relation.evidence_chunk_id
+CROSS JOIN query_input
+JOIN LATERAL (
+    SELECT
+        occurrence.branch,
+        occurrence.commit_sha,
+        occurrence.canonical
+    FROM mflab_knowledge.semantic_relation_occurrences AS occurrence
+    WHERE occurrence.relation_id = relation.relation_id
+      AND (%(branch)s::text IS NULL
+           OR occurrence.branch = %(branch)s::text)
+    ORDER BY occurrence.canonical DESC, occurrence.branch NULLS LAST
+    LIMIT 1
+) AS preferred ON true
+WHERE relation.access_class = ANY(%(allowed_access)s::text[])
+  AND source.access_class = ANY(%(allowed_access)s::text[])
+  AND (%(project)s::text IS NULL
+       OR repository.project = %(project)s::text)
+  AND (%(path_prefix)s::text IS NULL
+       OR source.path LIKE %(path_prefix)s::text || '%%')
+  AND (%(kind)s::text IS NULL OR relation.kind = %(kind)s::text)
+  AND (
+      relation.search_vector @@ query_input.parsed
+      OR strpos(lower(relation.target_name), query_input.raw) > 0
+      OR strpos(lower(source.path), query_input.raw) > 0
+      OR strpos(lower(coalesce(target.path, '')), query_input.raw) > 0
+  )
+ORDER BY score DESC, source.path, line_start, relation.relation_id
+LIMIT %(candidate_limit)s
+"""
 
 
 SYMBOL_UPSERT = """
@@ -403,3 +557,81 @@ def semantic_map_status(
         }
         for row in rows
     ]
+
+
+def search_semantic_map(
+    database_url: str,
+    *,
+    query: str,
+    limit: int = 10,
+    result_type: str = "any",
+    project: str | None = None,
+    branch: str | None = None,
+    path_prefix: str | None = None,
+    kind: str | None = None,
+    allowed_access: set[str] | None = None,
+) -> list[dict[str, object]]:
+    """Search structural metadata while applying scope and ACL in SQL."""
+
+    query_text = query.strip()
+    if not query_text:
+        raise ValueError("consulta vazia")
+    if len(query_text) > 2_000:
+        raise ValueError("consulta excede 2000 caracteres")
+    if limit < 1 or limit > 100:
+        raise ValueError("limit deve estar entre 1 e 100")
+    if result_type not in {"any", "symbol", "relation"}:
+        raise ValueError("result_type deve ser any, symbol ou relation")
+    effective_access = allowed_access if allowed_access is not None else {"public"}
+    if not effective_access or not effective_access.issubset(
+        RETRIEVABLE_ACCESS_CLASSES
+    ):
+        raise ValueError("filtro de acesso inválido ou vazio")
+
+    parameters = {
+        "query": query_text,
+        "candidate_limit": limit if result_type != "any" else limit * 2,
+        "project": project,
+        "branch": branch,
+        "path_prefix": path_prefix,
+        "kind": kind,
+        "allowed_access": sorted(effective_access),
+    }
+    statements: list[str] = []
+    if result_type in {"any", "symbol"}:
+        statements.append(SYMBOL_SEARCH_SQL)
+    if result_type in {"any", "relation"}:
+        statements.append(RELATION_SEARCH_SQL)
+
+    _psycopg, dict_row = _driver()
+    rows: list[dict[str, object]] = []
+    with _connect(database_url, row_factory=dict_row) as connection:
+        for statement in statements:
+            rows.extend(connection.execute(statement, parameters).fetchall())
+
+    rows.sort(
+        key=lambda row: (
+            -float(row["score"]),
+            str(row["path"]),
+            int(row["line_start"]),
+            str(row["item_id"]),
+        )
+    )
+    results: list[dict[str, object]] = []
+    for row in rows[:limit]:
+        result = dict(row)
+        commit_sha = str(result.pop("commit_sha") or "?")
+        selected_branch = str(result.pop("branch") or "?")
+        result["score"] = round(float(result["score"]), 4)
+        result["evidence_available"] = bool(result["evidence_chunk_id"])
+        result["selected_occurrence"] = {
+            "branch": selected_branch,
+            "commit_sha": commit_sha,
+        }
+        result["citation"] = (
+            f"{result['project']} {selected_branch}@{commit_sha[:12]} "
+            f"{result['path']}:L{result['line_start']}-L{result['line_end']}"
+        )
+        result["source_kind"] = f"semantic_{result['result_type']}"
+        results.append(result)
+    return results

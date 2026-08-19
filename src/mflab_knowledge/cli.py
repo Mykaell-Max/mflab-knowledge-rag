@@ -54,6 +54,7 @@ from mflab_knowledge.service_runner import (
     read_last_run,
     run_managed,
 )
+from mflab_knowledge.semantic_database import search_semantic_map
 from mflab_knowledge.sync import sync_repository_branches
 
 
@@ -817,6 +818,28 @@ def build_parser() -> argparse.ArgumentParser:
     _add_embedding_options(db_search)
     _add_database_options(db_search)
 
+    db_map_search = subparsers.add_parser(
+        "db-map-search",
+        help="Consulta símbolos e relações estruturais no PostgreSQL.",
+    )
+    db_map_search.add_argument("--query", required=True)
+    db_map_search.add_argument("--limit", type=int, default=10)
+    db_map_search.add_argument(
+        "--result-type",
+        choices=("any", "symbol", "relation"),
+        default="any",
+    )
+    db_map_search.add_argument("--project")
+    db_map_search.add_argument("--branch")
+    db_map_search.add_argument("--path-prefix")
+    db_map_search.add_argument("--kind")
+    db_map_search.add_argument(
+        "--allow-access",
+        action="append",
+        choices=("public", "lab", "project", "restricted"),
+    )
+    _add_database_options(db_map_search)
+
     db_evaluate = subparsers.add_parser(
         "db-evaluate",
         help="Executa a suíte de recuperação contra o PostgreSQL.",
@@ -1318,6 +1341,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         "db-init",
         "db-load",
         "db-search",
+        "db-map-search",
         "db-evaluate",
         "db-status",
         "db-vector-init",
@@ -1434,6 +1458,32 @@ def main(argv: Sequence[str] | None = None) -> int:
                 for position, result in enumerate(results, start=1):
                     reporter.log(
                         f"{position}. {result['citation']} "
+                        f"(score {result['score']})",
+                        "success",
+                    )
+                print(json.dumps(results, ensure_ascii=False, indent=2))
+                return 0
+
+            if args.command == "db-map-search":
+                allowed_access = _search_access(args)
+                results = search_semantic_map(
+                    database_url,
+                    query=args.query,
+                    limit=args.limit,
+                    result_type=args.result_type,
+                    project=args.project,
+                    branch=args.branch,
+                    path_prefix=args.path_prefix,
+                    kind=args.kind,
+                    allowed_access=allowed_access,
+                )
+                reporter.result(
+                    f"Mapa estrutural retornou {len(results)} resultados"
+                )
+                for position, result in enumerate(results, start=1):
+                    reporter.log(
+                        f"{position}. {result['result_type']} "
+                        f"{result['qualified_name']} — {result['citation']} "
                         f"(score {result['score']})",
                         "success",
                     )

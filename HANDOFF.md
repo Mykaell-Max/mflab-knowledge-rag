@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.36.0**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.37.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -356,8 +356,16 @@ de 17 branches do MFSim-NG; referências ambíguas permaneceram não resolvidas.
 A 0.36.0 projeta o mapa no PostgreSQL em uma transação separada, idempotente e
 restrita ao `repository_id`. Símbolos apontam para chunks, relações preservam
 ocorrências próprias e o fingerprint cobre também ACL e proveniência. O mapa
-ainda não altera busca ou respostas. A próxima entrega é a consulta somente
-leitura, seguida de avaliação real antes de conectá-la ao planejador.
+ainda não altera busca ou respostas. A validação na Morgoth carregou 8.235
+símbolos e 8.355 relações, resolveu 1.408 destinos e confirmou reutilização
+integral pelo mesmo fingerprint em uma segunda execução.
+
+A 0.37.0 acrescenta `db-map-search`, uma consulta somente leitura de símbolos e
+relações com filtros de ACL, projeto, branch, prefixo de caminho e tipo aplicados
+no SQL. Ela retorna proveniência e o chunk de evidência, mas não retorna texto e
+não foi conectada ao `/ask`. A próxima ação é validar consultas estruturais no
+corpus real, incluindo uma branch de trabalho, antes de projetar ferramentas do
+planejador.
 
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam

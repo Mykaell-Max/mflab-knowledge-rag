@@ -82,6 +82,23 @@ textual reutilizado ainda pode atualizar o mapa quando relações ou ocorrência
 de branch mudarem. Os artefatos continuam sendo a fonte auditável e podem ser
 comparados ao banco com `scripts/validate-semantic-database.py`.
 
+O mapa pode ser inspecionado diretamente, sem iniciar embeddings ou geração:
+
+```bash
+.venv/bin/python -m mflab_knowledge db-map-search \
+  --query NOME_OU_REFERENCIA \
+  --result-type any \
+  --project PROJETO \
+  --branch BRANCH \
+  --allow-access lab \
+  --limit 10 \
+  --color always
+```
+
+A seleção de ocorrência da branch acontece dentro da mesma consulta que aplica
+o projeto e a ACL. O retorno é metadado estrutural citável; o texto continua
+sob o contrato dos endpoints e comandos de recuperação existentes.
+
 ## 5. Buscar e avaliar
 
 ```bash

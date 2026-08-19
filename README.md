@@ -388,6 +388,30 @@ fonte/header. Cada registro preserva documento, chunk de evidência quando
 aplicável, ACL e ocorrências por branch/commit. Esses artefatos orientam
 navegação futura; não substituem os chunks primários como evidência factual.
 
+Depois de `index-all`, o mapa persistido pode ser consultado sem retornar o
+texto-fonte nem carregar o modelo de embeddings:
+
+```bash
+.venv/bin/python -m mflab_knowledge db-map-search \
+  --query NOME_OU_REFERENCIA \
+  --result-type any \
+  --project PROJETO \
+  --branch BRANCH \
+  --allow-access lab \
+  --limit 10 \
+  --color always
+```
+
+`--result-type` aceita `symbol`, `relation` ou `any`. Também existem os filtros
+opcionais `--path-prefix` e `--kind`. Projeto, branch e ACL são aplicados no SQL
+antes do retorno. Relações com um destino fora da ACL permanecem apenas como a
+referência observada na fonte autorizada; o documento de destino não é exposto.
+O resultado informa se há chunk de evidência e inclui uma citação com projeto,
+branch, commit, caminho e linhas. Relações puramente derivadas, como pares de
+arquivos, podem não possuir chunk próprio. Nesta etapa a consulta é deliberadamente separada de
+`/ask`: ela será avaliada no corpus real antes de orientar a exploração do
+assistente.
+
 O parser piloto respeita seções Markdown e reconhece âncoras básicas de
 C/C++/headers, Fortran, CMake e shell; arquivos sem estrutura reconhecida usam
 janelas por linha com sobreposição. Tree-sitter/Clang ainda será incorporado para

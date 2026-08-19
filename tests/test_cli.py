@@ -206,6 +206,25 @@ class ConsoleReporterTests(unittest.TestCase):
                 "retrieval.toml",
             ]
         )
+        map_search = parser.parse_args(
+            [
+                "db-map-search",
+                "--query",
+                "advance",
+                "--result-type",
+                "symbol",
+                "--project",
+                "Solver",
+                "--branch",
+                "feature/solver",
+                "--path-prefix",
+                "src/",
+                "--kind",
+                "function",
+                "--allow-access",
+                "lab",
+            ]
+        )
         api_evaluate = parser.parse_args(
             [
                 "api-evaluate",
@@ -249,6 +268,13 @@ class ConsoleReporterTests(unittest.TestCase):
         self.assertEqual(database.color, "never")
         self.assertEqual(hybrid.mode, "hybrid")
         self.assertEqual(hybrid.retrieval_config, Path("retrieval.toml"))
+        self.assertEqual(map_search.command, "db-map-search")
+        self.assertEqual(map_search.result_type, "symbol")
+        self.assertEqual(map_search.project, "Solver")
+        self.assertEqual(map_search.branch, "feature/solver")
+        self.assertEqual(map_search.path_prefix, "src/")
+        self.assertEqual(map_search.kind, "function")
+        self.assertEqual(map_search.allow_access, ["lab"])
         self.assertEqual(
             api_evaluate.suite,
             Path("evaluations/answers.json"),

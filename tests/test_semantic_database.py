@@ -88,6 +88,36 @@ class _StatusConnection:
         return _Rows(self.values)
 
 
+class _SearchConnection:
+    def __init__(
+        self,
+        symbol_values: list[dict[str, object]],
+        relation_values: list[dict[str, object]],
+    ) -> None:
+        self.symbol_values = symbol_values
+        self.relation_values = relation_values
+        self.executed: list[tuple[str, dict[str, object]]] = []
+
+    def __enter__(self) -> _SearchConnection:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def execute(
+        self,
+        sql: str,
+        parameters: dict[str, object],
+    ) -> _Rows:
+        self.executed.append((sql, dict(parameters)))
+        values = (
+            self.symbol_values
+            if "semantic_symbols AS symbol" in sql
+            else self.relation_values
+        )
+        return _Rows(values)
+
+
 def _write_jsonl(path: Path, values: list[dict[str, object]]) -> None:
     path.write_text(
         "".join(json.dumps(value) + "\n" for value in values),
@@ -248,6 +278,100 @@ class SemanticDatabaseTests(unittest.TestCase):
         self.assertEqual(result[0]["completed_at"], "2026-08-19T00:00:00+00:00")
         self.assertIn("%(repository_id)s::text", connection.sql)
         self.assertEqual(connection.parameters["repository_id"], "solver-stable")
+
+    def test_search_applies_scope_acl_and_returns_citable_provenance(self) -> None:
+        symbol = {
+            "score": 18.5,
+            "result_type": "symbol",
+            "item_id": "symbol-1",
+            "project": "Solver",
+            "repository_id": "solver-stable",
+            "path": "src/advance.cpp",
+            "format": "cpp",
+            "access_class": "lab",
+            "kind": "function",
+            "name": "advance",
+            "qualified_name": "Solver::advance",
+            "line_start": 4,
+            "line_end": 12,
+            "evidence_chunk_id": "chunk-1",
+            "target_kind": None,
+            "target_document_id": None,
+            "target_path": None,
+            "branch": "feature/solver",
+            "commit_sha": "a" * 40,
+        }
+        relation = {
+            **symbol,
+            "score": 21.0,
+            "result_type": "relation",
+            "item_id": "relation-1",
+            "kind": "includes",
+            "name": "model.hpp",
+            "qualified_name": "model.hpp",
+            "target_kind": "document",
+            "target_document_id": "document-2",
+            "target_path": "include/model.hpp",
+        }
+        connection = _SearchConnection([symbol], [relation])
+        with mock.patch.object(
+            semantic_database,
+            "_driver",
+            return_value=(object(), object()),
+        ):
+            with mock.patch.object(
+                semantic_database,
+                "_connect",
+                return_value=connection,
+            ):
+                results = semantic_database.search_semantic_map(
+                    "postgresql://not-logged",
+                    query="advance",
+                    project="Solver",
+                    branch="feature/solver",
+                    path_prefix="src/",
+                    allowed_access={"lab"},
+                    limit=2,
+                )
+
+        self.assertEqual([item["result_type"] for item in results], [
+            "relation",
+            "symbol",
+        ])
+        self.assertEqual(
+            results[0]["selected_occurrence"],
+            {"branch": "feature/solver", "commit_sha": "a" * 40},
+        )
+        self.assertEqual(results[0]["source_kind"], "semantic_relation")
+        self.assertTrue(results[0]["evidence_available"])
+        self.assertIn("feature/solver@aaaaaaaaaaaa", results[0]["citation"])
+        self.assertEqual(len(connection.executed), 2)
+        for sql, parameters in connection.executed:
+            self.assertIn("ANY(%(allowed_access)s::text[])", sql)
+            self.assertIn("occurrence.branch = %(branch)s::text", sql)
+            self.assertEqual(parameters["allowed_access"], ["lab"])
+            self.assertEqual(parameters["project"], "Solver")
+            self.assertEqual(parameters["branch"], "feature/solver")
+            self.assertEqual(parameters["path_prefix"], "src/")
+        relation_sql = connection.executed[1][0]
+        self.assertIn(
+            "target.access_class = ANY(%(allowed_access)s::text[])",
+            relation_sql,
+        )
+
+    def test_search_rejects_pending_access_and_invalid_limits(self) -> None:
+        with self.assertRaisesRegex(ValueError, "filtro de acesso"):
+            semantic_database.search_semantic_map(
+                "postgresql://not-logged",
+                query="advance",
+                allowed_access={"pending"},
+            )
+        with self.assertRaisesRegex(ValueError, "limit"):
+            semantic_database.search_semantic_map(
+                "postgresql://not-logged",
+                query="advance",
+                limit=101,
+            )
 
 
 if __name__ == "__main__":

@@ -60,10 +60,11 @@ painel administrativo.
 5. **Primeira verificação concluída:** auditoria semântica por afirmação e fonte
    citada, uma revisão limitada e trilha de investigação acompanhada ao vivo na
    interface.
-6. **Extração e persistência concluídas:** símbolos e relações estruturais são
-   produzidos em JSONL e carregados transacionalmente no PostgreSQL, com ACL,
-   branch, commit, chunk de evidência e fingerprint. Consultas somente leitura
-   e sua avaliação formam a próxima subetapa.
+6. **Extração, persistência e consulta concluídas:** símbolos e relações
+   estruturais são produzidos em JSONL, carregados transacionalmente no
+   PostgreSQL e consultáveis com filtros SQL de ACL, projeto, branch, caminho e
+   tipo. A consulta não retorna texto e ainda não influencia `/ask`. A avaliação
+   real dessa camada forma a próxima subetapa.
 7. Resumos hierárquicos incrementais com proveniência.
 8. Planejador local com ferramentas de exploração estrutural somente leitura.
 9. Avaliações de localização, conceito, diagnóstico e comparação.

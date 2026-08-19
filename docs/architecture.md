@@ -298,6 +298,14 @@ expira automaticamente. Os eventos expõem somente ações objetivas e contagens
 planejamento, escopo, recuperação, preparação de evidências, geração, auditoria
 e revisão — sem revelar prompts, raciocínio interno ou conteúdo integral.
 
+O mapa semântico persistido possui uma consulta estrutural própria, separada da
+busca textual. Símbolos e relações são ranqueados por nome e caminho, mas os
+predicados de ACL, projeto, branch, prefixo e tipo são resolvidos pelo
+PostgreSQL antes do retorno. O resultado contém somente metadados, ocorrência e
+ID opcional do chunk de evidência e uma marca explícita de disponibilidade. Um destino de relação fora da ACL não tem identidade
+nem caminho expostos. Essa fronteira permite avaliar navegação estrutural sem
+alterar silenciosamente a recuperação ou fornecer texto adicional ao modelo.
+
 O resolvedor de escopo opera antes da recuperação e usa somente metadados do
 catálogo autorizado. `aliases` e `preferred_branch` são definidos por
 repositório. Menções de múltiplos projetos ou branches viram escopos paralelos;
