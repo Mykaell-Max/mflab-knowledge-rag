@@ -90,6 +90,7 @@ def validate_result(
     result: dict[str, object],
     *,
     require_navigation: bool = False,
+    require_agent: bool = False,
 ) -> None:
     investigation = result.get("investigation")
     steps = (
@@ -118,13 +119,18 @@ def validate_result(
         )
     if require_navigation and "navigation" not in stages:
         raise RuntimeError("a navegação estrutural não foi executada")
+    if require_agent and "agent" not in stages:
+        raise RuntimeError("o ciclo agentivo de ferramentas não foi executado")
 
     verification = result.get("verification")
-    if (
-        not isinstance(verification, dict)
-        or verification.get("performed") is not True
-    ):
-        raise RuntimeError("a auditoria semântica não foi executada")
+    if not isinstance(verification, dict):
+        raise RuntimeError("a API não devolveu o resultado da auditoria")
+    if verification.get("performed") is not True:
+        reason = str(verification.get("reason") or "indisponível")
+        raise RuntimeError(
+            "a auditoria ou sua revisão não produziu resultado estruturado: "
+            + reason
+        )
     if result.get("abstained"):
         if result.get("reason") != "evidence_not_supported":
             raise RuntimeError("a resposta foi recusada por motivo inesperado")
@@ -156,6 +162,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--timeout-seconds", type=int, default=360)
     parser.add_argument("--report", type=Path)
     parser.add_argument("--require-navigation", action="store_true")
+    parser.add_argument("--require-agent", action="store_true")
     return parser
 
 
@@ -186,7 +193,11 @@ def main() -> int:
         job_id,
         timeout_seconds=args.timeout_seconds,
     )
-    validate_result(result, require_navigation=args.require_navigation)
+    validate_result(
+        result,
+        require_navigation=args.require_navigation,
+        require_agent=args.require_agent,
+    )
     validate_interface(args.base_url)
 
     if args.report:

@@ -17,6 +17,7 @@ from typing import Callable
 from mflab_knowledge import __version__
 from mflab_knowledge.database import (
     database_status,
+    fetch_chunk_neighborhood,
     fetch_chunks_by_id,
     repository_status,
     repository_structures,
@@ -51,6 +52,14 @@ from mflab_knowledge.generation import (
     load_generation_config,
 )
 from mflab_knowledge.grounding import citation_coverage, citation_ids
+from mflab_knowledge.investigator import (
+    AGENT_INVESTIGATION_ALGORITHM,
+    MAX_AGENT_ITERATIONS,
+    build_observations,
+    coverage_summary,
+    normalize_investigation_decision,
+    synthesis_guidance,
+)
 from mflab_knowledge.retrieval import RetrievalPolicy, load_retrieval_policy
 from mflab_knowledge.repository_config import (
     RepositoryCatalog,
@@ -64,6 +73,7 @@ from mflab_knowledge.structure import STRUCTURE_ALGORITHM, structure_source
 from mflab_knowledge.verification import (
     INVESTIGATION_ALGORITHM,
     ProgressCallback,
+    VERIFICATION_ALGORITHM,
     claims_for_verification,
     emit_progress,
     normalize_verification,
@@ -1028,6 +1038,7 @@ class RagApiService:
         )
         navigation_nodes: list[dict[str, object]] = []
         navigation_status = "not_requested"
+        scopes: set[tuple[str, str]] = set()
         if exploration["intent"] in {"location", "mechanism"}:
             navigation_status = "empty"
             raw_query_plan = exploration.get("query_plan")
@@ -1040,7 +1051,6 @@ class RagApiService:
                 if isinstance(scope_value, dict)
                 else None
             )
-            scopes: set[tuple[str, str]] = set()
             if isinstance(raw_scopes, list):
                 for scope in raw_scopes:
                     if not isinstance(scope, dict):
@@ -1160,6 +1170,249 @@ class RagApiService:
                     ),
                 },
             )
+        agent_iterations = 0
+        agent_status = "not_requested"
+        agent_coverage: list[dict[str, object]] = []
+        agent_actions: list[dict[str, str]] = []
+        kept_chunk_ids: list[str] = []
+        investigator = getattr(self.generator, "investigate", None)
+        if (
+            query_plan is not None
+            and exploration["intent"] in {"location", "mechanism"}
+            and callable(investigator)
+        ):
+            agent_status = "running"
+            executed_actions: set[tuple[str, str]] = set()
+            for iteration in range(1, MAX_AGENT_ITERATIONS + 1):
+                observations = build_observations(retrievals)
+                observable_ids = {
+                    str(item.get("chunk_id", "")) for item in observations
+                }
+                if not observations:
+                    agent_status = "no_observations"
+                    break
+                record(
+                    "agent",
+                    f"Exploração orientada por evidências {iteration}/{MAX_AGENT_ITERATIONS}",
+                    "O modelo local escolherá somente ferramentas de leitura autorizadas.",
+                    {
+                        "iteration": iteration,
+                        "observations": len(observations),
+                    },
+                )
+                try:
+                    raw_decision = investigator(
+                        question=query,
+                        intent=str(exploration.get("intent", "direct")),
+                        observations=observations,
+                        previous_actions=agent_actions,
+                        previous_coverage=agent_coverage,
+                    )
+                    decision = normalize_investigation_decision(
+                        raw_decision,
+                        observable_chunk_ids=observable_ids,
+                    )
+                except Exception:
+                    agent_status = "decision_unavailable"
+                    self.log(
+                        "Decisão agentiva inválida; preservando evidências já encontradas",
+                        "warning",
+                    )
+                    break
+
+                coverage_by_aspect = {
+                    str(item.get("aspect", "")).casefold(): item
+                    for item in agent_coverage
+                }
+                for item in decision["coverage"]:
+                    assert isinstance(item, dict)
+                    coverage_by_aspect[
+                        str(item.get("aspect", "")).casefold()
+                    ] = item
+                agent_coverage = list(coverage_by_aspect.values())
+                for chunk_id in decision["keep_chunk_ids"]:
+                    if chunk_id not in kept_chunk_ids:
+                        kept_chunk_ids.append(str(chunk_id))
+
+                raw_actions = decision["actions"]
+                assert isinstance(raw_actions, list)
+                actions: list[dict[str, str]] = []
+                for action in raw_actions:
+                    assert isinstance(action, dict)
+                    value = str(action.get("query") or action.get("chunk_id") or "")
+                    identity = (str(action.get("tool", "")), value.casefold())
+                    if identity in executed_actions:
+                        continue
+                    executed_actions.add(identity)
+                    actions.append(action)
+                if decision["stop"]:
+                    agent_status = "sufficient"
+                    agent_iterations = iteration
+                    record(
+                        "agent",
+                        "Cobertura considerada suficiente",
+                        "A síntese usará somente os trechos mantidos e suas proveniências.",
+                        {
+                            "iteration": iteration,
+                            "coverage": coverage_summary(agent_coverage),
+                        },
+                    )
+                    break
+                if not actions:
+                    agent_status = "stalled"
+                    agent_iterations = iteration
+                    break
+
+                iteration_results: list[dict[str, object]] = []
+                completed_actions: list[dict[str, str]] = []
+                for action in actions:
+                    tool = action["tool"]
+                    results_before_action = len(iteration_results)
+                    try:
+                        if tool == "search_code":
+                            for scope_project, scope_branch in sorted(scopes)[:4]:
+                                searched = self.search(
+                                    query=action["query"],
+                                    mode=mode,
+                                    limit=min(limit, 8),
+                                    branch=scope_branch,
+                                    project=scope_project,
+                                    path_prefix=path_prefix,
+                                    allowed_access=allowed_access,
+                                    max_per_path=max_per_path,
+                                    include_duplicate_content=include_duplicate_content,
+                                )
+                                values = searched.get("results")
+                                if isinstance(values, list):
+                                    for result in values:
+                                        if isinstance(result, dict):
+                                            result["source_kind"] = "agent_search_evidence"
+                                            iteration_results.append(result)
+                        elif tool == "find_symbol":
+                            for scope_project, scope_branch in sorted(scopes)[:4]:
+                                nodes = search_semantic_map(
+                                    self.settings.database_url,
+                                    query=action["query"],
+                                    limit=6,
+                                    project=scope_project,
+                                    branch=scope_branch,
+                                    path_prefix=path_prefix,
+                                    allowed_access=self._allowed_access(allowed_access),
+                                )
+                                chunk_ids = [
+                                    str(node["evidence_chunk_id"])
+                                    for node in nodes
+                                    if node.get("evidence_chunk_id")
+                                ]
+                                fetched = fetch_chunks_by_id(
+                                    self.settings.database_url,
+                                    chunk_ids=chunk_ids,
+                                    limit=12,
+                                    project=scope_project,
+                                    branch=scope_branch,
+                                    allowed_access=self._allowed_access(allowed_access),
+                                )
+                                for result in fetched:
+                                    result["source_kind"] = "agent_symbol_evidence"
+                                iteration_results.extend(fetched)
+                        elif tool == "open_neighborhood":
+                            observation = next(
+                                (
+                                    item
+                                    for item in observations
+                                    if item.get("chunk_id") == action["chunk_id"]
+                                ),
+                                None,
+                            )
+                            if observation is not None:
+                                fetched = fetch_chunk_neighborhood(
+                                    self.settings.database_url,
+                                    chunk_id=action["chunk_id"],
+                                    radius=2,
+                                    project=str(observation.get("project", "")) or None,
+                                    branch=str(observation.get("branch", "")) or None,
+                                    allowed_access=self._allowed_access(allowed_access),
+                                )
+                                for result in fetched:
+                                    result["source_kind"] = "agent_neighborhood_evidence"
+                                iteration_results.extend(fetched)
+                    except Exception:
+                        self.log(
+                            f"Ferramenta agentiva {tool} indisponível; seguindo com as demais",
+                            "warning",
+                        )
+                    completed_action = {
+                        **action,
+                        "result_count": str(
+                            len(iteration_results) - results_before_action
+                        ),
+                    }
+                    completed_actions.append(completed_action)
+                    agent_actions.append(completed_action)
+
+                if iteration_results:
+                    retrievals.insert(
+                        0,
+                        {
+                            "query": query,
+                            "mode": "agent_tools",
+                            "results": iteration_results,
+                        },
+                    )
+                agent_iterations = iteration
+                agent_status = "expanded" if iteration_results else "empty_action_results"
+                record(
+                    "agent",
+                    f"Ferramentas de leitura concluídas — ciclo {iteration}",
+                    "Os resultados serão observados antes da próxima decisão.",
+                    {
+                        "iteration": iteration,
+                        "actions": completed_actions,
+                        "new_evidence": len(iteration_results),
+                        "coverage": coverage_summary(agent_coverage),
+                    },
+                )
+                # An empty hypothesis is still an observation. The next cycle can
+                # abandon it because previous_actions records result_count=0.
+
+            if agent_status == "running":
+                agent_status = "budget_exhausted"
+            elif (
+                agent_iterations == MAX_AGENT_ITERATIONS
+                and agent_status in {"expanded", "empty_action_results"}
+            ):
+                agent_status = "budget_exhausted"
+            if kept_chunk_ids:
+                selected_results: list[dict[str, object]] = []
+                selected_set = set(kept_chunk_ids)
+                seen_selected: set[tuple[str, str, str]] = set()
+                for retrieval_item in retrievals:
+                    values = retrieval_item.get("results")
+                    if not isinstance(values, list):
+                        continue
+                    for result in values:
+                        if not isinstance(result, dict):
+                            continue
+                        occurrence = result.get("selected_occurrence")
+                        if not isinstance(occurrence, dict):
+                            occurrence = {}
+                        identity = (
+                            str(result.get("project", "")),
+                            str(occurrence.get("branch", "")),
+                            str(result.get("chunk_id", "")),
+                        )
+                        if identity[2] in selected_set and identity not in seen_selected:
+                            seen_selected.add(identity)
+                            selected_results.append(result)
+                if selected_results:
+                    retrievals.insert(
+                        0,
+                        {
+                            "query": query,
+                            "mode": "agent_selected_evidence",
+                            "results": selected_results,
+                        },
+                    )
         structural_maps: list[dict[str, object]] = []
         structural_status = "not_requested"
         if exploration["intent"] == "overview":
@@ -1287,9 +1540,10 @@ class RagApiService:
             if used_characters >= max_context_characters:
                 break
 
-        instructions = CONTEXT_INSTRUCTIONS + exploration_instructions(
-            exploration,
-            sources,
+        instructions = (
+            CONTEXT_INSTRUCTIONS
+            + exploration_instructions(exploration, sources)
+            + synthesis_guidance(agent_coverage, sources)
         )
         record(
             "evidence",
@@ -1326,6 +1580,14 @@ class RagApiService:
                     }
                     for node in navigation_nodes
                 ],
+            },
+            "agent_investigation": {
+                "status": agent_status,
+                "algorithm": AGENT_INVESTIGATION_ALGORITHM,
+                "iterations": agent_iterations,
+                "actions": agent_actions,
+                "coverage": agent_coverage,
+                "kept_chunk_ids": kept_chunk_ids,
             },
             "instructions": instructions,
             "source_count": len(sources),
@@ -1488,6 +1750,7 @@ class RagApiService:
                     "truncated": context["truncated"],
                     "scope_resolution": context.get("scope_resolution"),
                     "exploration": context.get("exploration"),
+                    "agent_investigation": context.get("agent_investigation"),
                     "requested_max_context_characters": requested_context_limit,
                     "max_context_characters": effective_context_limit,
                     "generation_attempts": 0,
@@ -1617,29 +1880,57 @@ class RagApiService:
                 for source in raw_sources
                 if isinstance(source, dict)
             }
-            cited = {
-                source_id
-                for claim in claims
-                for source_id in claim.get("cited_source_ids", [])
-                if str(source_id) in valid_source_ids
+            batch_size = 5
+            findings: list[dict[str, object]] = []
+            counts = {"supported": 0, "unsupported": 0, "uncertain": 0}
+            batches = 0
+            for offset in range(0, len(claims), batch_size):
+                claim_batch = claims[offset : offset + batch_size]
+                cited = {
+                    str(source_id)
+                    for claim in claim_batch
+                    for source_id in claim.get("cited_source_ids", [])
+                    if str(source_id) in valid_source_ids
+                }
+                evidence = [
+                    source
+                    for source in raw_sources
+                    if isinstance(source, dict)
+                    and str(source.get("source_id", "")) in cited
+                ]
+                raw_audit = verifier(  # type: ignore[misc]
+                    question=str(context["query"]),
+                    answer=candidate_answer,
+                    claims=claim_batch,
+                    sources=evidence,
+                )
+                normalized = normalize_verification(
+                    raw_audit,
+                    claims=claim_batch,
+                    valid_source_ids=valid_source_ids,
+                )
+                raw_findings = normalized.get("claims")
+                raw_counts = normalized.get("counts")
+                if not isinstance(raw_findings, list) or not isinstance(
+                    raw_counts, dict
+                ):
+                    raise ValueError("auditoria normalizada incompleta")
+                findings.extend(
+                    finding for finding in raw_findings if isinstance(finding, dict)
+                )
+                for verdict in counts:
+                    counts[verdict] += int(raw_counts.get(verdict, 0))
+                batches += 1
+            return {
+                "algorithm": VERIFICATION_ALGORITHM,
+                "performed": True,
+                "passed": bool(findings)
+                and counts["unsupported"] == 0
+                and counts["uncertain"] == 0,
+                "claims": findings,
+                "counts": counts,
+                "batches": batches,
             }
-            evidence = [
-                source
-                for source in raw_sources
-                if isinstance(source, dict)
-                and str(source.get("source_id", "")) in cited
-            ]
-            raw_audit = verifier(  # type: ignore[misc]
-                question=str(context["query"]),
-                answer=candidate_answer,
-                claims=claims,
-                sources=evidence,
-            )
-            return normalize_verification(
-                raw_audit,
-                claims=claims,
-                valid_source_ids=valid_source_ids,
-            )
 
         def audit_with_retry(candidate_answer: str) -> dict[str, object]:
             last_error: Exception | None = None
@@ -1701,6 +1992,7 @@ class RagApiService:
                 verification.get("passed") is False
                 and self.generation_config.max_repair_attempts == 1
             ):
+                verification_before_repair = verification
                 evidence_repair = True
                 generation_attempts += 1
                 record(
@@ -1737,7 +2029,12 @@ class RagApiService:
                         f"Revisão ou segunda auditoria indisponível: {exc}",
                         "warning",
                     )
-                    verification = unavailable_verification("repair_unavailable")
+                    verification = {
+                        **verification_before_repair,
+                        "repair_attempted": True,
+                        "repair_completed": False,
+                        "repair_reason": "structured_result_unavailable",
+                    }
 
         verification_failed = bool(
             verification_expected and verification.get("passed") is not True
@@ -1824,6 +2121,7 @@ class RagApiService:
                 "truncated": context["truncated"],
                 "scope_resolution": context.get("scope_resolution"),
                 "exploration": context.get("exploration"),
+                "agent_investigation": context.get("agent_investigation"),
                 "requested_max_context_characters": requested_context_limit,
                 "max_context_characters": context.get(
                     "max_context_characters", effective_context_limit

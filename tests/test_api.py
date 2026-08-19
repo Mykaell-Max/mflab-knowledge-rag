@@ -47,6 +47,33 @@ class _PlanningGenerator(_Generator):
         )
 
 
+class _InvestigatingGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def investigate(self, **_kwargs: object) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return (
+                '{"coverage":[{"aspect":"entry point","status":"gap",'
+                '"chunk_ids":[]}],"actions":[{"tool":"search_code",'
+                '"query":"unobserved guessed helper"}],'
+                '"keep_chunk_ids":[],"stop":false}'
+            )
+        if self.calls == 2:
+            return (
+                '{"coverage":[{"aspect":"entry point","status":"gap",'
+                '"chunk_ids":[]}],"actions":[{"tool":"search_code",'
+                '"query":"factory create initialize"}],'
+                '"keep_chunk_ids":[],"stop":false}'
+            )
+        return (
+            '{"coverage":[{"aspect":"entry point","status":"covered",'
+            '"chunk_ids":["correct"]}],"actions":[],'
+            '"keep_chunk_ids":["correct"],"stop":true}'
+        )
+
+
 class _RetryGenerator(_Generator):
     def generate(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
@@ -777,6 +804,136 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(
             context["structural_guidance"]["navigation_status"], "success"
         )
+
+    def test_context_iteratively_chooses_tools_after_observing_results(self) -> None:
+        investigator = _InvestigatingGenerator()
+        service = api.RagApiService(self.settings(), generator=investigator)
+        initial = {
+            "query": "Onde o componente é inicializado?",
+            "mode": "hybrid",
+            "count": 1,
+            "scope_resolution": {
+                "mode": "explicit",
+                "automatic": False,
+                "scopes": [{"project": "Solver", "branch": "trunk"}],
+            },
+            "results": [
+                {
+                    "chunk_id": "weak",
+                    "project": "Solver",
+                    "path": "src/unrelated.cpp",
+                    "title": "Unrelated::initialize",
+                    "text": "void Unrelated::initialize() {}",
+                    "selected_occurrence": {
+                        "branch": "trunk",
+                        "commit_sha": "a" * 40,
+                    },
+                }
+            ],
+        }
+        expanded = {
+            **initial,
+            "query": "factory create initialize",
+            "results": [
+                {
+                    "chunk_id": "correct",
+                    "project": "Solver",
+                    "path": "src/domain.cpp",
+                    "title": "Domain::setup",
+                    "text": "object = Factory::create(); object->initialize();",
+                    "selected_occurrence": {
+                        "branch": "trunk",
+                        "commit_sha": "a" * 40,
+                    },
+                }
+            ],
+        }
+
+        def search(**values: object) -> dict[str, object]:
+            if values["query"] == "factory create initialize":
+                return expanded
+            if values["query"] == "unobserved guessed helper":
+                return {**initial, "query": values["query"], "results": []}
+            return initial
+
+        progress: list[dict[str, object]] = []
+        with mock.patch.object(service, "search", side_effect=search) as search_mock:
+            with mock.patch.object(api, "search_semantic_map", return_value=[]):
+                context = service.context(
+                    query="Onde o componente é inicializado?",
+                    project="Solver",
+                    branch="trunk",
+                    allowed_access={"lab"},
+                    query_plan={
+                        "algorithm": "test",
+                        "generated": True,
+                        "queries": ["Onde o componente é inicializado?"],
+                        "identifiers": [],
+                    },
+                    progress_callback=progress.append,
+                )
+
+        self.assertEqual(investigator.calls, 3)
+        self.assertEqual(search_mock.call_count, 3)
+        self.assertEqual(context["agent_investigation"]["status"], "sufficient")
+        self.assertEqual(context["agent_investigation"]["iterations"], 3)
+        self.assertEqual(context["sources"][0]["path"], "src/domain.cpp")
+        self.assertIn("agent", {step["stage"] for step in progress})
+
+    def test_ask_audits_long_answers_in_bounded_batches(self) -> None:
+        answer = "\n\n".join(
+            f"Claim {position} is supported [S1]." for position in range(1, 8)
+        )
+        audits = []
+        for identifiers in ((1, 2, 3, 4, 5), (6, 7)):
+            items = ",".join(
+                '{"claim_id":"C%s","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"Present."}' % identifier
+                for identifier in identifiers
+            )
+            audits.append('{"claims":[' + items + "]}")
+        generator = _VerifyingGenerator(answers=[answer], audits=audits)
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the flow",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 20,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                        "path": "src/model.cpp",
+                        "text": "Implementation evidence.",
+                    }
+                ],
+            },
+        ):
+            result = service.ask(query="Explain the flow")
+
+        self.assertTrue(result["verification"]["passed"])
+        self.assertEqual(result["verification"]["batches"], 2)
+        self.assertEqual(result["verification"]["counts"]["supported"], 7)
+        self.assertEqual(len(generator.verify_calls), 2)
 
     def test_ask_uses_local_query_planner_for_location_questions(self) -> None:
         generator = _PlanningGenerator()

@@ -200,6 +200,32 @@ class DatabaseTests(unittest.TestCase):
         self.assertEqual(connection.parameters["branch"], "trunk")
         self.assertEqual(results[0]["selected_occurrence"]["branch"], "trunk")
 
+    def test_fetch_chunk_neighborhood_is_bounded_and_acl_scoped(self) -> None:
+        connection = _Connection([])
+        with mock.patch.object(database, "_driver", return_value=(object(), object())):
+            with mock.patch.object(database, "_connect", return_value=connection):
+                results = database.fetch_chunk_neighborhood(
+                    "postgresql://not-logged",
+                    chunk_id="chunk-1",
+                    radius=2,
+                    project="Solver",
+                    branch="trunk",
+                    allowed_access={"lab"},
+                )
+
+        self.assertEqual(results, [])
+        self.assertIn("document.access_class = ANY", connection.sql)
+        self.assertIn("occurrence.branch = %(branch)s::text", connection.sql)
+        self.assertEqual(connection.parameters["neighbor_limit"], 5)
+        self.assertEqual(connection.parameters["allowed_access"], ["lab"])
+
+        with self.assertRaisesRegex(ValueError, "radius"):
+            database.fetch_chunk_neighborhood(
+                "postgresql://unused",
+                chunk_id="chunk-1",
+                radius=6,
+            )
+
     def test_repository_status_reports_branch_and_embedding_coverage(self) -> None:
         class StatusConnection:
             def __enter__(self) -> StatusConnection:

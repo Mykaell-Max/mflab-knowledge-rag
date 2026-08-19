@@ -378,6 +378,22 @@ selecionados sem expor raciocínio oculto. A arquitetura e suas fontes estão em
 `evaluations/mfsim-ng-investigation-pilot.json`. A próxima camada é enriquecer o
 mapa com chamadas e usos de símbolos extraídos por parsing sintático genérico.
 
+A validação real da 0.38.0 mostrou o limite do plano em uma única etapa: oito
+identificadores plausíveis propostos pelo modelo não existiam no mapa, a
+navegação retornou zero nós e a auditoria bloqueou 9 de 11 afirmações como
+incertas ou não sustentadas. A 0.39.0 substitui esse beco sem saída por até três
+ciclos de observação e ferramentas somente leitura. O modelo pode escolher
+nova busca, consulta de símbolo ou vizinhança de um chunk observado; cada
+resultado volta ao ciclo seguinte. Ações, escopo, ACL, repetições e orçamentos
+continuam controlados pelo servidor. A síntese recebe um caderno de cobertura,
+e uma falha da auditoria de reparo não apaga mais o primeiro laudo válido.
+Hipóteses com zero resultados voltam ao ciclo como observações, e respostas
+longas são auditadas em lotes limitados para evitar truncamento do JSON sem
+relaxar a conferência de nenhuma afirmação.
+A regressão agora inclui tanto a malha adaptativa quanto a pergunta ampla sobre
+o fluxo atual de um subsistema; os nomes científicos permanecem apenas na
+suíte de avaliação.
+
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
 rotas web somente leitura; administração usa senha separada. Um segredo

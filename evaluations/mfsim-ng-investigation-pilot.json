@@ -1,6 +1,6 @@
 {
   "schema_version": "0.1",
-  "name": "MFSim-NG — localização hierárquica e fluxo de malha",
+  "name": "MFSim-NG — investigação agentiva de localização e fluxo",
   "cases": [
     {
       "id": "answer-pt-adaptive-mesh-initialization",
@@ -28,6 +28,35 @@
           "src/mfsim/domain/domain.cpp",
           "src/mfsim/mesh/mesh_manager.cpp",
           "src/mfsim/mesh/mtree/mtree_domain_filling.cpp"
+        ]
+      }
+    },
+    {
+      "id": "answer-pt-current-subsystem-flow",
+      "query": "Como funciona o DPM atualmente? Explique o fluxo no código.",
+      "mode": "hybrid",
+      "project": "MFSim-NG",
+      "branch": "base",
+      "limit": 14,
+      "allowed_access": ["public", "lab"],
+      "max_context_characters": 18000,
+      "max_output_tokens": 1400,
+      "temperature": 0,
+      "expectations": {
+        "abstained": false,
+        "grounding_status": "cited",
+        "min_valid_citations": 3,
+        "max_invalid_citations": 0,
+        "min_sources": 4,
+        "min_citation_coverage": 1.0,
+        "allowed_finish_reasons": ["stop"],
+        "max_client_duration_seconds": 360,
+        "max_generation_duration_seconds": 180,
+        "scope_warning": false,
+        "required_source_paths": [
+          "src/mfsim/domain/domain.cpp",
+          "src/mfsim/model/lagrangian/DPM/dpm_manager.cpp",
+          "src/mfsim/model/lagrangian/DPM/common/dpm_particle.cpp"
         ]
       }
     }

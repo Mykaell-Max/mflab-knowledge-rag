@@ -595,6 +595,86 @@ LIMIT %(limit)s
 """
 
 
+CHUNK_NEIGHBORHOOD_SQL = """
+WITH target AS (
+    SELECT chunk.document_id, chunk.line_start
+    FROM mflab_knowledge.chunks AS chunk
+    JOIN mflab_knowledge.documents AS document
+      ON document.document_id = chunk.document_id
+    JOIN mflab_knowledge.repositories AS repository
+      ON repository.repository_id = document.repository_id
+    WHERE chunk.chunk_id = %(chunk_id)s
+      AND document.access_class = ANY(%(allowed_access)s::text[])
+      AND (%(project)s::text IS NULL
+           OR repository.project = %(project)s::text)
+      AND EXISTS (
+          SELECT 1
+          FROM mflab_knowledge.document_occurrences AS occurrence
+          WHERE occurrence.document_id = document.document_id
+            AND (%(branch)s::text IS NULL
+                 OR occurrence.branch = %(branch)s::text)
+      )
+), ranked AS (
+    SELECT
+        chunk.*,
+        row_number() OVER (
+            ORDER BY abs(chunk.line_start - target.line_start),
+                     chunk.line_start,
+                     chunk.chunk_id
+        ) AS neighbor_rank
+    FROM target
+    JOIN mflab_knowledge.chunks AS chunk
+      ON chunk.document_id = target.document_id
+), selected AS (
+    SELECT * FROM ranked WHERE neighbor_rank <= %(neighbor_limit)s
+)
+SELECT
+    (1000.0 - selected.neighbor_rank::double precision) AS score,
+    selected.chunk_id,
+    selected.chunk_hash,
+    repository.project,
+    document.path,
+    document.format,
+    selected.title,
+    selected.line_start,
+    selected.line_end,
+    document.access_class,
+    preferred.branch,
+    preferred.commit_sha,
+    occurrences.items AS occurrences,
+    selected.text
+FROM selected
+JOIN mflab_knowledge.documents AS document
+  ON document.document_id = selected.document_id
+JOIN mflab_knowledge.repositories AS repository
+  ON repository.repository_id = document.repository_id
+JOIN LATERAL (
+    SELECT occurrence.branch, occurrence.commit_sha, occurrence.canonical
+    FROM mflab_knowledge.document_occurrences AS occurrence
+    WHERE occurrence.document_id = document.document_id
+      AND (%(branch)s::text IS NULL
+           OR occurrence.branch = %(branch)s::text)
+    ORDER BY occurrence.canonical DESC, occurrence.branch NULLS LAST
+    LIMIT 1
+) AS preferred ON true
+JOIN LATERAL (
+    SELECT jsonb_agg(
+        jsonb_build_object(
+            'branch', occurrence.branch,
+            'commit_sha', occurrence.commit_sha,
+            'canonical', occurrence.canonical,
+            'requested_ref', occurrence.requested_ref
+        ) ORDER BY occurrence.canonical DESC, occurrence.branch
+    ) AS items
+    FROM mflab_knowledge.document_occurrences AS occurrence
+    WHERE occurrence.document_id = document.document_id
+      AND (%(branch)s::text IS NULL
+           OR occurrence.branch = %(branch)s::text)
+) AS occurrences ON true
+ORDER BY selected.line_start, selected.chunk_id
+"""
+
+
 def search_postgres(
     database_url: str,
     *,
@@ -671,6 +751,42 @@ def fetch_chunks_by_id(
             {
                 "chunk_ids": normalized_ids,
                 "limit": min(limit, len(normalized_ids)),
+                "branch": branch,
+                "project": project,
+                "allowed_access": sorted(effective_access),
+            },
+        ).fetchall()
+    return _rows_to_results(rows)
+
+
+def fetch_chunk_neighborhood(
+    database_url: str,
+    *,
+    chunk_id: str,
+    radius: int = 1,
+    branch: str | None = None,
+    project: str | None = None,
+    allowed_access: set[str] | None = None,
+) -> list[dict[str, object]]:
+    """Read nearby chunks from one authorized document and branch."""
+
+    selected_id = chunk_id.strip()
+    if not selected_id or len(selected_id) > 200:
+        raise ValueError("chunk_id inválido")
+    if radius < 0 or radius > 5:
+        raise ValueError("radius deve estar entre 0 e 5")
+    effective_access = allowed_access if allowed_access is not None else {"public"}
+    if not effective_access or not effective_access.issubset(
+        RETRIEVABLE_ACCESS_CLASSES
+    ):
+        raise ValueError("filtro de acesso inválido ou vazio")
+    _psycopg, dict_row = _driver()
+    with _connect(database_url, row_factory=dict_row) as connection:
+        rows = connection.execute(
+            CHUNK_NEIGHBORHOOD_SQL,
+            {
+                "chunk_id": selected_id,
+                "neighbor_limit": radius * 2 + 1,
                 "branch": branch,
                 "project": project,
                 "allowed_access": sorted(effective_access),

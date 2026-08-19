@@ -82,6 +82,21 @@ function investigationDetail(step) {
   }
   if (Number.isFinite(Number(data.nodes))) details.push(`${formatNumber(data.nodes)} relações estruturais`);
   if (Number.isFinite(Number(data.evidence))) details.push(`${formatNumber(data.evidence)} trechos primários`);
+  if (Number.isFinite(Number(data.new_evidence))) details.push(`${formatNumber(data.new_evidence)} novas evidências`);
+  if (Array.isArray(data.actions) && data.actions.length) {
+    const actions = data.actions.map((action) => {
+      const value = action.query || action.chunk_id || "";
+      const count = action.result_count === undefined ? "" : ` (${action.result_count} resultados)`;
+      return `${action.tool}: ${value}${count}`;
+    });
+    details.push(`Ações: ${actions.join("; ")}`);
+  }
+  if (data.coverage && typeof data.coverage === "object") {
+    details.push(
+      `Cobertura: ${formatNumber(data.coverage.covered)} cobertos, `
+      + `${formatNumber(data.coverage.partial)} parciais, ${formatNumber(data.coverage.gap)} lacunas`,
+    );
+  }
   if (Number.isFinite(Number(data.supported))) {
     details.push(`${formatNumber(data.supported)} afirmações sustentadas`);
   }

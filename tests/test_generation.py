@@ -242,6 +242,45 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(payload["max_tokens"], 384)
         self.assertIn("MeshFactory", result)
 
+    def test_investigator_observes_results_and_requests_read_only_actions(self) -> None:
+        config = generation.GenerationConfig(
+            path=Path("generation.toml"),
+            base_url="http://127.0.0.1:8000/v1",
+            model="local-test-model",
+        )
+        captured: dict[str, object] = {}
+
+        def opener(request: object, *, timeout: int) -> _Response:
+            del timeout
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return _Response(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"coverage":[],"actions":[{"tool":"search_code","query":"factory create initialize"}],"keep_chunk_ids":[],"stop":false}'
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            )
+
+        generator = generation.OpenAICompatibleGenerator(config, opener=opener)
+        result = generator.investigate(
+            question="How is the component initialized?",
+            intent="mechanism",
+            observations=[{"chunk_id": "c1", "preview": "initialize();"}],
+            previous_actions=[],
+            previous_coverage=[],
+        )
+
+        payload = captured["payload"]
+        self.assertEqual(payload["temperature"], 0.0)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertIn("open_neighborhood", payload["messages"][0]["content"])
+        self.assertIn("factory create initialize", result)
+
 
 if __name__ == "__main__":
     unittest.main()

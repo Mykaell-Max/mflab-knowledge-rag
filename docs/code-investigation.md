@@ -42,10 +42,25 @@ o raciocínio interno do modelo e não expõe prompts ocultos.
 - O CodeRAG-Bench recomenda medir separadamente recuperação e resposta final:
   <https://aclanthology.org/2025.findings-naacl.176/>.
 
+## Runtime agentivo limitado
+
+A 0.39.0 acrescenta um primeiro runtime agentivo sobre essa fundação. Depois
+da recuperação inicial, o modelo observa metadados, proveniência e previews
+limitados dos chunks reais. Em até três ciclos, escolhe até três ferramentas de
+leitura entre `search_code`, `find_symbol` e `open_neighborhood`. Resultados de
+um ciclo alimentam a decisão seguinte; ações repetidas ou fora do esquema são
+descartadas. Um caderno de cobertura registra aspectos cobertos, parciais e
+lacunas e orienta a síntese sem ser tratado como evidência.
+
+Uma hipótese sem resultados não encerra a investigação: a contagem zero volta
+como observação para que o ciclo seguinte possa mudar de vocabulário. Depois da
+síntese, respostas longas são auditadas em lotes de até cinco afirmações. Isso
+mantém cada retorno estruturado dentro de um orçamento previsível sem reduzir a
+exigência de que todas as afirmações sejam ligadas às fontes que citam.
+
 ## Próximas camadas
 
-A versão atual é a primeira iteração segura. O mapa ainda deverá receber
-parsing sintático por linguagem, chamadas e usos de símbolos mais precisos,
-busca bidirecional entre chamadores e definições e uma segunda iteração somente
-quando a cobertura observada for insuficiente. Essas extensões devem continuar
-genéricas, versionadas e avaliadas separadamente por corpus.
+O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos
+de símbolos mais precisos, busca bidirecional entre chamadores e definições e
+mais ferramentas estruturais. Essas extensões devem continuar genéricas,
+versionadas e avaliadas separadamente por corpus.
