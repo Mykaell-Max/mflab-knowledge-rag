@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **18 de agosto de 2026**, na versão candidata **0.28.0**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.28.1**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -132,7 +132,7 @@ Ambiente do piloto:
 
 Serviços locais:
 
-- RAG API: `127.0.0.1:8765` na instalação validada; a versão 0.28.0 acrescenta
+- RAG API: `127.0.0.1:8765` na instalação validada; a versão 0.28.1 acrescenta
   bind LAN opt-in ainda pendente de validação integrada na Morgoth;
 - vLLM: `127.0.0.1:8000`;
 - indexação: `mflab-knowledge-index.service` e timer associado;
@@ -255,8 +255,10 @@ Caminhos usados durante o piloto:
 
 O piloto de recuperação e respostas dos dois repositórios foi validado. A
 interface web inicial e a autenticação compartilhada foram implementadas no
-workspace e passaram nos testes unitários. A próxima ação é validar a versão
-0.28.0 na Morgoth, reinstalando apenas a unidade da API com bind LAN opt-in e
+workspace e passaram nos testes unitários. A interface foi alinhada à identidade
+visual sóbria do site institucional: fundo claro, azul, bordas discretas e texto
+funcional, sem eyebrows ou slogans. A próxima ação é validar a versão
+0.28.1 na Morgoth, reinstalando apenas a unidade da API com bind LAN opt-in e
 confirmando:
 
 1. saúde da API, banco, modelo e indexador;

@@ -96,6 +96,9 @@ class DeploymentAssetTests(unittest.TestCase):
 
         self.assertIn("MFLab Knowledge", html)
         self.assertIn('src="/ui/app.js"', html)
+        self.assertIn("Universidade Federal de Uberlândia", html)
+        self.assertNotIn("eyebrow", html.casefold())
+        self.assertNotIn("uma única superfície", html.casefold())
         self.assertIn("sessionStorage", javascript)
         self.assertIn('api("/repositories")', javascript)
         self.assertIn("--accent", css)

@@ -14,6 +14,23 @@ const views = {
 const byId = (id) => document.getElementById(id);
 const formatNumber = (value) => new Intl.NumberFormat("pt-BR").format(Number(value || 0));
 const formatPercent = (value) => `${(Number(value || 0) * 100).toFixed(1).replace(".0", "")}%`;
+const statusLabels = {
+  success: "Concluída",
+  warning: "Concluída com avisos",
+  failed: "Falhou",
+  running: "Em execução",
+};
+
+function formatStatus(value) {
+  return statusLabels[value] || value || "Não disponível";
+}
+
+function setComponentState(id, text, healthy = true) {
+  const target = byId(id);
+  target.textContent = text;
+  const dot = target.closest("div")?.querySelector(".service-dot");
+  if (dot) dot.classList.toggle("ok", healthy);
+}
 
 function apiHeaders(hasBody = false) {
   const headers = {};
@@ -74,7 +91,6 @@ function switchView(name) {
   document.querySelectorAll(".nav-item").forEach((item) => item.classList.remove("active"));
   byId(`view-${name}`).classList.add("active");
   document.querySelector(`[data-view="${name}"]`).classList.add("active");
-  byId("view-title").textContent = views[name];
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
@@ -135,7 +151,7 @@ function renderRun(indexer) {
   }
   const status = element("div", "run-status");
   status.append(element("span", "pulse"));
-  status.append(element("strong", "", String(indexer.status || "desconhecido")));
+  status.append(element("strong", "", formatStatus(indexer.status)));
   target.append(status);
 
   const details = element("div", "run-detail");
@@ -173,12 +189,12 @@ async function refreshOverview() {
   const chunks = state.repositories.reduce((sum, item) => sum + Number(item.chunks || 0), 0);
   const embedded = state.repositories.reduce((sum, item) => sum + Number(item.embedded_chunks || 0), 0);
   byId("metric-coverage").textContent = chunks ? formatPercent(embedded / chunks) : "—";
-  byId("metric-indexer").textContent = status.indexer?.status || "—";
-  byId("metric-indexer-detail").textContent = status.indexer?.run_id || "última execução";
-  byId("database-state").textContent = health.database === "ok" ? "Conectado" : "Indisponível";
-  byId("embedding-state").textContent = status.search?.model_loaded ? "Modelo carregado" : "Carregamento sob demanda";
-  byId("generation-state").textContent = status.generation?.configured ? "Configurado" : "Não configurado";
-  byId("authentication-state").textContent = status.authentication?.configured ? "Chave de rede ativa" : "Somente local";
+  byId("metric-indexer").textContent = formatStatus(status.indexer?.status);
+  byId("metric-indexer-detail").textContent = status.indexer?.run_id || "sem execução registrada";
+  setComponentState("database-state", health.database === "ok" ? "Conectado" : "Indisponível", health.database === "ok");
+  setComponentState("embedding-state", status.search?.model_loaded ? "Modelo carregado" : "Carregamento sob demanda");
+  setComponentState("generation-state", status.generation?.configured ? "Configurado" : "Não configurado", Boolean(status.generation?.configured));
+  setComponentState("authentication-state", status.authentication?.configured ? "Chave de rede ativa" : "Somente local");
   byId("health-badge").textContent = "Operacional";
   byId("health-badge").className = "status-badge ok";
   renderRepositories(state.repositories);
@@ -270,7 +286,6 @@ async function bootstrap() {
 }
 
 document.querySelectorAll("[data-view]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.view)));
-document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => switchView(button.dataset.go)));
 byId("refresh-button").addEventListener("click", () => refreshOverview().catch((error) => showToast(error.message)));
 byId("search-project").addEventListener("change", () => updateBranches("search-project", "search-branch"));
 byId("ask-project").addEventListener("change", () => updateBranches("ask-project", "ask-branch"));
