@@ -111,6 +111,13 @@ class DeploymentAssetTests(unittest.TestCase):
         self.assertIn('api("/ui-api/repositories")', javascript)
         self.assertIn('api("/ui-api/admin/status")', javascript)
         self.assertIn("credentials: \"same-origin\"", javascript)
+        self.assertIn("function renderMarkdown", javascript)
+        self.assertIn("document.createTextNode", javascript)
+        self.assertIn("source-${sourceId}", javascript)
+        self.assertNotIn("innerHTML", javascript)
+        self.assertIn(".inline-citation", css)
+        self.assertIn(".code-block", css)
+        self.assertIn(".result-card[id]:target", css)
         self.assertIn("--accent", css)
         for forbidden in ("mfsim-ng", "mfsim-cmake", "/home/max"):
             self.assertNotIn(forbidden, html.casefold())

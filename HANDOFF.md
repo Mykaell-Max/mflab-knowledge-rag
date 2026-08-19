@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.32.0**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.33.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -312,16 +312,18 @@ fonte `derived_structure`, limitada explicitamente a layout e formatos, seguida
 das fontes primárias. `/structure` torna o mapa auditável sem nova carga ou uso
 do LLM. Ainda faltam símbolos, relações e resumos hierárquicos incrementais.
 
-A próxima validação na Morgoth deve confirmar:
+A validação real da 0.32.0 passou nos dois corpora: dois mapas, fontes derivadas
+e primárias em ambos os escopos e ausência do mapa em consulta direta. A
+0.33.0 melhora somente apresentação e contrato de saída. O gerador passa a
+produzir Markdown e blocos de código com linguagem; a interface usa um
+renderizador seguro sem `innerHTML` e apresenta citações como referências
+clicáveis com arquivo e linhas. Os IDs `[Sx]` continuam intactos na API para
+grounding e avaliações.
 
-1. `/structure` para a branch preferencial de cada corpus;
-2. `structural_guidance.status=success` em uma pergunta ampla;
-3. uma fonte derivada e pelo menos uma fonte primária por escopo;
-4. ausência do mapa em perguntas diretas;
-5. continuidade das regressões multi-repositório e multi-branch.
-
-Depois disso, a próxima implementação é a extração genérica de símbolos e
-relações descrita em `docs/assistant-roadmap.md`.
+A próxima validação na Morgoth deve confirmar a 0.33.0 na interface real: texto
+Markdown, blocos cercados com linguagem e referências clicáveis que levam à
+fonte correta. Depois disso, a próxima implementação é a extração genérica de
+símbolos e relações descrita em `docs/assistant-roadmap.md`.
 
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
@@ -382,6 +384,9 @@ Depois da interface demonstrável, a ordem recomendada é:
   conteúdo integral de `.env`.
 - Sempre que possível, o bloco deve salvar uma cópia do resultado em `logs/`,
   sem depender exclusivamente do histórico visível do terminal.
+- A Morgoth não possui `rg` garantido. Auditorias em RunBlocks devem usar Python
+  ou verificar explicitamente a disponibilidade da ferramenta; comando ausente
+  nunca pode ser interpretado como auditoria aprovada.
 
 ### 12.3 Fluxo Git e estilo de colaboração
 

@@ -226,6 +226,14 @@ Para visões gerais com mais de um escopo, omitir um projeto ou branch produz
 `incomplete_scope_coverage` e aciona no máximo uma revisão automática. O campo
 `quality_retry` registra essa revisão.
 
+O texto de `answer` usa Markdown. O gerador é instruído a marcar blocos de
+código com a linguagem correspondente e manter citações fora das cercas de
+código. A API preserva `[S1]`, `[S2]` e grupos equivalentes como contrato de
+auditoria. A interface substitui visualmente cada ID válido pelo nome do arquivo
+e intervalo de linhas, com navegação para o cartão da fonte. O renderizador web
+aceita apenas uma parte segura de Markdown e cria elementos DOM com
+`textContent`; HTML retornado pelo modelo é exibido como texto, nunca executado.
+
 ```json
 {
   "query": "how are distributed particle identifiers generated?",

@@ -542,6 +542,12 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(context["context_characters"], 1000)
         self.assertTrue(context["sources"][0]["text_truncated"])
 
+    def test_context_requests_safe_markdown_and_language_tagged_code(self) -> None:
+        self.assertIn("Format the answer as Markdown", api.CONTEXT_INSTRUCTIONS)
+        self.assertIn("never emit raw HTML", api.CONTEXT_INSTRUCTIONS)
+        self.assertIn("programming language tag", api.CONTEXT_INSTRUCTIONS)
+        self.assertIn("citations outside code fences", api.CONTEXT_INSTRUCTIONS)
+
     def test_context_explores_overview_and_balances_repository_sources(self) -> None:
         service = api.RagApiService(self.settings())
 

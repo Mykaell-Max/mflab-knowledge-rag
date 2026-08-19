@@ -90,6 +90,11 @@ como Bearer; chamadas do próprio servidor continuam disponíveis para a
 automação local. A interface em `/ui` abre diretamente em perguntas e buscas.
 O painel **Administração** concentra saúde do PostgreSQL, máquina, GPU,
 indexação e cobertura do corpus; ele exige `MFLAB_ADMIN_PASSWORD` no `.env`.
+Respostas são apresentadas como Markdown seguro, sem aceitar HTML do modelo.
+Parágrafos, listas, ênfase, código inline e blocos cercados com linguagem são
+renderizados localmente. IDs como `[S1]` permanecem na resposta auditável da
+API, mas a interface os transforma em referências com arquivo e linhas; cada
+referência leva ao cartão completo da fonte e o destaca.
 Os limites de geração pertencem ao backend: a interface não fixa orçamento de
 contexto ou saída, e `generation.toml` controla o teto de evidências conforme a
 janela do modelo local. Respostas de excesso de contexto causam redução segura

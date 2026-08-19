@@ -70,6 +70,172 @@ function element(name, className, text) {
   return node;
 }
 
+function sourceLabel(source, sourceId) {
+  if (!source) return sourceId;
+  if (source.source_kind === "derived_structure") {
+    return `${source.project || "Estrutura"} · mapa indexado`;
+  }
+  const path = String(source.path || "Fonte");
+  const filename = path.split("/").filter(Boolean).pop() || path;
+  const start = Number(source.line_start);
+  const end = Number(source.line_end);
+  if (!Number.isFinite(start)) return filename;
+  return `${filename} · L${start}${Number.isFinite(end) && end !== start ? `–${end}` : ""}`;
+}
+
+function citationReference(source, sourceId) {
+  if (!source) {
+    const missing = element("span", "inline-citation invalid", sourceId);
+    missing.title = `A resposta citou ${sourceId}, mas essa fonte não foi devolvida.`;
+    return missing;
+  }
+  const occurrence = source.selected_occurrence || {};
+  const reference = element("a", "inline-citation", sourceLabel(source, sourceId));
+  reference.href = `#source-${sourceId}`;
+  reference.dataset.sourceId = sourceId;
+  reference.title = [
+    sourceId,
+    source.project,
+    occurrence.branch,
+    String(occurrence.commit_sha || "").slice(0, 12),
+    source.path,
+  ].filter(Boolean).join(" · ");
+  reference.setAttribute("aria-label", `Ver fonte ${sourceId}: ${sourceLabel(source, sourceId)}`);
+  return reference;
+}
+
+function appendInlineMarkdown(target, text, sourceIndex) {
+  const tokenPattern = /(\[(?:S\d+(?:\s*[,;]\s*S\d+)*)\]|`[^`\n]+`|\*\*[^*\n]+\*\*|\*[^*\n]+\*)/g;
+  let position = 0;
+  for (const match of text.matchAll(tokenPattern)) {
+    if (match.index > position) target.append(document.createTextNode(text.slice(position, match.index)));
+    const token = match[0];
+    if (token.startsWith("[S")) {
+      const group = element("span", "citation-group");
+      (token.match(/S\d+/g) || []).forEach((sourceId) => {
+        group.append(citationReference(sourceIndex.get(sourceId), sourceId));
+      });
+      target.append(group);
+    } else if (token.startsWith("`")) {
+      target.append(element("code", "inline-code", token.slice(1, -1)));
+    } else if (token.startsWith("**")) {
+      const strong = element("strong");
+      appendInlineMarkdown(strong, token.slice(2, -2), sourceIndex);
+      target.append(strong);
+    } else {
+      const emphasis = element("em");
+      appendInlineMarkdown(emphasis, token.slice(1, -1), sourceIndex);
+      target.append(emphasis);
+    }
+    position = match.index + token.length;
+  }
+  if (position < text.length) target.append(document.createTextNode(text.slice(position)));
+}
+
+function isMarkdownBlockStart(line) {
+  return /^\s*$/.test(line)
+    || /^\s{0,3}```/.test(line)
+    || /^\s{0,3}#{1,4}\s+/.test(line)
+    || /^\s{0,3}>\s?/.test(line)
+    || /^\s{0,3}[-+*]\s+/.test(line)
+    || /^\s{0,3}\d+[.)]\s+/.test(line)
+    || /^\s{0,3}(?:---+|___+|\*\*\*+)\s*$/.test(line);
+}
+
+function renderMarkdown(markdown, sources) {
+  const container = element("div", "answer-text markdown-body");
+  const sourceIndex = new Map(
+    (sources || []).map((source) => [String(source.source_id || ""), source]),
+  );
+  const lines = String(markdown || "").replace(/\r\n?/g, "\n").split("\n");
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index];
+    if (!line.trim()) {
+      index += 1;
+      continue;
+    }
+
+    const fence = line.match(/^\s{0,3}```\s*([A-Za-z0-9_+.-]{0,32})\s*$/);
+    if (fence) {
+      const language = fence[1] || "text";
+      const codeLines = [];
+      index += 1;
+      while (index < lines.length && !/^\s{0,3}```\s*$/.test(lines[index])) {
+        codeLines.push(lines[index]);
+        index += 1;
+      }
+      if (index < lines.length) index += 1;
+      const block = element("div", "code-block");
+      block.append(element("div", "code-language", language));
+      const pre = element("pre");
+      const code = element("code", `language-${language}`, codeLines.join("\n"));
+      pre.append(code);
+      block.append(pre);
+      container.append(block);
+      continue;
+    }
+
+    const heading = line.match(/^\s{0,3}(#{1,4})\s+(.+)$/);
+    if (heading) {
+      const level = Math.min(6, heading[1].length + 2);
+      const title = element(`h${level}`);
+      appendInlineMarkdown(title, heading[2].trim(), sourceIndex);
+      container.append(title);
+      index += 1;
+      continue;
+    }
+
+    if (/^\s{0,3}>\s?/.test(line)) {
+      const quoteLines = [];
+      while (index < lines.length && /^\s{0,3}>\s?/.test(lines[index])) {
+        quoteLines.push(lines[index].replace(/^\s{0,3}>\s?/, ""));
+        index += 1;
+      }
+      const quote = element("blockquote");
+      appendInlineMarkdown(quote, quoteLines.join(" "), sourceIndex);
+      container.append(quote);
+      continue;
+    }
+
+    const unordered = line.match(/^\s{0,3}[-+*]\s+(.+)$/);
+    const ordered = line.match(/^\s{0,3}\d+[.)]\s+(.+)$/);
+    if (unordered || ordered) {
+      const list = element(ordered ? "ol" : "ul");
+      const pattern = ordered ? /^\s{0,3}\d+[.)]\s+(.+)$/ : /^\s{0,3}[-+*]\s+(.+)$/;
+      while (index < lines.length) {
+        const item = lines[index].match(pattern);
+        if (!item) break;
+        const listItem = element("li");
+        appendInlineMarkdown(listItem, item[1], sourceIndex);
+        list.append(listItem);
+        index += 1;
+      }
+      container.append(list);
+      continue;
+    }
+
+    if (/^\s{0,3}(?:---+|___+|\*\*\*+)\s*$/.test(line)) {
+      container.append(element("hr"));
+      index += 1;
+      continue;
+    }
+
+    const paragraphLines = [line.trim()];
+    index += 1;
+    while (index < lines.length && !isMarkdownBlockStart(lines[index])) {
+      paragraphLines.push(lines[index].trim());
+      index += 1;
+    }
+    const paragraph = element("p");
+    appendInlineMarkdown(paragraph, paragraphLines.join(" "), sourceIndex);
+    container.append(paragraph);
+  }
+
+  return container;
+}
+
 function showToast(message) {
   const toast = byId("global-feedback");
   toast.textContent = message;
@@ -147,6 +313,10 @@ async function loadCatalog() {
 
 function resultCard(result, sourceId = "") {
   const card = element("article", "result-card");
+  if (sourceId) {
+    card.id = `source-${sourceId}`;
+    card.tabIndex = -1;
+  }
   const meta = element("div", "result-meta");
   const occurrence = result.selected_occurrence || {};
   [sourceId, result.project, occurrence.branch, String(occurrence.commit_sha || "").slice(0, 12)]
@@ -213,7 +383,10 @@ async function submitAsk(event) {
       ? `Não há evidência indexada suficiente.${scopeSummary(resolution)}`
       : `${incompleteScopes ? "Resposta parcial: nem todos os escopos foram citados." : "Resposta concluída."}${scopeSummary(resolution)}`;
     card.append(element("h3", "", response.abstained ? "Evidência insuficiente" : "Resposta"));
-    card.append(element("div", "answer-text", response.answer || "A base indexada não sustenta uma resposta."));
+    card.append(renderMarkdown(
+      response.answer || "A base indexada não sustenta uma resposta.",
+      response.sources || [],
+    ));
     const footer = element("div", "answer-footer");
     footer.append(element("span", "chip accent", response.grounding_status || "sem status"));
     footer.append(element("span", "chip", `${(response.citations_used || []).length} citações`));
