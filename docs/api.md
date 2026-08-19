@@ -115,6 +115,13 @@ descrevem a política segura de navegação. A lista e suas contagens consideram
 somente as classes liberadas pelo processo. Nenhum nome de fonte é codificado
 no endpoint.
 
+O ID do corpus é estável e derivado da origem, enquanto o ID operacional do
+catálogo é escolhido pelo administrador. A política é associada primeiro por
+ID exato e, quando esses identificadores pertencem a camadas distintas, pelo
+nome de projeto somente se ele for único no catálogo. `configuration_match` e
+`catalog_repository_id` tornam essa associação visível. Projetos ambíguos não
+recebem aliases ou preferência por inferência.
+
 ### `POST /search`
 
 Exemplo híbrido:

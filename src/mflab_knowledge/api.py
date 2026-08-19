@@ -48,6 +48,7 @@ from mflab_knowledge.grounding import citation_coverage, citation_ids
 from mflab_knowledge.retrieval import RetrievalPolicy, load_retrieval_policy
 from mflab_knowledge.repository_config import (
     RepositoryCatalog,
+    RepositoryDefinition,
     load_repository_catalog,
 )
 from mflab_knowledge.service_runner import read_last_run
@@ -70,6 +71,27 @@ CONTEXT_INSTRUCTIONS = (
     "If the sources are insufficient, say that the indexed "
     "evidence is insufficient instead of inventing an answer."
 )
+
+
+def _match_repository_definition(
+    status: dict[str, object],
+    definitions: tuple[RepositoryDefinition, ...],
+) -> tuple[RepositoryDefinition | None, str]:
+    repository_id = str(status.get("repository_id", ""))
+    for definition in definitions:
+        if str(getattr(definition, "id", "")) == repository_id:
+            return definition, "repository_id"
+    project = str(status.get("project", ""))
+    project_matches = [
+        definition
+        for definition in definitions
+        if str(getattr(definition, "project", "")) == project
+    ]
+    if len(project_matches) == 1:
+        return project_matches[0], "unique_project"
+    if project_matches:
+        return None, "ambiguous_project"
+    return None, "unmatched"
 
 
 def _reduce_context_evidence(
@@ -586,16 +608,16 @@ class RagApiService:
             embedding_profile=profile,
             allowed_access=self._allowed_access(allowed_access),
         )
-        definitions = {
-            definition.id: definition
-            for definition in (
-                self.repository_catalog.repositories
-                if self.repository_catalog is not None
-                else ()
-            )
-        }
+        definitions = (
+            self.repository_catalog.repositories
+            if self.repository_catalog is not None
+            else ()
+        )
         for value in values:
-            definition = definitions.get(str(value["repository_id"]))
+            definition, configuration_match = _match_repository_definition(
+                value,
+                definitions,
+            )
             branch_names = {
                 str(branch) for branch in value.get("branch_names", [])
             }
@@ -622,6 +644,10 @@ class RagApiService:
             value["configured_preferred_branch"] = configured
             value["preference_status"] = preference_status
             value["aliases"] = list(definition.aliases) if definition else []
+            value["catalog_repository_id"] = (
+                definition.id if definition is not None else None
+            )
+            value["configuration_match"] = configuration_match
         return values
 
     def administration_status(self) -> dict[str, object]:

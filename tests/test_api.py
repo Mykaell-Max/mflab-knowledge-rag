@@ -208,6 +208,90 @@ class ApiServiceTests(unittest.TestCase):
             result["branch_names"], ["develop", "feature/a", "trunk"]
         )
 
+    def test_repository_summary_matches_stable_database_id_by_unique_project(
+        self,
+    ) -> None:
+        definition = RepositoryDefinition(
+            id="solver",
+            enabled=True,
+            project="Generic Solver",
+            source=Path("source"),
+            canonical_ref="origin/trunk",
+            branch_scope="remote",
+            access_class="lab",
+            profile="generic",
+            preferred_branch="integration",
+            aliases=("next",),
+        )
+        catalog = RepositoryCatalog(
+            path=Path("repositories.toml"),
+            config_hash="sha256:test",
+            cache_root=Path("cache"),
+            inventory_root=Path("inventory"),
+            normalized_root=Path("data"),
+            repositories=(definition,),
+        )
+        status = {
+            "repository_id": "generic-solver-a1b2c3d4e5f6",
+            "project": "Generic Solver",
+            "branch_names": ["integration", "trunk"],
+            "canonical_branches": ["trunk"],
+        }
+        service = api.RagApiService(
+            self.settings(),
+            repository_catalog=catalog,
+        )
+
+        with mock.patch.object(api, "repository_status", return_value=[status]):
+            result = service.repositories()[0]
+
+        self.assertEqual(result["preferred_branch"], "integration")
+        self.assertEqual(result["aliases"], ["next"])
+        self.assertEqual(result["catalog_repository_id"], "solver")
+        self.assertEqual(result["configuration_match"], "unique_project")
+
+    def test_repository_summary_rejects_ambiguous_project_fallback(self) -> None:
+        definitions = tuple(
+            RepositoryDefinition(
+                id=identifier,
+                enabled=True,
+                project="Shared Project",
+                source=Path(identifier),
+                canonical_ref="origin/trunk",
+                branch_scope="remote",
+                access_class="lab",
+                profile="generic",
+                preferred_branch="integration",
+                aliases=(identifier,),
+            )
+            for identifier in ("solver-a", "solver-b")
+        )
+        catalog = RepositoryCatalog(
+            path=Path("repositories.toml"),
+            config_hash="sha256:test",
+            cache_root=Path("cache"),
+            inventory_root=Path("inventory"),
+            normalized_root=Path("data"),
+            repositories=definitions,
+        )
+        service = api.RagApiService(
+            self.settings(),
+            repository_catalog=catalog,
+        )
+        status = {
+            "repository_id": "shared-project-a1b2c3d4e5f6",
+            "project": "Shared Project",
+            "branch_names": ["integration", "trunk"],
+            "canonical_branches": ["trunk"],
+        }
+
+        with mock.patch.object(api, "repository_status", return_value=[status]):
+            result = service.repositories()[0]
+
+        self.assertEqual(result["preferred_branch"], "trunk")
+        self.assertEqual(result["aliases"], [])
+        self.assertEqual(result["configuration_match"], "ambiguous_project")
+
     def test_automatic_comparison_searches_each_configured_scope(self) -> None:
         definitions = tuple(
             RepositoryDefinition(
