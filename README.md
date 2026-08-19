@@ -55,6 +55,11 @@ código. Metadados colaborativos do GitLab ainda serão adicionados.
 
 O inventário inicial não instala bibliotecas e não precisa acessar a rede.
 
+Para revisar somente o visual da interface fora do servidor, sem banco,
+modelos, GitLab ou credenciais, execute `python scripts/preview-web-ui.py
+--open`. A prévia usa dados genéricos em memória, escuta apenas em
+`127.0.0.1:8766` e não representa o conteúdo científico real.
+
 ## API RAG local
 
 Instale o transporte HTTP junto dos backends já utilizados:
