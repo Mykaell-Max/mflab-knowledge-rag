@@ -47,6 +47,27 @@ class _RetryGenerator(_Generator):
         }
 
 
+class _VerifyingGenerator(_Generator):
+    def __init__(self, answers: list[str], audits: list[str]) -> None:
+        super().__init__()
+        self.answers = iter(answers)
+        self.audits = iter(audits)
+        self.verify_calls: list[dict[str, object]] = []
+
+    def generate(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return {
+            "answer": next(self.answers),
+            "model": "local-test-model",
+            "finish_reason": "stop",
+            "usage": {"total_tokens": 20},
+        }
+
+    def verify(self, **kwargs: object) -> str:
+        self.verify_calls.append(kwargs)
+        return next(self.audits)
+
+
 class ApiServiceTests(unittest.TestCase):
     def settings(self) -> api.ApiSettings:
         return api.ApiSettings(
@@ -822,6 +843,120 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["citation_coverage"]["units"], 2)
         self.assertEqual(result["citation_coverage"]["cited_units"], 1)
         self.assertEqual(result["citation_coverage"]["coverage"], 0.5)
+
+    def test_ask_repairs_a_cited_claim_that_the_source_does_not_support(self) -> None:
+        generator = _VerifyingGenerator(
+            answers=[
+                "This function initializes the complete mesh [S1].",
+                "The retrieved function assigns a pointer; the evidence does not "
+                "establish mesh initialization [S1].",
+            ],
+            audits=[
+                '{"claims":[{"claim_id":"C1","verdict":"unsupported",'
+                '"source_ids":["S1"],"finding":"The source only assigns a local pointer."}]}',
+                '{"claims":[{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"The answer now states the source limitation."}]}',
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "project": "Solver",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+                "path": "src/model.cpp",
+                "text": "void initialize(Mesh* mesh) { mesh = _mesh; }",
+            }
+        ]
+        progress: list[dict[str, object]] = []
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Where is the mesh initialized?",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 44,
+                "truncated": False,
+                "sources": sources,
+                "investigation": {"steps": []},
+            },
+        ):
+            result = service.ask(
+                query="Where is the mesh initialized?",
+                progress_callback=progress.append,
+            )
+
+        self.assertFalse(result["abstained"])
+        self.assertTrue(result["verification"]["passed"])
+        self.assertTrue(result["context"]["evidence_repair"])
+        self.assertEqual(len(generator.calls), 2)
+        self.assertEqual(len(generator.verify_calls), 2)
+        self.assertIn("does not establish", result["answer"])
+        self.assertIn("revision", [step["stage"] for step in progress])
+
+    def test_ask_abstains_when_repair_remains_unsupported(self) -> None:
+        audit = (
+            '{"claims":[{"claim_id":"C1","verdict":"unsupported",'
+            '"source_ids":["S1"],"finding":"The claim is not established."}]}'
+        )
+        generator = _VerifyingGenerator(
+            answers=["Unsupported conclusion [S1].", "Still unsupported [S1]."],
+            audits=[audit, audit],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+            ),
+        )
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "question",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 8,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                        "path": "src/model.cpp",
+                        "text": "evidence",
+                    }
+                ],
+            },
+        ):
+            result = service.ask(query="question")
+
+        self.assertTrue(result["abstained"])
+        self.assertIsNone(result["answer"])
+        self.assertEqual(result["reason"], "evidence_not_supported")
+        self.assertEqual(result["grounding_status"], "evidence_not_supported")
 
     def test_overview_reports_when_answer_cites_only_one_scope(self) -> None:
         generator = _Generator("Solver A is the complete system [S1].")

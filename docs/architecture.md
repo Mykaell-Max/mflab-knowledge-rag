@@ -267,6 +267,21 @@ na resposta. Escopos distintos são devolvidos separadamente e produzem um aviso
 explícito. Ausência de evidência causa abstenção sem inferência; ausência do
 gerador não afeta os endpoints de recuperação.
 
+A presença de uma citação não encerra a validação. O serviço separa a resposta
+em unidades factuais e solicita ao mesmo gerador local uma auditoria estruturada
+de cada unidade contra apenas as fontes citadas por ela. O JSON retornado é
+validado pelo servidor: IDs desconhecidos são descartados e afirmações ausentes
+da auditoria permanecem inconclusivas. Uma auditoria negativa permite somente
+uma nova síntese; uma segunda falha ou indisponibilidade da auditoria impede a
+entrega da resposta candidata. O auditor não recebe shell, escrita, rede externa
+ou fontes fora da ACL.
+
+A interface usa jobs efêmeros em memória para tornar a investigação observável
+enquanto ocorre. Há um único worker de perguntas e uma fila limitada; cada job
+expira automaticamente. Os eventos expõem somente ações objetivas e contagens —
+planejamento, escopo, recuperação, preparação de evidências, geração, auditoria
+e revisão — sem revelar prompts, raciocínio interno ou conteúdo integral.
+
 O resolvedor de escopo opera antes da recuperação e usa somente metadados do
 catálogo autorizado. `aliases` e `preferred_branch` são definidos por
 repositório. Menções de múltiplos projetos ou branches viram escopos paralelos;

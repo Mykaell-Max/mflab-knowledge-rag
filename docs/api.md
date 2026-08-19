@@ -225,6 +225,12 @@ IDs, e tenta novamente até duas vezes. Os campos `generation_attempts` e
 Para visões gerais com mais de um escopo, omitir um projeto ou branch produz
 `incomplete_scope_coverage` e aciona no máximo uma revisão automática. O campo
 `quality_retry` registra essa revisão.
+Por padrão, cada unidade factual passa ainda por uma auditoria semântica contra
+somente os IDs que ela cita. O servidor valida o JSON dessa auditoria e aceita
+no máximo uma nova síntese. `verification` devolve achados curtos e
+`context.evidence_repair` informa se houve revisão. Se a conclusão continuar
+sem sustentação, `answer` será nulo, `abstained` será verdadeiro e `reason`
+será `evidence_not_supported`.
 
 O texto de `answer` usa Markdown. O gerador é instruído a marcar blocos de
 código com a linguagem correspondente e manter citações fora das cercas de
@@ -253,18 +259,25 @@ reconhecidos continuam como texto simples.
 ```
 
 A resposta inclui `answer`, `citations_used`, `invalid_citations`, `sources`,
-`scopes`, `citation_coverage` e `scope_citation_coverage`. A cobertura é uma
-verificação estrutural por
-parágrafo ou bullet factual; ela não substitui uma avaliação semântica humana
-de que a fonte realmente sustenta a afirmação. `grounding_status` vale `cited`,
+`scopes`, `citation_coverage`, `scope_citation_coverage`, `verification` e
+`investigation`. A cobertura continua sendo estrutural; `verification` é uma
+segunda avaliação automatizada e não deve ser confundida com verdade absoluta
+ou revisão científica humana. `grounding_status` vale `cited`,
 `partial_citations`, `incomplete_scope_coverage`, `scope_overclaim`,
-`missing_citations`, `invalid_citations` ou `no_sources`. Citações podem ser
+`missing_citations`, `invalid_citations`, `evidence_not_supported` ou
+`no_sources`. Citações podem ser
 individuais (`[S1][S2]`) ou agrupadas estritamente (`[S1, S2]` ou
 `[S1; S2]`); texto livre dentro dos colchetes não é aceito como citação.
 `scope_warning` fica verdadeiro quando as fontes abrangem mais de uma
 combinação projeto/branch/commit; isso não bloqueia uma comparação intencional,
 mas impede que o cliente trate versões distintas como se fossem uma só. O
 texto integral das fontes não é repetido na resposta de `/ask`.
+
+A interface usa `POST /ui-api/ask-jobs` e consulta
+`GET /ui-api/ask-jobs/{job_id}` enquanto a pergunta está em execução. Os IDs são
+aleatórios, os jobs expiram após quinze minutos, a fila aceita no máximo oito
+perguntas ativas e somente um job executa por vez. O resultado final preserva o
+mesmo contrato de `/ask`.
 
 Sem `generation.toml`, `/search` e `/context` continuam funcionando, enquanto
 `/ask` retorna `503` com uma orientação de configuração.

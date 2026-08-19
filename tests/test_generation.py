@@ -59,6 +59,8 @@ class GenerationTests(unittest.TestCase):
             )
             self.assertEqual(config.model, "local-test-model")
             self.assertEqual(config.max_context_characters, 8000)
+            self.assertTrue(config.verify_evidence)
+            self.assertEqual(config.max_repair_attempts, 1)
 
             with self.assertRaisesRegex(ValueError, "127.0.0.1"):
                 generation.load_generation_config(
@@ -165,6 +167,43 @@ class GenerationTests(unittest.TestCase):
                 instructions="instructions",
                 sources=[{"source_id": "S1", "text": "evidence"}],
             )
+
+    def test_verification_requests_structured_local_evidence_audit(self) -> None:
+        config = generation.GenerationConfig(
+            path=Path("generation.toml"),
+            base_url="http://127.0.0.1:8000/v1",
+            model="local-test-model",
+        )
+        captured: dict[str, object] = {}
+
+        def opener(request: object, *, timeout: int) -> _Response:
+            del timeout
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return _Response(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"claims":[{"claim_id":"C1","verdict":"unsupported","source_ids":["S1"],"finding":"Only a local pointer is assigned."}]}'
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            )
+
+        generator = generation.OpenAICompatibleGenerator(config, opener=opener)
+        result = generator.verify(
+            question="Where is the mesh initialized?",
+            answer="It is initialized here [S1].",
+            claims=[{"claim_id": "C1", "text": "It is initialized here [S1]."}],
+            sources=[{"source_id": "S1", "text": "mesh = _mesh;"}],
+        )
+
+        payload = captured["payload"]
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertEqual(payload["temperature"], 0.0)
+        self.assertIn("unsupported", result)
 
 
 if __name__ == "__main__":

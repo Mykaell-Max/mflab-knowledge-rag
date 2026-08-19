@@ -9,3 +9,7 @@ max_output_tokens = 1024
 temperature = 0.1
 # Limite de evidência textual enviado ao modelo; ajuste à janela do servidor.
 max_context_characters = 8000
+# Audita cada afirmação contra as fontes citadas e permite uma única correção.
+verify_evidence = true
+verification_max_tokens = 768
+max_repair_attempts = 1

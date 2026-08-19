@@ -63,6 +63,59 @@ async function api(path, options = {}) {
   return response.json();
 }
 
+const wait = (milliseconds) => new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+
+function investigationDetail(step) {
+  const data = step?.data || {};
+  const details = [];
+  if (Array.isArray(data.scopes) && data.scopes.length) {
+    details.push(data.scopes.map((scope) => `${scope.project} / ${scope.branch}`).join("; "));
+  }
+  if (Number.isFinite(Number(data.candidates))) details.push(`${formatNumber(data.candidates)} candidatos`);
+  if (Number.isFinite(Number(data.sources))) details.push(`${formatNumber(data.sources)} fontes selecionadas`);
+  if (Number.isFinite(Number(data.maps))) details.push(`${formatNumber(data.maps)} mapas estruturais`);
+  if (Number.isFinite(Number(data.supported))) {
+    details.push(`${formatNumber(data.supported)} afirmações sustentadas`);
+  }
+  const revised = Number(data.unsupported || 0) + Number(data.uncertain || 0);
+  if (revised > 0) details.push(`${formatNumber(revised)} afirmações encaminhadas para revisão`);
+  return [step?.detail, ...details].filter(Boolean).join(" ");
+}
+
+function renderInvestigation(steps, running = false) {
+  const panel = byId("ask-investigation");
+  const list = byId("ask-investigation-steps");
+  const time = byId("ask-investigation-time");
+  list.replaceChildren();
+  (steps || []).forEach((step, index) => {
+    const item = element(
+      "li",
+      `investigation-step${running && index === steps.length - 1 ? " current" : ""}`,
+    );
+    item.append(element("strong", "", step.title || "Etapa concluída"));
+    const detail = investigationDetail(step);
+    if (detail) item.append(element("p", "", detail));
+    list.append(item);
+  });
+  const last = (steps || [])[steps.length - 1];
+  time.textContent = last ? formatDuration(last.elapsed_seconds || 0) : "";
+  panel.classList.toggle("hidden", !(steps || []).length);
+}
+
+async function runAskJob(payload) {
+  const created = await api("/ui-api/ask-jobs", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+  while (true) {
+    const job = await api(`/ui-api/ask-jobs/${encodeURIComponent(created.job_id)}`);
+    renderInvestigation(job.steps || [], job.status !== "completed" && job.status !== "failed");
+    if (job.status === "completed") return job.result;
+    if (job.status === "failed") throw new Error(job.error || "A investigação não pôde ser concluída.");
+    await wait(400);
+  }
+}
+
 function element(name, className, text) {
   const node = document.createElement(name);
   if (className) node.className = className;
@@ -584,6 +637,7 @@ async function submitAsk(event) {
   card.classList.add("hidden");
   card.replaceChildren();
   sources.replaceChildren();
+  renderInvestigation([]);
   if (submit) submit.disabled = true;
   const payload = {
     query: byId("ask-query").value.trim(),
@@ -593,21 +647,21 @@ async function submitAsk(event) {
   if (byId("ask-project").value) payload.project = byId("ask-project").value;
   if (byId("ask-branch").value) payload.branch = byId("ask-branch").value;
   try {
-    const response = await api("/ui-api/ask", { method: "POST", body: JSON.stringify(payload) });
+    const response = await runAskJob(payload);
     const resolution = response.context?.scope_resolution;
     const incompleteScopes = ["incomplete_scope_coverage", "scope_overclaim"].includes(
       response.grounding_status,
     );
+    const unsupported = response.reason === "evidence_not_supported";
     feedback.textContent = response.abstained
-      ? `Não há evidência indexada suficiente.${scopeSummary(resolution)}`
+      ? `${unsupported ? "As fontes recuperadas não sustentaram uma resposta conclusiva." : "Não há evidência indexada suficiente."}${scopeSummary(resolution)}`
       : `${incompleteScopes ? "Resposta parcial: nem todos os escopos foram citados." : "Resposta concluída."}${scopeSummary(resolution)}`;
-    card.append(element("h3", "", response.abstained ? "Evidência insuficiente" : "Resposta"));
+    card.append(element("h3", "", response.abstained ? "Não foi possível concluir" : "Resposta"));
     card.append(renderMarkdown(
       response.answer || "A base indexada não sustenta uma resposta.",
       response.sources || [],
     ));
     const footer = element("div", "answer-footer");
-    footer.append(element("span", "chip accent", response.grounding_status || "sem status"));
     footer.append(element("span", "chip", `${(response.citations_used || []).length} citações`));
     const exploration = response.context?.exploration;
     if (exploration?.intent === "overview") footer.append(element("span", "chip", "visão geral"));

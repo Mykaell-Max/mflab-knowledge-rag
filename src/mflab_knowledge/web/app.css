@@ -129,6 +129,18 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 17, 17
 .form-footer > .button { flex: 0 0 auto; }
 
 .feedback { min-height: 2.6rem; padding: 0.85rem 0; color: var(--muted); font-size: 0.76rem; }
+.investigation-panel { margin: 0 0 0.9rem; padding: 1.1rem 1.25rem; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
+.investigation-heading { display: flex; align-items: baseline; justify-content: space-between; gap: 1rem; }
+.investigation-heading h2 { margin: 0; font-size: 0.95rem; }
+.investigation-heading p { margin: 0.3rem 0 0; color: var(--muted); font-size: 0.72rem; }
+.investigation-time { color: var(--muted); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.67rem; white-space: nowrap; }
+.investigation-steps { display: grid; gap: 0; margin: 1rem 0 0; padding: 0; list-style: none; counter-reset: investigation; }
+.investigation-step { position: relative; min-height: 2.6rem; padding: 0 0 0.85rem 2rem; counter-increment: investigation; }
+.investigation-step::before { position: absolute; top: 0; left: 0; display: grid; width: 1.25rem; height: 1.25rem; place-items: center; color: var(--accent); background: var(--accent-soft); border-radius: 50%; content: counter(investigation); font-size: 0.62rem; font-weight: 700; }
+.investigation-step:not(:last-child)::after { position: absolute; top: 1.35rem; bottom: 0.1rem; left: 0.59rem; width: 1px; background: var(--line); content: ""; }
+.investigation-step strong { display: block; color: var(--ink); font-size: 0.76rem; line-height: 1.4; }
+.investigation-step p { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.7rem; line-height: 1.45; }
+.investigation-step.current::before { color: #fff; background: var(--accent); }
 .result-list { display: grid; gap: 0.75rem; }
 .result-card { padding: 1.1rem; }
 .result-meta { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 0.7rem; }

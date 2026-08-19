@@ -20,11 +20,37 @@ class ExplorationTests(unittest.TestCase):
         self.assertEqual(len(plan["queries"]), 4)
         self.assertTrue(all("Solver" in query for query in plan["queries"]))
 
-    def test_direct_question_is_not_expanded(self) -> None:
+    def test_location_question_explores_definition_and_usage(self) -> None:
         plan = plan_exploration("Onde a classe Particle é declarada?")
 
+        self.assertEqual(plan["intent"], "location")
+        self.assertEqual(len(plan["queries"]), 3)
+        self.assertFalse(plan["require_scope_coverage"])
+        instruction = exploration_instructions(plan, [])
+        self.assertIn("merely mentions", instruction)
+
+    def test_unclassified_direct_question_is_not_expanded(self) -> None:
+        plan = plan_exploration("Liste os parâmetros disponíveis")
+
         self.assertEqual(plan["intent"], "direct")
-        self.assertEqual(plan["queries"], ["Onde a classe Particle é declarada?"])
+        self.assertEqual(plan["queries"], ["Liste os parâmetros disponíveis"])
+
+    def test_mechanism_and_comparison_have_bounded_distinct_plans(self) -> None:
+        mechanism = plan_exploration("Como o método é resolvido no código?")
+        comparison = plan_exploration("Compare o método entre A e B")
+
+        self.assertEqual(mechanism["intent"], "mechanism")
+        self.assertEqual(len(mechanism["queries"]), 3)
+        self.assertIn(
+            "general domain knowledge",
+            exploration_instructions(mechanism, []),
+        )
+        self.assertEqual(comparison["intent"], "comparison")
+        self.assertTrue(comparison["require_scope_coverage"])
+        self.assertIn(
+            "each available scope",
+            exploration_instructions(comparison, []),
+        )
 
     def test_overview_authority_prefers_root_readme_to_candidate_document(self) -> None:
         values = [

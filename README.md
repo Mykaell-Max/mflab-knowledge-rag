@@ -104,6 +104,15 @@ Os limites de geração pertencem ao backend: a interface não fixa orçamento d
 contexto ou saída, e `generation.toml` controla o teto de evidências conforme a
 janela do modelo local. Respostas de excesso de contexto causam redução segura
 e nova tentativa, sem remover a proveniência das fontes.
+Depois da síntese, uma chamada separada ao mesmo modelo local confronta cada
+afirmação com os trechos que ela própria cita. Correspondência de termos não é
+tratada como prova. Uma conclusão não sustentada provoca no máximo uma revisão;
+se continuar sem apoio, o serviço não entrega a resposta candidata. Esses
+limites são configuráveis, mas a auditoria fica habilitada por padrão.
+Na interface, perguntas são executadas por uma fila local limitada a um worker.
+O navegador acompanha etapas reais de escopo, recuperação, seleção de fontes,
+síntese, auditoria e eventual revisão. Essa trilha não contém prompts, raciocínio
+interno ou texto integral das fontes.
 As classes `public` e `lab` são o teto padrão do processo, e cada requisição
 pode apenas restringir esse conjunto, nunca ampliá-lo.
 

@@ -5,6 +5,7 @@ import hmac
 import secrets
 import threading
 import time
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from importlib.resources import files
 from collections.abc import Awaitable, Callable
@@ -16,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from mflab_knowledge import __version__
 from mflab_knowledge.api import RagApiService, api_request_authorized
+from mflab_knowledge.ask_jobs import AskJobs
 from mflab_knowledge.generation import (
     GenerationNotConfiguredError,
     GenerationUnavailableError,
@@ -137,10 +139,18 @@ def _web_asset(name: str) -> str:
 
 
 def create_app(service: RagApiService) -> FastAPI:
+    ask_jobs = AskJobs()
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        yield
+        ask_jobs.close()
+
     app = FastAPI(
         title="MFLab Knowledge RAG",
         version=__version__,
         description="API local e somente leitura para recuperação citável.",
+        lifespan=lifespan,
     )
     admin_sessions = _AdminSessions()
 
@@ -182,10 +192,14 @@ def create_app(service: RagApiService) -> FastAPI:
             "/ui-api/repositories",
             "/ui-api/search",
             "/ui-api/ask",
+            "/ui-api/ask-jobs",
             "/ui-api/admin/session",
             "/ui-api/admin/status",
         }
-        if request.url.path not in public_paths and not api_request_authorized(
+        is_public = request.url.path in public_paths or request.url.path.startswith(
+            "/ui-api/ask-jobs/"
+        )
+        if not is_public and not api_request_authorized(
             service.settings.api_key,
             request.headers.get("authorization"),
             client_host=request.client.host if request.client else None,
@@ -381,6 +395,33 @@ def create_app(service: RagApiService) -> FastAPI:
                 status_code=500,
                 detail="falha interna durante a geração da resposta",
             ) from None
+
+    @app.post("/ui-api/ask-jobs", status_code=202, include_in_schema=False)
+    def create_web_ask_job(request: AskRequest) -> dict[str, object]:
+        try:
+            values = web_request_values(request)
+            job_id = ask_jobs.submit(
+                lambda progress: service.ask(
+                    **values,
+                    progress_callback=progress,
+                )
+            )
+        except HTTPException:
+            raise
+        except RuntimeError as exc:
+            raise HTTPException(status_code=429, detail=str(exc)) from None
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from None
+        return {"job_id": job_id, "status": "queued"}
+
+    @app.get("/ui-api/ask-jobs/{job_id}", include_in_schema=False)
+    def web_ask_job(job_id: str) -> dict[str, object]:
+        if len(job_id) > 128:
+            raise HTTPException(status_code=404, detail="investigação não encontrada")
+        value = ask_jobs.get(job_id)
+        if value is None:
+            raise HTTPException(status_code=404, detail="investigação não encontrada")
+        return value
 
     @app.post("/ui-api/admin/session", include_in_schema=False)
     def admin_login(

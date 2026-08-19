@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.33.1**. Antes de
+> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.34.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -326,9 +326,18 @@ linguagem é derivada do campo genérico `format`, do caminho ou da cerca
 Markdown. O realce cria somente nós de texto e `span`, não usa CDN, `innerHTML`
 ou nomes de projetos.
 
-A próxima validação na Morgoth deve confirmar a 0.33.0 na interface real: texto
-Markdown, blocos cercados com linguagem e referências clicáveis que levam à
-fonte correta. Depois disso, a próxima implementação é a extração genérica de
+A 0.34.0 separa presença de citação de sustentação semântica. Cada unidade
+factual da resposta é auditada pelo mesmo modelo local contra somente as fontes
+que ela cita. O retorno estruturado é validado pelo servidor; IDs inventados e
+afirmações omitidas não são aprovados. Uma falha permite uma única síntese
+revisada e, se persistir, a resposta candidata não é entregue. A interface usa
+uma fila efêmera limitada a um worker e acompanha eventos reais da investigação
+por polling: escopo, recuperação, evidências, geração, auditoria e revisão. Essa
+trilha não expõe prompts, raciocínio interno ou texto integral das fontes.
+
+A próxima validação na Morgoth deve confirmar a 0.34.0 com uma resposta correta,
+um falso positivo citado que exija revisão e a trilha aparecendo durante o
+processamento. Depois disso, a próxima implementação é a extração genérica de
 símbolos e relações descrita em `docs/assistant-roadmap.md`.
 
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a

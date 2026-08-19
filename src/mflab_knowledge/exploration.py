@@ -15,6 +15,31 @@ OVERVIEW_PATTERNS = (
     r"^describe\b",
 )
 
+COMPARISON_PATTERNS = (
+    r"\bcompar(?:e|ar|acao)\b",
+    r"\bdiferencas?\b",
+    r"\bversus\b",
+    r"\bcompare\b",
+    r"\bdifferences?\b",
+)
+
+LOCATION_PATTERNS = (
+    r"\bonde (?:fica|esta|e implementad[oa])\b",
+    r"\bonde .+\b(?:declarad[oa]|definid[oa]|implementad[oa])\b",
+    r"\b(?:qual|que) (?:arquivo|funcao|classe|trecho)\b",
+    r"\bmostre (?:o |a )?(?:codigo|trecho|implementacao)\b",
+    r"\bwhere (?:is|does)\b",
+    r"\bshow (?:the )?(?:code|implementation)\b",
+    r"\bwhich (?:file|function|class)\b",
+)
+
+MECHANISM_PATTERNS = (
+    r"\bcomo .+\b(?:funciona|opera|implementad[oa]|resolvid[oa]|calculad[oa])\b",
+    r"\bexplique (?:como|o funcionamento)\b",
+    r"\bhow (?:does|is|are)\b",
+    r"\bexplain how\b",
+)
+
 
 def _normalized(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value.casefold())
@@ -31,23 +56,46 @@ def plan_exploration(query: str) -> dict[str, object]:
 
     normalized = _normalized(query)
     overview = any(re.search(pattern, normalized) for pattern in OVERVIEW_PATTERNS)
-    if not overview:
-        return {
-            "intent": "direct",
-            "expanded": False,
-            "queries": [query],
-            "require_scope_coverage": False,
-        }
+    comparison = any(
+        re.search(pattern, normalized) for pattern in COMPARISON_PATTERNS
+    )
+    location = any(re.search(pattern, normalized) for pattern in LOCATION_PATTERNS)
+    mechanism = any(
+        re.search(pattern, normalized) for pattern in MECHANISM_PATTERNS
+    )
+    if overview:
+        intent = "overview"
+        hints = (
+            "README purpose overview",
+            "architecture modules components",
+            "programming languages entry point capabilities",
+        )
+    elif comparison:
+        intent = "comparison"
+        hints = (
+            "definition implementation",
+            "configuration tests behavior",
+        )
+    elif location:
+        intent = "location"
+        hints = (
+            "definition declaration implementation",
+            "call usage configuration",
+        )
+    elif mechanism:
+        intent = "mechanism"
+        hints = (
+            "implementation algorithm call flow",
+            "configuration tests",
+        )
+    else:
+        intent = "direct"
+        hints = ()
     return {
-        "intent": "overview",
-        "expanded": True,
-        "queries": [
-            query,
-            f"{query} README purpose overview",
-            f"{query} architecture modules components",
-            f"{query} programming languages entry point capabilities",
-        ],
-        "require_scope_coverage": True,
+        "intent": intent,
+        "expanded": bool(hints),
+        "queries": [query, *(f"{query} {hint}" for hint in hints)],
+        "require_scope_coverage": intent in {"overview", "comparison"},
     }
 
 
@@ -87,7 +135,30 @@ def exploration_instructions(
     plan: dict[str, object],
     sources: list[dict[str, object]],
 ) -> str:
-    if plan.get("intent") != "overview":
+    intent = plan.get("intent")
+    if intent == "location":
+        return (
+            " This is a code-location question. A source that merely mentions a term, "
+            "type, or parameter is not proof that it implements or performs the "
+            "requested operation. Distinguish definitions, declarations, callers, and "
+            "configuration. Show code only when its behavior directly supports the "
+            "location claim; otherwise state the remaining evidence gap."
+        )
+    if intent == "mechanism":
+        return (
+            " This is a mechanism question. Explain only the flow established by the "
+            "available implementation, its callers or configuration, and tests. Do not "
+            "fill missing algorithmic steps with general domain knowledge. Distinguish "
+            "what the code demonstrates from what the evidence does not establish."
+        )
+    if intent == "comparison":
+        return (
+            " This is a comparison question. Compare only equivalent evidence from "
+            "each available scope, preserve project and branch distinctions, and cite "
+            "every side of each claimed difference. If one side lacks evidence, report "
+            "the asymmetry instead of inferring a difference."
+        )
+    if intent != "overview":
         return ""
     projects = sorted(
         {

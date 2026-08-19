@@ -57,7 +57,10 @@ painel administrativo.
    cobertura dos escopos citados.
 4. **Primeiro mapa concluído:** estrutura determinística por projeto, branch e
    ACL, com formatos, diretórios, âncoras primárias, proveniência e fingerprint.
-5. Extração determinística de símbolos e relações estruturais.
-6. Resumos hierárquicos incrementais com proveniência.
-7. Planejador local com ferramentas de exploração estrutural somente leitura.
-8. Avaliações de localização, conceito, diagnóstico e comparação.
+5. **Primeira verificação concluída:** auditoria semântica por afirmação e fonte
+   citada, uma revisão limitada e trilha de investigação acompanhada ao vivo na
+   interface.
+6. Extração determinística de símbolos e relações estruturais.
+7. Resumos hierárquicos incrementais com proveniência.
+8. Planejador local com ferramentas de exploração estrutural somente leitura.
+9. Avaliações de localização, conceito, diagnóstico e comparação.

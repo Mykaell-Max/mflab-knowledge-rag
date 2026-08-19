@@ -17,7 +17,9 @@ def citation_ids(text: str) -> set[str]:
     }
 
 
-def _factual_units(text: str) -> list[str]:
+def factual_units(text: str) -> list[str]:
+    """Return auditable prose claims while excluding headings and code fences."""
+
     units: list[str] = []
     paragraph: list[str] = []
     in_code_block = False
@@ -64,7 +66,7 @@ def citation_coverage(
     *,
     valid_source_ids: set[str],
 ) -> dict[str, object]:
-    units = _factual_units(answer)
+    units = factual_units(answer)
     cited = [
         unit
         for unit in units
