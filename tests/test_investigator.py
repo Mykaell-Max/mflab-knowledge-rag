@@ -4,6 +4,7 @@ import unittest
 
 from mflab_knowledge.investigator import (
     build_observations,
+    fallback_investigation_actions,
     normalize_investigation_decision,
 )
 
@@ -87,6 +88,77 @@ class InvestigatorTests(unittest.TestCase):
         self.assertEqual(observations[0]["branch"], "trunk")
         self.assertEqual(observations[0]["path"], "src/domain.cpp")
         self.assertEqual(len(observations[0]["preview"]), 500)
+
+    def test_fallback_uses_qualified_terms_and_only_observed_targets(self) -> None:
+        observations = [
+            {
+                "chunk_id": "generic",
+                "path": "src/object.cpp",
+                "title": "Object::initialize",
+                "preview": "Initialize an unrelated output object.",
+            },
+            {
+                "chunk_id": "qualified",
+                "path": "src/grid/adaptive_manager.cpp",
+                "title": "AdaptiveManager::buildGrid",
+                "preview": "Build the adaptive grid and connect its parent cells.",
+            },
+        ]
+
+        actions = fallback_investigation_actions(
+            question="Onde a grade adaptativa é construída?",
+            search_hints=["adaptive grid construction entry point"],
+            observations=observations,
+            previous_actions=[],
+        )
+
+        self.assertEqual(
+            actions[0],
+            {"tool": "open_neighborhood", "chunk_id": "qualified"},
+        )
+        self.assertEqual(
+            actions[1],
+            {"tool": "find_symbol", "query": "AdaptiveManager::buildGrid"},
+        )
+        self.assertTrue(
+            all(
+                action.get("chunk_id") != "invented"
+                for action in actions
+            )
+        )
+
+    def test_fallback_does_not_repeat_previous_actions(self) -> None:
+        observations = [
+            {
+                "chunk_id": "observed",
+                "path": "src/driver.cpp",
+                "title": "Driver::advance",
+                "preview": "Advance one iteration.",
+            }
+        ]
+
+        actions = fallback_investigation_actions(
+            question="How does the driver advance?",
+            search_hints=[],
+            observations=observations,
+            previous_actions=[
+                {
+                    "tool": "open_neighborhood",
+                    "chunk_id": "observed",
+                    "result_count": "3",
+                },
+                {
+                    "tool": "find_symbol",
+                    "query": "Driver::advance",
+                    "result_count": "1",
+                },
+            ],
+        )
+
+        self.assertEqual(
+            actions,
+            [{"tool": "search_code", "query": "Driver::advance"}],
+        )
 
 
 if __name__ == "__main__":

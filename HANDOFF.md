@@ -405,6 +405,24 @@ A regressão agora inclui tanto a malha adaptativa quanto a pergunta ampla sobre
 o fluxo atual de um subsistema; os nomes científicos permanecem apenas na
 suíte de avaliação.
 
+A validação real da 0.39.1 confirmou que o runtime já consegue investigar um
+fluxo amplo: no caso exercitado, escolheu quatro ferramentas de leitura e a
+primeira auditoria aprovou sete de nove afirmações. A resposta ainda foi
+bloqueada porque duas frases amplas sem citação sobreviveram à revisão. No caso
+de localização, três decisões sem ferramenta esgotaram o orçamento mesmo com
+um candidato relevante entre os resultados.
+
+A 0.40.0 trata esses dois pontos sem acrescentar conhecimento científico ao
+motor. Depois de uma primeira oportunidade de replanejamento, decisões vazias
+repetidas — e decisões JSON inválidas — acionam uma contingência determinística
+que ranqueia somente a pergunta, as hipóteses de busca e metadados de chunks já
+observados. Ela pode abrir a vizinhança do chunk ou pesquisar o título/caminho
+real encontrado, sempre dentro do escopo e ACL já resolvidos. A revisão de
+resposta passa a receber o rascunho anterior e os achados exatos da auditoria,
+preserva o conteúdo aprovado e remove especificamente alegações rejeitadas. A
+segunda auditoria continua obrigatória e nenhuma resposta parcialmente
+sustentada é liberada.
+
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
 rotas web somente leitura; administração usa senha separada. Um segredo

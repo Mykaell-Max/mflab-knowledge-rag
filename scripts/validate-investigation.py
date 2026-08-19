@@ -226,9 +226,13 @@ def main() -> int:
     print("\nResposta:")
     if result.get("abstained"):
         print("A resposta candidata não foi entregue:", result.get("reason"))
+        print(
+            "\n[OK] Investigação e auditoria executadas; "
+            "a resposta insegura foi bloqueada."
+        )
     else:
         print(result.get("answer"))
-    print("\n[OK] Investigação, auditoria e interface validadas.")
+        print("\n[OK] Resposta, auditoria e interface validadas.")
     return 0
 
 

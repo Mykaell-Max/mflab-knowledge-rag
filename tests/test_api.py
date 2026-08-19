@@ -93,6 +93,21 @@ class _ReplanningGenerator:
         )
 
 
+class _InvalidThenStoppingGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def investigate(self, **_kwargs: object) -> str:
+        self.calls += 1
+        if self.calls == 1:
+            return "not-json"
+        return (
+            '{"coverage":[{"aspect":"entry point","status":"covered",'
+            '"chunk_ids":["observed"]}],"actions":[],'
+            '"keep_chunk_ids":["observed"],"stop":true}'
+        )
+
+
 class _RetryGenerator(_Generator):
     def generate(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
@@ -958,6 +973,62 @@ class ApiServiceTests(unittest.TestCase):
             [step["title"] for step in progress],
         )
 
+    def test_context_recovers_invalid_decision_with_observed_targets(self) -> None:
+        investigator = _InvalidThenStoppingGenerator()
+        service = api.RagApiService(self.settings(), generator=investigator)
+        initial = {
+            "query": "Where is the adaptive grid built?",
+            "mode": "hybrid",
+            "count": 1,
+            "scope_resolution": {
+                "mode": "explicit",
+                "automatic": False,
+                "scopes": [{"project": "Solver", "branch": "trunk"}],
+            },
+            "results": [
+                {
+                    "chunk_id": "observed",
+                    "project": "Solver",
+                    "path": "src/grid/manager.cpp",
+                    "title": "GridManager::buildAdaptive",
+                    "text": "void GridManager::buildAdaptive() { refine(); }",
+                    "selected_occurrence": {
+                        "branch": "trunk",
+                        "commit_sha": "a" * 40,
+                    },
+                }
+            ],
+        }
+        progress: list[dict[str, object]] = []
+        with mock.patch.object(service, "search", return_value=initial):
+            with mock.patch.object(api, "search_semantic_map", return_value=[]):
+                with mock.patch.object(
+                    api,
+                    "fetch_chunk_neighborhood",
+                    return_value=initial["results"],
+                ):
+                    context = service.context(
+                        query="Where is the adaptive grid built?",
+                        project="Solver",
+                        branch="trunk",
+                        allowed_access={"lab"},
+                        query_plan={
+                            "algorithm": "test",
+                            "generated": True,
+                            "queries": ["adaptive grid construction"],
+                            "identifiers": [],
+                        },
+                        progress_callback=progress.append,
+                    )
+
+        self.assertEqual(investigator.calls, 2)
+        self.assertEqual(context["agent_investigation"]["status"], "sufficient")
+        self.assertGreaterEqual(len(context["agent_investigation"]["actions"]), 2)
+        self.assertIn(
+            "Leitura de contingência selecionada",
+            [step["title"] for step in progress],
+        )
+
     def test_ask_audits_long_answers_in_bounded_batches(self) -> None:
         answer = "\n\n".join(
             f"Claim {position} is supported [S1]." for position in range(1, 8)
@@ -1281,8 +1352,22 @@ class ApiServiceTests(unittest.TestCase):
         self.assertTrue(result["context"]["evidence_repair"])
         self.assertEqual(len(generator.calls), 2)
         self.assertEqual(len(generator.verify_calls), 2)
+        repair_instructions = str(generator.calls[1]["instructions"])
+        self.assertIn(
+            "This function initializes the complete mesh",
+            repair_instructions,
+        )
+        self.assertIn(
+            "The source only assigns a local pointer",
+            repair_instructions,
+        )
+        self.assertIn("preserving useful supported statements", repair_instructions)
         self.assertIn("does not establish", result["answer"])
         self.assertIn("revision", [step["stage"] for step in progress])
+        self.assertIn(
+            "Revisão conferida contra as fontes",
+            [step["title"] for step in progress],
+        )
 
     def test_ask_retries_a_malformed_verification_without_regenerating(self) -> None:
         generator = _VerifyingGenerator(

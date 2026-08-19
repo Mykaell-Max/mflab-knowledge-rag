@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import json
+import math
 import re
+import unicodedata
+from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v2"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v3"
 MAX_AGENT_ITERATIONS = 3
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -12,6 +15,40 @@ MAX_OBSERVATION_PREVIEW = 500
 
 ALLOWED_ACTIONS = {"search_code", "find_symbol", "open_neighborhood"}
 ALLOWED_COVERAGE = {"covered", "partial", "gap"}
+
+# These are language and source-code navigation words, not repository concepts.
+# Keeping them out of the relevance score lets terms learned from the question,
+# planner and observed code decide which real chunk should be inspected next.
+_NAVIGATION_STOPWORDS = {
+    "about",
+    "arquivo",
+    "code",
+    "codigo",
+    "como",
+    "component",
+    "componente",
+    "definition",
+    "detail",
+    "details",
+    "entry",
+    "explain",
+    "explique",
+    "file",
+    "flow",
+    "funciona",
+    "function",
+    "implementation",
+    "initialization",
+    "initialize",
+    "mostre",
+    "onde",
+    "point",
+    "responsavel",
+    "setup",
+    "source",
+    "trecho",
+    "work",
+}
 
 
 def _json_object(raw: str | dict[str, object]) -> dict[str, object]:
@@ -187,6 +224,107 @@ def build_observations(
             if len(observations) >= MAX_OBSERVATIONS:
                 return observations
     return observations
+
+
+def _search_terms(value: object) -> set[str]:
+    text = unicodedata.normalize("NFKD", str(value)).encode(
+        "ascii", "ignore"
+    ).decode("ascii")
+    text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text)
+    tokens = re.findall(r"[A-Za-z0-9]+", text.casefold())
+    return {
+        token
+        for token in tokens
+        if len(token) >= 3 and token not in _NAVIGATION_STOPWORDS
+    }
+
+
+def fallback_investigation_actions(
+    *,
+    question: str,
+    search_hints: Iterable[str],
+    observations: list[dict[str, object]],
+    previous_actions: list[dict[str, str]],
+) -> list[dict[str, str]]:
+    """Choose bounded reads from observed vocabulary when a model stalls.
+
+    This is deliberately repository-agnostic. It cannot invent a path, symbol or
+    chunk: every target comes from an authorized observation, while query terms
+    come from the user's question and the already bounded retrieval plan.
+    """
+
+    if not observations:
+        return []
+    query_terms = _search_terms(
+        " ".join([question, *(str(hint) for hint in search_hints)])
+    )
+    observation_terms: list[set[str]] = []
+    for observation in observations:
+        observation_terms.append(
+            _search_terms(
+                " ".join(
+                    str(observation.get(field, ""))
+                    for field in ("path", "title", "kind", "preview")
+                )
+            )
+        )
+    document_frequency = {
+        term: sum(term in terms for terms in observation_terms)
+        for term in query_terms
+    }
+
+    ranked: list[tuple[float, int, dict[str, object]]] = []
+    for position, (observation, terms) in enumerate(
+        zip(observations, observation_terms, strict=True)
+    ):
+        path_title_terms = _search_terms(
+            f"{observation.get('path', '')} {observation.get('title', '')}"
+        )
+        score = 0.0
+        for term in query_terms & terms:
+            rarity = math.log(
+                (len(observations) + 1)
+                / (document_frequency.get(term, 0) + 1)
+            ) + 1.0
+            score += rarity * (3.0 if term in path_title_terms else 1.0)
+        # Stable retrieval order remains the final tie-breaker.
+        ranked.append((score, -position, observation))
+    ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    selected = ranked[0][2]
+
+    prior = {
+        (
+            str(action.get("tool", "")),
+            str(action.get("query") or action.get("chunk_id") or "").casefold(),
+        )
+        for action in previous_actions
+    }
+    candidates: list[dict[str, str]] = []
+    chunk_id = str(selected.get("chunk_id", "")).strip()
+    if chunk_id:
+        candidates.append({"tool": "open_neighborhood", "chunk_id": chunk_id})
+
+    observed_title = " ".join(str(selected.get("title", "")).split()).strip()
+    if not observed_title:
+        observed_title = PurePosixPath(str(selected.get("path", ""))).stem
+    if observed_title and len(observed_title) <= 200:
+        candidates.extend(
+            [
+                {"tool": "find_symbol", "query": observed_title},
+                {"tool": "search_code", "query": observed_title},
+            ]
+        )
+
+    actions: list[dict[str, str]] = []
+    for action in candidates:
+        value = str(action.get("query") or action.get("chunk_id") or "")
+        identity = (action["tool"], value.casefold())
+        if identity in prior or action in actions:
+            continue
+        actions.append(action)
+        if len(actions) >= MAX_ACTIONS_PER_ITERATION:
+            break
+    return actions
 
 
 def coverage_summary(coverage: list[dict[str, object]]) -> dict[str, int]:

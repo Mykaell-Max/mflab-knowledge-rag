@@ -54,7 +54,7 @@ lacunas e orienta a síntese sem ser tratado como evidência.
 
 Uma hipótese sem resultados não encerra a investigação: a contagem zero volta
 como observação para que o ciclo seguinte possa mudar de vocabulário. Depois da
-síntese, respostas longas são auditadas em lotes de até cinco afirmações. Isso
+síntese, respostas longas são auditadas em lotes de até três afirmações. Isso
 mantém cada retorno estruturado dentro de um orçamento previsível sem reduzir a
 exigência de que todas as afirmações sejam ligadas às fontes que citam.
 
@@ -65,6 +65,21 @@ para replanejamento; todos os chunks associados ao caderno de cobertura são
 preservados na seleção; e a auditoria usa lotes de até três afirmações com um
 contrato de saída mais explícito. Menções genéricas a objetos ou métodos não
 podem, por si sós, contar como evidência da operação qualificada na pergunta.
+
+A 0.40.0 acrescenta duas salvaguardas genéricas observadas na validação real.
+Quando duas decisões consecutivas não escolhem ferramenta — ou quando o JSON da
+decisão é inválido — o servidor seleciona uma leitura de contingência. A seleção
+ranqueia somente termos da pergunta e do plano contra caminhos, títulos e
+previews já autorizados; seus alvos continuam limitados a chunks e símbolos
+realmente observados. Não existem nomes de projeto, branch, subsistema ou arquivo
+nessa política. O modelo volta a observar os resultados no ciclo seguinte.
+
+A revisão posterior à auditoria agora recebe o rascunho anterior e apenas os
+achados rejeitados ou incertos, ambos marcados como dados não confiáveis. Ela é
+orientada a preservar afirmações aprovadas com suas citações, eliminar as
+rejeitadas e não criar introduções ou conclusões factuais sem fonte. A resposta
+continua bloqueada se a segunda auditoria encontrar qualquer afirmação sem
+sustentação.
 
 ## Próximas camadas
 
