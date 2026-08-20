@@ -160,6 +160,44 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(result["model"], "served-model")
         self.assertNotIn("secret-never-returned", str(result))
 
+    def test_support_discovery_uses_structured_local_evidence_request(self) -> None:
+        config = generation.GenerationConfig(
+            path=Path("generation.toml"),
+            base_url="http://127.0.0.1:8000/v1",
+            model="local-test-model",
+        )
+        captured: dict[str, object] = {}
+
+        def opener(request: object, *, timeout: int) -> _Response:
+            captured["request"] = request
+            captured["timeout"] = timeout
+            return _Response(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"claims":[]}'
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            )
+
+        generator = generation.OpenAICompatibleGenerator(config, opener=opener)
+        result = generator.discover_support(
+            question="Explain the operation",
+            claims=[{"claim_id": "C1", "text": "It advances."}],
+            sources=[{"source_id": "S1", "text": "advance();"}],
+        )
+
+        request = captured["request"]
+        payload = json.loads(request.data.decode("utf-8"))
+        self.assertEqual(result, '{"claims":[]}')
+        self.assertEqual(payload["temperature"], 0.0)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertIn("S1", payload["messages"][1]["content"])
+
     def test_identifies_provider_context_limit_without_exposing_body(self) -> None:
         config = generation.GenerationConfig(
             path=Path("generation.toml"),

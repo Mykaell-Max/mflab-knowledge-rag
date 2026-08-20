@@ -11,7 +11,6 @@
       "limit": 12,
       "allowed_access": ["public", "lab"],
       "max_context_characters": 16000,
-      "max_output_tokens": 1000,
       "temperature": 0,
       "expectations": {
         "abstained": false,
@@ -40,7 +39,6 @@
       "limit": 14,
       "allowed_access": ["public", "lab"],
       "max_context_characters": 18000,
-      "max_output_tokens": 1400,
       "temperature": 0,
       "expectations": {
         "abstained": false,

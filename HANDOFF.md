@@ -596,6 +596,34 @@ orçamentos dessa camada deverão derivar da configuração do provedor e da
 complexidade observada da pergunta, sem nomes de repositório, branch, arquivo ou
 domínio codificados no motor.
 
+A execução real da 0.41.5 manteve a infraestrutura saudável e reduziu o tempo
+dos dois casos, mas a suíte continuou em 0/2. A explicação do subsistema foi
+entregue com dez afirmações sustentadas e quatro citações; falhou somente por
+não incluir o ponto de integração a montante exigido pelo gabarito. O agente
+havia encerrado em dois ciclos sem executar qualquer ferramenta do grafo. No
+caso de localização, a fronteira já continha a operação intermediária correta,
+mas o quinto ciclo seguiu outra hipótese e não atravessou essa operação. A
+síntese produziu nove unidades e citou apenas uma, sendo corretamente bloqueada
+pela auditoria. A suíte ainda solicitava tetos locais de 1.000 e 1.400 tokens,
+portanto não exercitava o novo teto configurado de 2.048.
+
+A 0.41.6 impede que uma pergunta de mecanismo encerre apenas com cobertura
+local: ao menos uma travessia de chamada precisa produzir evidência. Quando
+isso ainda não ocorreu, os próprios chunks que o agente declarou cobertos são
+sondados em ambas as direções. Fronteiras observadas no último ciclo recebem
+uma continuação final, somente leitura e limitada, antes da síntese. A janela
+final passa a conter no máximo seis fontes ordenadas, deixando espaço para uma
+resposta mais longa dentro da janela total do provedor. A suíte deixa de
+sobrescrever o teto local e passa a testar os 2.048 tokens configurados.
+
+Afirmações sem citação passam por uma etapa distinta de descoberta de suporte.
+Ela não reescreve a resposta e não aceita conhecimento externo: apenas propõe
+IDs de fontes para unidades exatas que sejam integralmente sustentadas. O
+backend valida os IDs, anexa somente associações aprovadas e então executa a
+auditoria semântica normal novamente. Unidades sem suporte permanecem sem
+citação e continuam sujeitas a remoção ou abstinência. Assim, corrigir uma falha
+de formatação não reduz a exigência de sustentação factual.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

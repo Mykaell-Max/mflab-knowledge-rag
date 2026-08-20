@@ -62,9 +62,11 @@ from mflab_knowledge.investigator import (
     coverage_summary,
     fallback_investigation_actions,
     normalize_investigation_decision,
+    pending_graph_continuations,
     prioritize_kept_chunk_ids,
     repeated_complete_coverage,
     select_graph_frontier_results,
+    successful_graph_traversal,
     synthesis_guidance,
 )
 from mflab_knowledge.retrieval import RetrievalPolicy, load_retrieval_policy
@@ -85,8 +87,10 @@ from mflab_knowledge.verification import (
     INVESTIGATION_ALGORITHM,
     ProgressCallback,
     VERIFICATION_ALGORITHM,
+    attach_discovered_citations,
     claims_for_verification,
     emit_progress,
+    normalize_support_discovery,
     normalize_verification,
     supported_claim_subset,
     unavailable_verification,
@@ -141,6 +145,9 @@ def _pack_context_results(
     used = 0
     truncated = False
     for result in results:
+        if len(packed) >= target:
+            truncated = True
+            break
         remaining = max_context_characters - used
         if remaining <= 0:
             truncated = True
@@ -1345,6 +1352,20 @@ class RagApiService:
                             "coverage": coverage_summary(agent_coverage),
                         },
                     )
+                structural_stop_deferred = bool(
+                    decision["stop"]
+                    and exploration.get("intent") == "mechanism"
+                    and not successful_graph_traversal(agent_actions)
+                )
+                if structural_stop_deferred:
+                    decision["stop"] = False
+                    decision["actions"] = []
+                    record(
+                        "agent",
+                        "Cobertura local será conectada ao fluxo",
+                        "Os trechos cobrem operações locais, mas nenhuma travessia estrutural bem-sucedida confirmou ainda sua integração.",
+                        {"iteration": iteration},
+                    )
                 for chunk_id in decision["keep_chunk_ids"]:
                     if chunk_id not in kept_chunk_ids:
                         kept_chunk_ids.append(str(chunk_id))
@@ -1356,11 +1377,31 @@ class RagApiService:
 
                 raw_actions = decision["actions"]
                 assert isinstance(raw_actions, list)
+                if structural_stop_deferred:
+                    for coverage_item in decision["coverage"]:
+                        raw_ids = coverage_item.get("chunk_ids")
+                        if not isinstance(raw_ids, list):
+                            continue
+                        target = next(
+                            (
+                                str(chunk_id)
+                                for chunk_id in raw_ids
+                                if str(chunk_id) in observable_ids
+                            ),
+                            "",
+                        )
+                        if target:
+                            raw_actions = [
+                                {"tool": "find_callers", "chunk_id": target},
+                                {"tool": "find_callees", "chunk_id": target},
+                            ]
+                            break
                 supplemental_action: dict[str, str] | None = None
                 if not raw_actions and not decision["stop"]:
                     inconclusive_decisions += 1
                     should_fallback = (
-                        decision_invalid
+                        structural_stop_deferred
+                        or decision_invalid
                         or inconclusive_decisions >= 2
                         or iteration == MAX_AGENT_ITERATIONS
                     )
@@ -1391,7 +1432,9 @@ class RagApiService:
                                 {
                                     "iteration": iteration,
                                     "reason": (
-                                        "invalid_decision"
+                                        "structural_flow_not_observed"
+                                        if structural_stop_deferred
+                                        else "invalid_decision"
                                         if decision_invalid
                                         else "repeated_inconclusive_decision"
                                     ),
@@ -1724,6 +1767,93 @@ class RagApiService:
                 results=graph_frontier_results,
                 limit=8,
             )
+            terminal_results: list[dict[str, object]] = []
+            terminal_actions: list[dict[str, str]] = []
+            for action in pending_graph_continuations(
+                selected_graph_frontier,
+                agent_actions,
+                limit=8,
+            ):
+                frontier = next(
+                    (
+                        result
+                        for result in selected_graph_frontier
+                        if str(result.get("chunk_id", ""))
+                        == action["chunk_id"]
+                    ),
+                    None,
+                )
+                if frontier is None:
+                    continue
+                occurrence = frontier.get("selected_occurrence")
+                occurrence = occurrence if isinstance(occurrence, dict) else {}
+                try:
+                    call_ids = call_graph_chunk_ids(
+                        self.settings.database_url,
+                        chunk_id=action["chunk_id"],
+                        direction="callees",
+                        limit=12,
+                        project=str(frontier.get("project", "")) or None,
+                        branch=str(occurrence.get("branch", "")) or None,
+                        allowed_access=self._allowed_access(allowed_access),
+                    )
+                    fetched = fetch_chunks_by_id(
+                        self.settings.database_url,
+                        chunk_ids=call_ids,
+                        limit=12,
+                        project=str(frontier.get("project", "")) or None,
+                        branch=str(occurrence.get("branch", "")) or None,
+                        allowed_access=self._allowed_access(allowed_access),
+                    )
+                except Exception:
+                    self.log(
+                        "Continuação terminal do grafo indisponível; preservando a fronteira já observada",
+                        "warning",
+                    )
+                    continue
+                for result in fetched:
+                    result["source_kind"] = "agent_terminal_callees_evidence"
+                terminal_results.extend(fetched)
+                completed = {**action, "result_count": str(len(fetched))}
+                terminal_actions.append(completed)
+                agent_actions.append(completed)
+                known_frontiers = {
+                    str(item.get("chunk_id", ""))
+                    for item in graph_frontier_results
+                }
+                for result in fetched:
+                    frontier_id = str(result.get("chunk_id", ""))
+                    if (
+                        frontier_id
+                        and frontier_id not in known_frontiers
+                        and len(graph_frontier_results) < 96
+                    ):
+                        graph_frontier_results.append(result)
+                        known_frontiers.add(frontier_id)
+            if terminal_results:
+                retrievals.insert(
+                    0,
+                    {
+                        "query": query,
+                        "mode": "agent_terminal_graph",
+                        "results": terminal_results,
+                    },
+                )
+                selected_graph_frontier = select_graph_frontier_results(
+                    question=query,
+                    search_hints=frontier_hints,
+                    results=graph_frontier_results,
+                    limit=8,
+                )
+                record(
+                    "agent",
+                    "Fronteira estrutural concluída",
+                    "As conexões já descobertas receberam uma última travessia limitada antes da síntese.",
+                    {
+                        "actions": terminal_actions,
+                        "new_evidence": len(terminal_results),
+                    },
+                )
             graph_frontier_chunk_ids = [
                 str(result.get("chunk_id", ""))
                 for result in selected_graph_frontier
@@ -2141,6 +2271,7 @@ class RagApiService:
                     "generation_attempts": 0,
                     "reduced_for_generation": False,
                     "quality_retry": False,
+                    "citation_discovery": False,
                 },
             }
         started = time.monotonic()
@@ -2246,6 +2377,77 @@ class RagApiService:
                 quality_issues = overview_quality_issues(
                     answer,
                     exploration if isinstance(exploration, dict) else {},
+                )
+
+        citation_discovery = False
+        support_discoverer = getattr(self.generator, "discover_support", None)
+        if (
+            self.generation_config.verify_evidence
+            and callable(support_discoverer)
+            and assessment["grounding_status"]
+            in {"missing_citations", "partial_citations"}
+        ):
+            uncited_claims = [
+                claim
+                for claim in claims_for_verification(answer)
+                if not claim.get("cited_source_ids")
+            ]
+            valid_source_ids = {
+                str(source.get("source_id", ""))
+                for source in raw_sources
+                if isinstance(source, dict)
+            }
+            findings: list[dict[str, object]] = []
+            discovery_failed = False
+            record(
+                "verification",
+                "Suporte para trechos sem citação em apuração",
+                "O texto não será reescrito; somente fontes que sustentem integralmente cada unidade poderão ser associadas.",
+                {"claims": len(uncited_claims)},
+            )
+            try:
+                for offset in range(0, len(uncited_claims), 3):
+                    claim_batch = uncited_claims[offset : offset + 3]
+                    raw_discovery = support_discoverer(
+                        question=str(context["query"]),
+                        claims=claim_batch,
+                        sources=raw_sources,
+                    )
+                    normalized = normalize_support_discovery(
+                        raw_discovery,
+                        claims=claim_batch,
+                        valid_source_ids=valid_source_ids,
+                    )
+                    raw_findings = normalized.get("claims")
+                    if not isinstance(raw_findings, list):
+                        raise ValueError("descoberta de suporte incompleta")
+                    findings.extend(
+                        item for item in raw_findings if isinstance(item, dict)
+                    )
+            except (GenerationUnavailableError, ValueError, TypeError) as exc:
+                discovery_failed = True
+                self.log(f"Descoberta de suporte indisponível: {exc}", "warning")
+            if not discovery_failed and findings:
+                answer, attached = attach_discovered_citations(
+                    answer,
+                    {"claims": findings},
+                )
+                citation_discovery = attached > 0
+                if citation_discovery:
+                    assessment = _grounding_assessment(
+                        answer,
+                        raw_sources,
+                        require_scope_coverage=require_scope_coverage,
+                    )
+                    quality_issues = overview_quality_issues(
+                        answer,
+                        exploration if isinstance(exploration, dict) else {},
+                    )
+                record(
+                    "verification",
+                    "Associações de suporte aplicadas",
+                    "Toda associação será submetida novamente à auditoria semântica normal.",
+                    {"citations_attached": attached},
                 )
 
         if quality_issues and assessment["grounding_status"] == "cited":
@@ -2660,6 +2862,7 @@ class RagApiService:
                 "reduced_for_generation": reduced_for_generation,
                 "quality_retry": quality_retry,
                 "evidence_repair": evidence_repair,
+                "citation_discovery": citation_discovery,
             },
         }
 

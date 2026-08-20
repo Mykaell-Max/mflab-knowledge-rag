@@ -7,9 +7,11 @@ from mflab_knowledge.investigator import (
     build_observations,
     fallback_investigation_actions,
     normalize_investigation_decision,
+    pending_graph_continuations,
     prioritize_kept_chunk_ids,
     repeated_complete_coverage,
     select_graph_frontier_results,
+    successful_graph_traversal,
 )
 
 
@@ -472,6 +474,42 @@ class InvestigatorTests(unittest.TestCase):
                 complete,
                 [*complete[:1], {**complete[1], "status": "partial"}],
             )
+        )
+
+    def test_flow_stop_requires_a_successful_structural_traversal(self) -> None:
+        self.assertFalse(successful_graph_traversal([]))
+        self.assertFalse(
+            successful_graph_traversal(
+                [{"tool": "find_callers", "result_count": "0"}]
+            )
+        )
+        self.assertTrue(
+            successful_graph_traversal(
+                [{"tool": "find_callees", "result_count": "3"}]
+            )
+        )
+
+    def test_terminal_continuation_uses_only_observed_unexpanded_call_edges(self) -> None:
+        results = [
+            {
+                "chunk_id": "downstream",
+                "source_kind": "agent_callees_evidence",
+            },
+            {
+                "chunk_id": "upstream",
+                "source_kind": "agent_callers_evidence",
+            },
+            {"chunk_id": "lexical", "source_kind": "retrieval"},
+        ]
+
+        actions = pending_graph_continuations(
+            results,
+            [{"tool": "find_callees", "chunk_id": "upstream"}],
+        )
+
+        self.assertEqual(
+            actions,
+            [{"tool": "find_callees", "chunk_id": "downstream"}],
         )
 
     def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:

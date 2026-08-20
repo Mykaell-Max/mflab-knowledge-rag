@@ -72,6 +72,12 @@ def show_response(label: str, response: dict[str, object]) -> None:
         f" | grounding={response.get('grounding_status')}"
         f" | fontes={len(sources)}"
     )
+    print(
+        "  orçamento:"
+        f" evidências={context.get('context_characters')} caracteres"
+        f" | saída={context.get('max_output_tokens')} tokens"
+        f" | suporte descoberto={context.get('citation_discovery', False)}"
+    )
     rejected = verification.get("claims")
     rejected = rejected if isinstance(rejected, list) else []
     for raw_claim in rejected:

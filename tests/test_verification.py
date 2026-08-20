@@ -3,8 +3,10 @@ from __future__ import annotations
 import unittest
 
 from mflab_knowledge.verification import (
+    attach_discovered_citations,
     claims_for_verification,
     emit_progress,
+    normalize_support_discovery,
     normalize_verification,
     supported_claim_subset,
 )
@@ -24,6 +26,36 @@ class VerificationTests(unittest.TestCase):
 
         self.assertEqual(event["stage"], "evidence")
         self.assertEqual(event["data"], {"sources": 3})
+
+    def test_support_discovery_can_attach_only_validated_ids(self) -> None:
+        answer = "The first operation advances state.\n\nA second claim is unknown."
+        claims = claims_for_verification(answer)
+        discovery = normalize_support_discovery(
+            {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "verdict": "supported",
+                        "source_ids": ["S1", "S99"],
+                        "finding": "Direct evidence.",
+                    },
+                    {
+                        "claim_id": "C2",
+                        "verdict": "unsupported",
+                        "source_ids": [],
+                        "finding": "Not established.",
+                    },
+                ]
+            },
+            claims=claims,
+            valid_source_ids={"S1"},
+        )
+
+        cited, attached = attach_discovered_citations(answer, discovery)
+
+        self.assertEqual(attached, 1)
+        self.assertIn("advances state. [S1]", cited)
+        self.assertNotIn("unknown. [", cited)
 
     def test_builds_claims_with_their_own_citations(self) -> None:
         claims = claims_for_verification(

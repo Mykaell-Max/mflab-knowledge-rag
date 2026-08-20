@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v11"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v12"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -434,6 +434,58 @@ def repeated_complete_coverage(
         status == "covered" and bool(chunk_ids)
         for _aspect, status, chunk_ids in current_signature
     )
+
+
+def successful_graph_traversal(actions: Iterable[dict[str, object]]) -> bool:
+    """Return whether a resolved call edge actually produced evidence."""
+
+    for action in actions:
+        if str(action.get("tool", "")) not in {"find_callers", "find_callees"}:
+            continue
+        try:
+            count = int(str(action.get("result_count", "0")))
+        except ValueError:
+            count = 0
+        if count > 0:
+            return True
+    return False
+
+
+def pending_graph_continuations(
+    results: Iterable[dict[str, object]],
+    previous_actions: Iterable[dict[str, object]],
+    *,
+    limit: int = 8,
+) -> list[dict[str, str]]:
+    """Continue unresolved observed call frontiers for one final bounded hop."""
+
+    if limit < 1:
+        return []
+    prior = {
+        (
+            str(action.get("tool", "")),
+            str(action.get("chunk_id", "")),
+        )
+        for action in previous_actions
+    }
+    selected: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for result in results:
+        source_kind = str(result.get("source_kind", ""))
+        if source_kind not in {
+            "agent_callers_evidence",
+            "agent_callees_evidence",
+        }:
+            continue
+        chunk_id = str(result.get("chunk_id", "")).strip()
+        identity = ("find_callees", chunk_id)
+        if not chunk_id or chunk_id in seen or identity in prior:
+            continue
+        seen.add(chunk_id)
+        selected.append({"tool": "find_callees", "chunk_id": chunk_id})
+        if len(selected) >= limit:
+            break
+    return selected
 
 
 def bounded_action_batch(

@@ -240,6 +240,14 @@ uma nova síntese quando uma auditoria válida encontra afirmações sem suporte
 sem sustentação, `answer` será nulo, `abstained` será verdadeiro e `reason`
 será `evidence_not_supported`.
 
+Quando o modelo omite a marcação de fonte em uma unidade factual, o backend
+pode executar antes uma descoberta de suporte limitada. Essa chamada não
+reescreve o texto: ela propõe somente IDs de fontes que sustentem integralmente
+a unidade exata. IDs inválidos são descartados, associações aprovadas são
+anexadas e a auditoria semântica normal é executada depois. O campo
+`context.citation_discovery` informa se alguma associação foi aplicada. Uma
+unidade sem suporte continua sem citação e não é liberada por essa etapa.
+
 O texto de `answer` usa Markdown. O gerador é instruído a marcar blocos de
 código com a linguagem correspondente e manter citações fora das cercas de
 código. A API preserva `[S1]`, `[S2]` e grupos equivalentes como contrato de

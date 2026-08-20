@@ -165,6 +165,22 @@ class _VerifyingGenerator(_Generator):
         return next(self.audits)
 
 
+class _SupportDiscoveringGenerator(_VerifyingGenerator):
+    def __init__(
+        self,
+        answers: list[str],
+        audits: list[str],
+        discoveries: list[str],
+    ) -> None:
+        super().__init__(answers, audits)
+        self.discoveries = iter(discoveries)
+        self.discovery_calls: list[dict[str, object]] = []
+
+    def discover_support(self, **kwargs: object) -> str:
+        self.discovery_calls.append(kwargs)
+        return next(self.discoveries)
+
+
 class ApiServiceTests(unittest.TestCase):
     def settings(self) -> api.ApiSettings:
         return api.ApiSettings(
@@ -172,6 +188,19 @@ class ApiServiceTests(unittest.TestCase):
             state_dir=Path("missing-state-for-test"),
             generation_config=Path("missing-generation-for-test.toml"),
         )
+
+    def test_context_packing_limits_source_count_without_spending_full_budget(self) -> None:
+        packed, used, truncated = api._pack_context_results(
+            [
+                {"chunk_id": str(position), "text": "x" * 100}
+                for position in range(10)
+            ],
+            max_context_characters=8000,
+        )
+
+        self.assertEqual(len(packed), api.CONTEXT_DIVERSITY_TARGET)
+        self.assertEqual(used, 600)
+        self.assertTrue(truncated)
 
     def test_unit_settings_do_not_implicitly_load_working_directory_catalog(
         self,
@@ -984,7 +1013,7 @@ class ApiServiceTests(unittest.TestCase):
                     progress_callback=progress.append,
                 )
 
-        self.assertEqual(len(investigator.calls), 2)
+        self.assertEqual(len(investigator.calls), 5)
         self.assertEqual(
             investigator.calls[0].get("decision_feedback"), ""
         )
@@ -992,7 +1021,9 @@ class ApiServiceTests(unittest.TestCase):
             "neither stopped nor selected a tool",
             str(investigator.calls[1].get("decision_feedback")),
         )
-        self.assertEqual(context["agent_investigation"]["status"], "sufficient")
+        self.assertEqual(
+            context["agent_investigation"]["status"], "budget_exhausted"
+        )
         self.assertIn(
             "Decisão inconclusiva será reavaliada",
             [step["title"] for step in progress],
@@ -1126,7 +1157,7 @@ class ApiServiceTests(unittest.TestCase):
                             )
 
         self.assertEqual(generator.calls, 2, generator.history)
-        self.assertEqual(graph.call_count, 2)
+        self.assertEqual(graph.call_count, 4)
         self.assertEqual(
             {call.kwargs["direction"] for call in graph.call_args_list},
             {"callers", "callees"},
@@ -1409,6 +1440,72 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["citation_coverage"]["units"], 2)
         self.assertEqual(result["citation_coverage"]["cited_units"], 1)
         self.assertEqual(result["citation_coverage"]["coverage"], 0.5)
+
+    def test_ask_discovers_then_reaudits_support_for_uncited_units(self) -> None:
+        generator = _SupportDiscoveringGenerator(
+            answers=[
+                "The operation advances state.\n\n"
+                "This describes the complete architecture."
+            ],
+            discoveries=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"Directly present."},'
+                '{"claim_id":"C2","verdict":"unsupported",'
+                '"source_ids":[],"finding":"Not established."}]}'
+            ],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"Directly present."},'
+                '{"claim_id":"C2","verdict":"unsupported",'
+                '"source_ids":[],"finding":"Not cited or established."}]}',
+                '{"claims":[{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"Directly present."}]}',
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the operation",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 30,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                        "path": "src/model.cpp",
+                        "text": "The operation advances state.",
+                    }
+                ],
+            },
+        ):
+            result = service.ask(query="Explain the operation")
+
+        self.assertFalse(result["abstained"])
+        self.assertEqual(result["answer"], "The operation advances state. [S1]")
+        self.assertTrue(result["context"]["citation_discovery"])
+        self.assertEqual(len(generator.discovery_calls), 1)
+        self.assertEqual(len(generator.verify_calls), 2)
 
     def test_ask_repairs_a_cited_claim_that_the_source_does_not_support(self) -> None:
         generator = _VerifyingGenerator(

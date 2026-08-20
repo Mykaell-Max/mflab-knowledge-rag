@@ -182,6 +182,20 @@ segurança a janela única do provedor, a próxima arquitetura deverá sintetiza
 seções auditadas por aspecto e compô-las hierarquicamente sem perder as fontes
 primárias. Aumentar apenas o contexto ou a saída não substitui essa etapa.
 
+Na 0.41.6, uma cobertura declarada como completa para perguntas de mecanismo
+não encerra a exploração enquanto nenhuma travessia de chamada tiver devolvido
+evidência. Os chunks já associados à cobertura fornecem os alvos da sondagem,
+sem criar símbolos ou caminhos. Se o último ciclo revelar uma fronteira, ela
+recebe um salto final limitado antes da seleção. A síntese recebe no máximo seis
+fontes para preservar diversidade sem consumir toda a janela com trechos
+laterais.
+
+Ausência de marcação de fonte e ausência de sustentação passam a ser problemas
+separados. Uma etapa de descoberta pode associar fontes a unidades textuais
+exatas, mas não pode alterá-las. Toda associação é validada estruturalmente e
+depois submetida à mesma auditoria de implicação usada para citações produzidas
+na síntese. Essa etapa não transforma similaridade lexical em prova.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

@@ -7,7 +7,8 @@ from collections.abc import Callable
 from mflab_knowledge.grounding import citation_ids, factual_units
 
 VERIFICATION_ALGORITHM = "claim_evidence_audit_v3"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v13"
+SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v14"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -157,6 +158,105 @@ def normalize_verification(
         "claims": findings,
         "counts": counts,
     }
+
+
+def normalize_support_discovery(
+    raw: str | dict[str, object],
+    *,
+    claims: list[dict[str, object]],
+    valid_source_ids: set[str],
+) -> dict[str, object]:
+    """Validate proposed support for uncited claims before citations are added."""
+
+    value = _json_object(raw) if isinstance(raw, str) else raw
+    raw_findings = value.get("claims")
+    if not isinstance(raw_findings, list):
+        raise ValueError("descoberta de suporte não contém claims")
+    expected = {str(claim["claim_id"]): claim for claim in claims}
+    allowed = {"supported", "unsupported", "uncertain"}
+    findings_by_id: dict[str, dict[str, object]] = {}
+    for item in raw_findings:
+        if not isinstance(item, dict):
+            continue
+        claim_id = str(item.get("claim_id", ""))
+        verdict = str(item.get("verdict", ""))
+        if claim_id not in expected or claim_id in findings_by_id or verdict not in allowed:
+            continue
+        raw_ids = item.get("source_ids")
+        source_ids = (
+            sorted(
+                {
+                    str(source_id)
+                    for source_id in raw_ids
+                    if str(source_id) in valid_source_ids
+                }
+            )
+            if isinstance(raw_ids, list)
+            else []
+        )
+        finding = str(item.get("finding", "")).strip()[:500]
+        if verdict == "supported" and not source_ids:
+            verdict = "uncertain"
+            finding = "Nenhuma fonte válida foi associada à afirmação."
+        findings_by_id[claim_id] = {
+            "claim_id": claim_id,
+            "claim": str(expected[claim_id]["text"]),
+            "verdict": verdict,
+            "source_ids": source_ids,
+            "finding": finding,
+        }
+    findings: list[dict[str, object]] = []
+    for claim_id, claim in expected.items():
+        findings.append(
+            findings_by_id.get(
+                claim_id,
+                {
+                    "claim_id": claim_id,
+                    "claim": str(claim["text"]),
+                    "verdict": "uncertain",
+                    "source_ids": [],
+                    "finding": "A descoberta não avaliou esta afirmação.",
+                },
+            )
+        )
+    return {
+        "algorithm": SUPPORT_DISCOVERY_ALGORITHM,
+        "claims": findings,
+        "counts": {
+            verdict: sum(item["verdict"] == verdict for item in findings)
+            for verdict in sorted(allowed)
+        },
+    }
+
+
+def attach_discovered_citations(
+    answer: str,
+    discovery: dict[str, object],
+) -> tuple[str, int]:
+    """Append only validated source IDs to exact uncited factual units."""
+
+    raw_claims = discovery.get("claims")
+    if not isinstance(raw_claims, list):
+        return answer, 0
+    result = answer
+    attached = 0
+    for raw_claim in raw_claims:
+        if not isinstance(raw_claim, dict) or raw_claim.get("verdict") != "supported":
+            continue
+        claim = str(raw_claim.get("claim", "")).strip()
+        source_ids = raw_claim.get("source_ids")
+        if (
+            not claim
+            or citation_ids(claim)
+            or not isinstance(source_ids, list)
+            or not source_ids
+            or claim not in result
+        ):
+            continue
+        citation = "[" + ", ".join(str(value) for value in source_ids) + "]"
+        result = result.replace(claim, f"{claim} {citation}", 1)
+        attached += 1
+    return result, attached
 
 
 def unavailable_verification(reason: str) -> dict[str, object]:
