@@ -157,6 +157,16 @@ cobertura. As conexões encontradas ao longo de todos os ciclos são reranqueada
 em conjunto, impedindo que a primeira direção explorada esgote a cota antes que
 uma alternativa mais pertinente seja encontrada.
 
+A validação real mostrou que descobrir uma conexão não garantia sua presença na
+janela final: métodos irmãos de um único arquivo podiam deslocar chamadores,
+objetos de estado e trechos que o próprio agente havia associado à cobertura.
+Na 0.41.4, a seleção preserva primeiro caminhos distintos entre resultados
+relevantes, coloca evidências de cobertura antes de escolhas incidentais e
+reserva parte das observações para o resultado de ferramenta mais recente. Um
+quinto ciclo limitado fica disponível somente quando os anteriores ainda não
+encerraram a investigação. Essas regras operam apenas sobre metadados e
+evidências observados, sem vocabulário de projeto ou domínio embutido.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

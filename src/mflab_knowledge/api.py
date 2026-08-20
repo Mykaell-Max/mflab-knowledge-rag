@@ -62,6 +62,7 @@ from mflab_knowledge.investigator import (
     coverage_summary,
     fallback_investigation_actions,
     normalize_investigation_decision,
+    prioritize_kept_chunk_ids,
     select_graph_frontier_results,
     synthesis_guidance,
 )
@@ -1680,13 +1681,20 @@ class RagApiService:
                 for result in selected_graph_frontier
                 if result.get("chunk_id")
             ]
+            prioritized_kept_chunk_ids = prioritize_kept_chunk_ids(
+                kept_chunk_ids,
+                agent_coverage,
+            )
             selected_chunk_ids: list[str] = []
             for position in range(
-                max(len(kept_chunk_ids), len(graph_frontier_chunk_ids))
+                max(
+                    len(prioritized_kept_chunk_ids),
+                    len(graph_frontier_chunk_ids),
+                )
             ):
                 candidates: list[str] = []
-                if position < len(kept_chunk_ids):
-                    candidates.append(kept_chunk_ids[position])
+                if position < len(prioritized_kept_chunk_ids):
+                    candidates.append(prioritized_kept_chunk_ids[position])
                 frontier_offset = position * 2
                 candidates.extend(
                     graph_frontier_chunk_ids[frontier_offset : frontier_offset + 2]
@@ -1899,6 +1907,9 @@ class RagApiService:
                 "actions": agent_actions,
                 "coverage": agent_coverage,
                 "kept_chunk_ids": kept_chunk_ids,
+                "prioritized_kept_chunk_ids": (
+                    prioritize_kept_chunk_ids(kept_chunk_ids, agent_coverage)
+                ),
                 "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
                 "graph_frontier": [
                     {

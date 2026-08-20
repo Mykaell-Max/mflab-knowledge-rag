@@ -543,6 +543,26 @@ seguro, reranqueadas globalmente pela pergunta e intercaladas na proporção de
 duas conexões estruturais para cada evidência mantida pelo modelo. Não há
 reindexação nem cálculo de embeddings nessa mudança.
 
+A validação real da 0.41.3 mostrou que a formulação conceitual de hipóteses
+funcionou: no caso da malha foram encontrados o ponto de configuração do
+domínio e as operações do gerenciador, e no caso do subsistema foram encontrados
+o avanço do domínio, a gerência e o estado da entidade. A suíte continuou em
+0/2 porque a composição final privilegiou vários métodos do mesmo arquivo e um
+arquivo de construção mantido incidentalmente. Assim, conexões já descobertas e
+associadas explicitamente à cobertura ficaram fora da janela entregue ao
+gerador. O primeiro caso também esgotou os quatro ciclos antes de seguir a
+operação intermediária até sua implementação a jusante.
+
+A 0.41.4 corrige essa perda sem conhecimento específico do domínio. A fronteira
+estrutural preserva primeiro caminhos distintos e somente depois completa a
+cota com métodos irmãos; evidências apontadas pelo próprio relatório de
+cobertura precedem seleções incidentais; seis posições da janela de observação
+ficam reservadas para o resultado de ferramentas mais recente, sem eliminar as
+hipóteses anteriores; e existe um quinto ciclo limitado quando a cobertura
+ainda não é suficiente. Projeto, branch, commit e ACL continuam sendo aplicados
+antes de qualquer leitura. A mudança reutiliza mapa semântico, corpus e
+embeddings existentes.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

@@ -7,11 +7,12 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v9"
-MAX_AGENT_ITERATIONS = 4
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v10"
+MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
 MAX_OBSERVATION_PREVIEW = 500
+LATEST_TOOL_OBSERVATION_QUOTA = 6
 CALL_FRONTIER_MINIMUM_BONUS = 0.5
 CALL_FRONTIER_MAXIMUM_BONUS = 2.0
 
@@ -193,53 +194,71 @@ def build_observations(
 
     observations: list[dict[str, object]] = []
     seen: set[tuple[str, str, str]] = set()
+    retrieval_list = list(retrievals)
     result_groups = [
-        raw_results
-        for retrieval in retrievals
+        (str(retrieval.get("mode", "")), raw_results)
+        for retrieval in retrieval_list
         if isinstance((raw_results := retrieval.get("results")), list)
     ]
+
+    def append_observation(result: object) -> bool:
+        if not isinstance(result, dict):
+            return False
+        chunk_id = str(result.get("chunk_id", ""))
+        occurrence = result.get("selected_occurrence")
+        if not isinstance(occurrence, dict):
+            occurrence = {}
+        identity = (
+            str(result.get("project", "")),
+            str(occurrence.get("branch", "")),
+            chunk_id,
+        )
+        if not chunk_id or identity in seen:
+            return False
+        seen.add(identity)
+        text = str(result.get("text", ""))
+        observations.append(
+            {
+                "chunk_id": chunk_id,
+                "project": identity[0],
+                "branch": identity[1],
+                "path": str(result.get("path", "")),
+                "format": str(result.get("format", "")),
+                "title": str(result.get("title", "")),
+                "kind": str(result.get("kind", "")),
+                "lines": [
+                    result.get("line_start"),
+                    result.get("line_end"),
+                ],
+                "preview": text[:MAX_OBSERVATION_PREVIEW],
+                "source_kind": str(result.get("source_kind", "retrieval")),
+            }
+        )
+        return True
+
+    # The newest tool response is the only evidence that the model has not yet
+    # had an opportunity to inspect. Reserve a small bounded part of the window
+    # for it, while leaving most slots to independent earlier hypotheses.
+    if result_groups and result_groups[0][0] == "agent_tools":
+        latest_added = 0
+        for result in result_groups[0][1]:
+            if append_observation(result):
+                latest_added += 1
+            if latest_added >= LATEST_TOOL_OBSERVATION_QUOTA:
+                break
+
     # New tool results are inserted before the original retrievals. Walking a
     # whole group at once used to let one exploratory query evict every earlier
     # lead from the bounded observation window. Round-robin keeps independent
     # hypotheses observable and prevents semantic drift around one generic name.
-    maximum_group_size = max((len(group) for group in result_groups), default=0)
+    maximum_group_size = max(
+        (len(group) for _mode, group in result_groups), default=0
+    )
     for result_position in range(maximum_group_size):
-        for raw_results in result_groups:
+        for _mode, raw_results in result_groups:
             if result_position >= len(raw_results):
                 continue
-            result = raw_results[result_position]
-            if not isinstance(result, dict):
-                continue
-            chunk_id = str(result.get("chunk_id", ""))
-            occurrence = result.get("selected_occurrence")
-            if not isinstance(occurrence, dict):
-                occurrence = {}
-            identity = (
-                str(result.get("project", "")),
-                str(occurrence.get("branch", "")),
-                chunk_id,
-            )
-            if not chunk_id or identity in seen:
-                continue
-            seen.add(identity)
-            text = str(result.get("text", ""))
-            observations.append(
-                {
-                    "chunk_id": chunk_id,
-                    "project": identity[0],
-                    "branch": identity[1],
-                    "path": str(result.get("path", "")),
-                    "format": str(result.get("format", "")),
-                    "title": str(result.get("title", "")),
-                    "kind": str(result.get("kind", "")),
-                    "lines": [
-                        result.get("line_start"),
-                        result.get("line_end"),
-                    ],
-                    "preview": text[:MAX_OBSERVATION_PREVIEW],
-                    "source_kind": str(result.get("source_kind", "retrieval")),
-                }
-            )
+            append_observation(raw_results[result_position])
             if len(observations) >= MAX_OBSERVATIONS:
                 return observations
     return observations
@@ -296,18 +315,78 @@ def select_graph_frontier_results(
         ranked.append((score, -position, result))
     if any(score > 0 for score, _position, _result in ranked):
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
-        return [item[2] for item in ranked[:limit]]
+        candidate_tiers = [
+            [item[2] for item in ranked if item[0] > 0],
+            [item[2] for item in ranked if item[0] <= 0],
+        ]
+    else:
+        sample_size = min(limit, len(results))
+        selected_positions = {
+            round(position * (len(results) - 1) / max(sample_size - 1, 1))
+            for position in range(sample_size)
+        }
+        sampled = [
+            result
+            for position, result in enumerate(results)
+            if position in selected_positions
+        ]
+        candidate_tiers = [
+            [
+                *sampled,
+                *(
+                    result
+                    for position, result in enumerate(results)
+                    if position not in selected_positions
+                ),
+            ]
+        ]
 
-    sample_size = min(limit, len(results))
-    selected_positions = {
-        round(position * (len(results) - 1) / max(sample_size - 1, 1))
-        for position in range(sample_size)
-    }
-    return [
-        result
-        for position, result in enumerate(results)
-        if position in selected_positions
-    ][:limit]
+    # A call frontier often contains many operations from one implementation
+    # unit. Preserve one result per path before filling the remaining slots so
+    # callers, callees and state objects are not displaced by sibling methods.
+    selected: list[dict[str, object]] = []
+    selected_ids: set[str] = set()
+    selected_paths: set[str] = set()
+    for candidates in candidate_tiers:
+        for allow_repeated_path in (False, True):
+            for result in candidates:
+                chunk_id = str(result.get("chunk_id", ""))
+                path = str(result.get("path", ""))
+                identity = chunk_id or f"{path}:{result.get('title', '')}"
+                if identity in selected_ids:
+                    continue
+                if not allow_repeated_path and path and path in selected_paths:
+                    continue
+                selected.append(result)
+                selected_ids.add(identity)
+                if path:
+                    selected_paths.add(path)
+                if len(selected) >= limit:
+                    return selected
+    return selected
+
+
+def prioritize_kept_chunk_ids(
+    kept_chunk_ids: Iterable[str],
+    coverage: Iterable[dict[str, object]],
+) -> list[str]:
+    """Place evidence explicitly tied to coverage before incidental keeps."""
+
+    kept = list(dict.fromkeys(str(chunk_id) for chunk_id in kept_chunk_ids))
+    kept_set = set(kept)
+    prioritized: list[str] = []
+    for item in coverage:
+        raw_ids = item.get("chunk_ids")
+        if not isinstance(raw_ids, list):
+            continue
+        for chunk_id in raw_ids:
+            value = str(chunk_id)
+            if value in kept_set and value not in prioritized:
+                prioritized.append(value)
+    prioritized.extend(
+        chunk_id for chunk_id in kept if chunk_id not in prioritized
+    )
+    return prioritized
 
 
 def bounded_action_batch(

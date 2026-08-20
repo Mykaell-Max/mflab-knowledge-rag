@@ -7,6 +7,7 @@ from mflab_knowledge.investigator import (
     build_observations,
     fallback_investigation_actions,
     normalize_investigation_decision,
+    prioritize_kept_chunk_ids,
     select_graph_frontier_results,
 )
 
@@ -115,6 +116,41 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertEqual(len(observations), 18)
         self.assertEqual(observations[1]["chunk_id"], "initial-lead")
+
+    def test_observations_reserve_new_agent_tool_results(self) -> None:
+        latest = [
+            {
+                "chunk_id": f"latest-{position}",
+                "project": "Solver",
+                "path": f"src/latest-{position}.cpp",
+                "selected_occurrence": {"branch": "trunk"},
+            }
+            for position in range(12)
+        ]
+        older_groups = [
+            {
+                "results": [
+                    {
+                        "chunk_id": f"older-{group}-{position}",
+                        "project": "Solver",
+                        "path": f"src/older-{group}-{position}.cpp",
+                        "selected_occurrence": {"branch": "trunk"},
+                    }
+                    for position in range(12)
+                ]
+            }
+            for group in range(20)
+        ]
+
+        observations = build_observations(
+            [{"mode": "agent_tools", "results": latest}, *older_groups]
+        )
+
+        self.assertEqual(
+            [item["chunk_id"] for item in observations[:6]],
+            [f"latest-{position}" for position in range(6)],
+        )
+        self.assertIn("older-0-0", [item["chunk_id"] for item in observations])
 
     def test_fallback_uses_qualified_terms_and_only_observed_targets(self) -> None:
         observations = [
@@ -337,6 +373,53 @@ class InvestigatorTests(unittest.TestCase):
         )
 
         self.assertEqual(selected[0]["chunk_id"], "grid")
+
+    def test_call_frontier_preserves_distinct_paths_before_siblings(self) -> None:
+        selected = select_graph_frontier_results(
+            question="Explain the worker lifecycle",
+            search_hints=["worker runtime flow"],
+            results=[
+                {
+                    "chunk_id": f"worker-{position}",
+                    "path": "src/worker.cpp",
+                    "title": f"Worker::step{position}",
+                    "text": "worker runtime operation",
+                }
+                for position in range(6)
+            ]
+            + [
+                {
+                    "chunk_id": "driver",
+                    "path": "src/driver.cpp",
+                    "title": "Driver::advance",
+                    "text": "advance the worker runtime flow",
+                },
+                {
+                    "chunk_id": "state",
+                    "path": "src/state.cpp",
+                    "title": "State::update",
+                    "text": "update worker state",
+                },
+            ],
+            limit=4,
+        )
+
+        self.assertEqual(selected[0]["chunk_id"], "worker-0")
+        self.assertEqual(
+            {item["path"] for item in selected[:3]},
+            {"src/worker.cpp", "src/driver.cpp", "src/state.cpp"},
+        )
+
+    def test_coverage_evidence_precedes_incidental_keeps(self) -> None:
+        selected = prioritize_kept_chunk_ids(
+            ["build-file", "entry", "runtime", "state"],
+            [
+                {"aspect": "entry", "chunk_ids": ["entry"]},
+                {"aspect": "runtime", "chunk_ids": ["runtime", "state"]},
+            ],
+        )
+
+        self.assertEqual(selected, ["entry", "runtime", "state", "build-file"])
 
     def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:
         results = [
