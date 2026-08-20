@@ -243,7 +243,9 @@ class GenerationTests(unittest.TestCase):
         payload = captured["payload"]
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertEqual(payload["temperature"], 0.0)
-        self.assertEqual(payload["max_tokens"], 384)
+        self.assertEqual(payload["max_tokens"], 512)
+        self.assertIn("general scientific", payload["messages"][0]["content"])
+        self.assertIn("acronyms", payload["messages"][0]["content"])
         self.assertIn("MeshFactory", result)
 
     def test_investigator_observes_results_and_requests_read_only_actions(self) -> None:
@@ -284,6 +286,7 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(payload["temperature"], 0.0)
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertIn("open_neighborhood", payload["messages"][0]["content"])
+        self.assertIn("general scientific", payload["messages"][0]["content"])
         self.assertIn("Lexical overlap alone", payload["messages"][0]["content"])
         self.assertIn(
             "upstream entry or integration",

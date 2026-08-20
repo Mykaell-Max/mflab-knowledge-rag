@@ -1138,6 +1138,13 @@ class ApiServiceTests(unittest.TestCase):
             context["agent_investigation"]["graph_frontier_chunk_ids"],
             ["caller", "callee"],
         )
+        self.assertEqual(
+            [
+                item["path"]
+                for item in context["agent_investigation"]["graph_frontier"]
+            ],
+            ["src/driver.cpp", "src/helper.cpp"],
+        )
 
     def test_ask_audits_long_answers_in_bounded_batches(self) -> None:
         answer = "\n\n".join(

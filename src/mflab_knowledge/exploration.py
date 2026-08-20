@@ -5,9 +5,9 @@ import re
 import unicodedata
 from pathlib import PurePosixPath
 
-QUERY_PLAN_ALGORITHM = "bounded_query_plan_v1"
-MAX_PLANNED_QUERIES = 4
-MAX_NAVIGATION_IDENTIFIERS = 8
+QUERY_PLAN_ALGORITHM = "bounded_query_plan_v2"
+MAX_PLANNED_QUERIES = 6
+MAX_NAVIGATION_IDENTIFIERS = 12
 
 OVERVIEW_PATTERNS = (
     r"^o que (?:e|sao)\b",

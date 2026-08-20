@@ -523,6 +523,26 @@ auditoria de afirmações passa a rejeitar uma alegação verdadeira sobre códi
 adjacente quando ela é apresentada como se respondesse à operação solicitada.
 Mapa, corpus e embeddings existentes continuam reutilizáveis.
 
+A validação real da 0.41.2 confirmou as duas salvaguardas: hipóteses
+independentes foram efetivamente executadas nos ciclos seguintes e a resposta
+que confundia inicialização de fronteira imersa com malha adaptativa foi
+bloqueada pela auditoria de relevância. A suíte continuou em 0/2 porque a busca
+ainda permaneceu na hipótese errada e o fluxo de partículas não trouxe a
+implementação a jusante esperada. O contexto mostrou outro gargalo: oito
+fronteiras eram descobertas, mas as primeiras acumuladas ocupavam a cota e a
+janela final comportava somente três fontes no caso de fluxo.
+
+A 0.41.3 permite que o planejador use conhecimento científico e de engenharia
+de software exclusivamente para formular hipóteses de busca: terminologia
+convencional, siglas, formas expandidas, sinônimos de implementação, papéis de
+ciclo de vida e estruturas de dados. Nada disso pode provar um fato do
+repositório; cobertura e resposta continuam exigindo código observado. O plano
+passa a aceitar até cinco hipóteses distintas além da pergunta original e doze
+identificadores. As fronteiras de todos os ciclos são acumuladas até um limite
+seguro, reranqueadas globalmente pela pergunta e intercaladas na proporção de
+duas conexões estruturais para cada evidência mantida pelo modelo. Não há
+reindexação nem cálculo de embeddings nessa mudança.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

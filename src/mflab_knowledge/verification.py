@@ -7,7 +7,7 @@ from collections.abc import Callable
 from mflab_knowledge.grounding import citation_ids, factual_units
 
 VERIFICATION_ALGORITHM = "claim_evidence_audit_v3"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v10"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v11"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 

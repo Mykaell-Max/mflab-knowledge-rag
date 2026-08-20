@@ -112,7 +112,7 @@ class ExplorationTests(unittest.TestCase):
         )
 
         self.assertEqual(plan["queries"][0], "Onde a malha é inicializada?")
-        self.assertLessEqual(len(plan["queries"]), 4)
+        self.assertLessEqual(len(plan["queries"]), 6)
         self.assertEqual(plan["identifiers"], ["MeshFactory", "initialize", "generate"])
         self.assertTrue(plan["generated"])
 

@@ -421,6 +421,12 @@ pergunta e pela posição no fluxo é preservada no contexto final. Isso evita q
 conexões laterais dominem a investigação ou que o agente volte repetidamente ao
 mesmo coordenador e descarte todos os passos a montante ou a jusante.
 
+O planejamento pode usar conhecimento científico geral apenas para propor
+vocabulário, siglas e sinônimos como hipóteses de recuperação. Essas hipóteses
+não são evidência: nenhuma cobertura ou afirmação sobre o repositório é aceita
+sem um trecho autorizado e com proveniência. Ao final dos ciclos, todas as
+fronteiras encontradas são reranqueadas em conjunto antes de compor o contexto.
+
 O parser piloto respeita seções Markdown e reconhece âncoras básicas de
 C/C++/headers, Fortran, CMake e shell; arquivos sem estrutura reconhecida usam
 janelas por linha com sobreposição. A primeira camada de chamadas cobre

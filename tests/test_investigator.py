@@ -355,6 +355,17 @@ class InvestigatorTests(unittest.TestCase):
             ["0", "3", "6"],
         )
 
+        all_selected = select_graph_frontier_results(
+            question="unmatched vocabulary",
+            search_hints=[],
+            results=results[:2],
+            limit=8,
+        )
+        self.assertEqual(
+            [item["chunk_id"] for item in all_selected],
+            ["0", "1"],
+        )
+
     def test_reserves_supplemental_action_before_truncation(self) -> None:
         executed = {("find_callers", "already")}
         supplemental = {"tool": "find_callees", "chunk_id": "frontier"}

@@ -1221,6 +1221,8 @@ class RagApiService:
         agent_actions: list[dict[str, str]] = []
         kept_chunk_ids: list[str] = []
         graph_frontier_chunk_ids: list[str] = []
+        graph_frontier_results: list[dict[str, object]] = []
+        selected_graph_frontier: list[dict[str, object]] = []
         investigator = getattr(self.generator, "investigate", None)
         if (
             query_plan is not None
@@ -1246,6 +1248,15 @@ class RagApiService:
                     {
                         "iteration": iteration,
                         "observations": len(observations),
+                        "leads": [
+                            {
+                                "chunk_id": item.get("chunk_id"),
+                                "path": item.get("path"),
+                                "title": item.get("title"),
+                                "source_kind": item.get("source_kind"),
+                            }
+                            for item in observations[:8]
+                        ],
                     },
                 )
                 decision_invalid = False
@@ -1591,26 +1602,19 @@ class RagApiService:
                                     result["source_kind"] = (
                                         f"agent_{direction}_evidence"
                                     )
-                                raw_hints = exploration.get("queries")
-                                frontier_hints = (
-                                    [str(value) for value in raw_hints]
-                                    if isinstance(raw_hints, list)
-                                    else []
-                                )
-                                frontier_results = select_graph_frontier_results(
-                                    question=query,
-                                    search_hints=frontier_hints,
-                                    results=fetched,
-                                    limit=3,
-                                )
-                                for result in frontier_results:
+                                known_frontiers = {
+                                    str(item.get("chunk_id", ""))
+                                    for item in graph_frontier_results
+                                }
+                                for result in fetched:
                                     frontier_id = str(result.get("chunk_id", ""))
                                     if (
                                         frontier_id
-                                        and frontier_id not in graph_frontier_chunk_ids
-                                        and len(graph_frontier_chunk_ids) < 8
+                                        and frontier_id not in known_frontiers
+                                        and len(graph_frontier_results) < 64
                                     ):
-                                        graph_frontier_chunk_ids.append(frontier_id)
+                                        graph_frontier_results.append(result)
+                                        known_frontiers.add(frontier_id)
                                 iteration_results.extend(fetched)
                     except Exception:
                         self.log(
@@ -1659,14 +1663,35 @@ class RagApiService:
                 in {"expanded", "empty_action_results", "replanning"}
             ):
                 agent_status = "budget_exhausted"
+            raw_hints = exploration.get("queries")
+            frontier_hints = (
+                [str(value) for value in raw_hints]
+                if isinstance(raw_hints, list)
+                else []
+            )
+            selected_graph_frontier = select_graph_frontier_results(
+                question=query,
+                search_hints=frontier_hints,
+                results=graph_frontier_results,
+                limit=8,
+            )
+            graph_frontier_chunk_ids = [
+                str(result.get("chunk_id", ""))
+                for result in selected_graph_frontier
+                if result.get("chunk_id")
+            ]
             selected_chunk_ids: list[str] = []
             for position in range(
                 max(len(kept_chunk_ids), len(graph_frontier_chunk_ids))
             ):
-                for values in (kept_chunk_ids, graph_frontier_chunk_ids):
-                    if position >= len(values):
-                        continue
-                    chunk_id = values[position]
+                candidates: list[str] = []
+                if position < len(kept_chunk_ids):
+                    candidates.append(kept_chunk_ids[position])
+                frontier_offset = position * 2
+                candidates.extend(
+                    graph_frontier_chunk_ids[frontier_offset : frontier_offset + 2]
+                )
+                for chunk_id in candidates:
                     if chunk_id not in selected_chunk_ids:
                         selected_chunk_ids.append(chunk_id)
             if selected_chunk_ids:
@@ -1875,6 +1900,15 @@ class RagApiService:
                 "coverage": agent_coverage,
                 "kept_chunk_ids": kept_chunk_ids,
                 "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
+                "graph_frontier": [
+                    {
+                        "chunk_id": result.get("chunk_id"),
+                        "path": result.get("path"),
+                        "title": result.get("title"),
+                        "source_kind": result.get("source_kind"),
+                    }
+                    for result in selected_graph_frontier
+                ],
             },
             "instructions": instructions,
             "source_count": len(sources),

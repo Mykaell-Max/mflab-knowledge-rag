@@ -24,6 +24,10 @@ def show_response(label: str, response: dict[str, object]) -> None:
     actions = actions if isinstance(actions, list) else []
     graph_frontier = agent.get("graph_frontier_chunk_ids")
     graph_frontier = graph_frontier if isinstance(graph_frontier, list) else []
+    graph_frontier_details = agent.get("graph_frontier")
+    graph_frontier_details = (
+        graph_frontier_details if isinstance(graph_frontier_details, list) else []
+    )
     sources = response.get("sources")
     sources = sources if isinstance(sources, list) else []
 
@@ -43,6 +47,15 @@ def show_response(label: str, response: dict[str, object]) -> None:
             f"    - {raw_action.get('tool')}: {value}"
             f" -> {raw_action.get('result_count', '?')} resultados"
         )
+    if graph_frontier_details:
+        print("  fronteira estrutural selecionada:")
+        for raw_frontier in graph_frontier_details:
+            if not isinstance(raw_frontier, dict):
+                continue
+            print(
+                f"    - {raw_frontier.get('path')}"
+                f" :: {raw_frontier.get('title')}"
+            )
 
     counts = verification.get("counts")
     counts = counts if isinstance(counts, dict) else {}

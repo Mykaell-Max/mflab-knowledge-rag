@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v8"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v9"
 MAX_AGENT_ITERATIONS = 4
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -298,9 +298,10 @@ def select_graph_frontier_results(
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
         return [item[2] for item in ranked[:limit]]
 
+    sample_size = min(limit, len(results))
     selected_positions = {
-        round(position * (len(results) - 1) / max(limit - 1, 1))
-        for position in range(min(limit, len(results)))
+        round(position * (len(results) - 1) / max(sample_size - 1, 1))
+        for position in range(sample_size)
     }
     return [
         result

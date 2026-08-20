@@ -150,6 +150,13 @@ apenas se a afirmação é verdadeira nas fontes, mas se ela corresponde à
 operação solicitada. Essa política permanece independente de nomes de projetos,
 branches, arquivos ou métodos científicos.
 
+Na 0.41.3, conhecimento geral do modelo pode participar da descoberta, mas não
+da prova. O planejador pode propor siglas, sinônimos e estruturas convencionais
+como hipóteses pesquisáveis; somente trechos recuperados podem estabelecer
+cobertura. As conexões encontradas ao longo de todos os ciclos são reranqueadas
+em conjunto, impedindo que a primeira direção explorada esgote a cota antes que
+uma alternativa mais pertinente seja encontrada.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos
