@@ -126,8 +126,8 @@ class _CallGraphGenerator:
             )
         return (
             '{"coverage":[{"aspect":"call flow","status":"covered",'
-            '"chunk_ids":["caller","callee"]}],"actions":[],'
-            '"keep_chunk_ids":["caller","callee"],"stop":true}'
+            '"chunk_ids":["observed"]}],"actions":[],'
+            '"keep_chunk_ids":["observed"],"stop":true}'
         )
 
 
@@ -1133,6 +1133,10 @@ class ApiServiceTests(unittest.TestCase):
             {"src/driver.cpp", "src/helper.cpp"}.issubset(
                 {source["path"] for source in context["sources"]}
             )
+        )
+        self.assertEqual(
+            context["agent_investigation"]["graph_frontier_chunk_ids"],
+            ["caller", "callee"],
         )
 
     def test_ask_audits_long_answers_in_bounded_batches(self) -> None:

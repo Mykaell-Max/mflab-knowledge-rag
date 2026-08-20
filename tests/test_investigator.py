@@ -226,6 +226,63 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertEqual(actions[0]["chunk_id"], "second")
 
+    def test_fallback_expands_a_new_call_frontier_before_old_matches(self) -> None:
+        observations = [
+            {
+                "chunk_id": "coordinator",
+                "path": "src/coordinator.cpp",
+                "title": "Coordinator::advance",
+                "preview": "Advance the complete operation.",
+                "source_kind": "agent_search_evidence",
+            },
+            {
+                "chunk_id": "downstream",
+                "path": "src/worker.cpp",
+                "title": "Worker::apply",
+                "preview": "Apply one downstream step.",
+                "source_kind": "agent_callees_evidence",
+            },
+        ]
+
+        actions = fallback_investigation_actions(
+            question="Explain how the coordinator advances",
+            search_hints=["coordinator advance flow"],
+            observations=observations,
+            previous_actions=[],
+        )
+
+        self.assertEqual(
+            actions,
+            [
+                {"tool": "find_callees", "chunk_id": "downstream"},
+                {"tool": "open_neighborhood", "chunk_id": "downstream"},
+                {"tool": "find_callers", "chunk_id": "downstream"},
+            ],
+        )
+
+    def test_fallback_inspects_sibling_calls_from_an_upstream_caller(self) -> None:
+        observations = [
+            {
+                "chunk_id": "upstream",
+                "path": "src/driver.cpp",
+                "title": "Driver::advance",
+                "preview": "Call the selected operation in sequence.",
+                "source_kind": "agent_callers_evidence",
+            }
+        ]
+
+        actions = fallback_investigation_actions(
+            question="Explain the operation flow",
+            search_hints=[],
+            observations=observations,
+            previous_actions=[],
+        )
+
+        self.assertEqual(
+            actions[0],
+            {"tool": "find_callees", "chunk_id": "upstream"},
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

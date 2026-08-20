@@ -22,6 +22,8 @@ def show_response(label: str, response: dict[str, object]) -> None:
     verification = verification if isinstance(verification, dict) else {}
     actions = agent.get("actions")
     actions = actions if isinstance(actions, list) else []
+    graph_frontier = agent.get("graph_frontier_chunk_ids")
+    graph_frontier = graph_frontier if isinstance(graph_frontier, list) else []
     sources = response.get("sources")
     sources = sources if isinstance(sources, list) else []
 
@@ -31,6 +33,7 @@ def show_response(label: str, response: dict[str, object]) -> None:
         f" status={agent.get('status')}"
         f" | ciclos={agent.get('iterations')}"
         f" | ações={len(actions)}"
+        f" | fronteira do grafo={len(graph_frontier)}"
     )
     for raw_action in actions:
         if not isinstance(raw_action, dict):

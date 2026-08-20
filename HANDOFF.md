@@ -480,6 +480,28 @@ execução na Morgoth deve reconstruir somente o mapa do MFSim-NG, inspecionar a
 contagens de resolução e repetir a suíte de investigação antes de promover a
 mesma migração aos demais corpora.
 
+A validação real da 0.41.0 construiu 8.235 símbolos e 54.351 relações no
+MFSim-NG, das quais 45.996 são chamadas. Artefato e PostgreSQL tiveram o mesmo
+fingerprint e a travessia chamada→destino→chamador passou. A avaliação de
+respostas continuou em 0/2, embora com cobertura de citações de 100%. No fluxo
+de partículas, `find_callees` devolveu 12 chunks e a resposta passou a incluir a
+integração em `Domain`, mas a fronteira foi descartada antes de chegar à
+operação a jusante esperada. Na malha, a resposta final citou apenas
+inicializações adjacentes e terminou por limite de geração, sem localizar o
+ponto de preenchimento esperado. Todas as afirmações entregues foram auditadas
+como sustentadas; portanto, o defeito é de relevância e cobertura da navegação,
+não de fabricação de fatos.
+
+A 0.41.1 prioriza genericamente a fronteira nova do grafo. Chamados e chamadores
+recém-observados recebem uma oportunidade limitada de expansão antes de o agente
+voltar ao coordenador. Um chamador é aberto por suas chamadas para revelar
+operações irmãs; um chamado pode continuar a jusante. Duas evidências por ação
+são preservadas em uma fila de no máximo oito chunks e intercaladas com as
+escolhas do modelo no contexto final. O SQL ordena a travessia pela linha de
+chamada e a instrução de síntese passa a rejeitar detalhes adjacentes que não
+respondam à operação pedida. Essa versão não exige reconstruir o mapa nem os
+embeddings: somente atualizar o pacote, reiniciar a API e repetir a avaliação.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

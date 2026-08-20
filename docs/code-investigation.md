@@ -124,6 +124,24 @@ observados e devolvem chunks primários depois de reaplicar escopo e ACL no banc
 Essa camada é conservadora e determinística; parsing sintático por linguagem
 deverá aumentar sua precisão sem mudar o contrato de segurança.
 
+A primeira execução real da 0.41.0 produziu 45.996 chamadas no MFSim-NG e
+confirmou a travessia bidirecional no PostgreSQL. O caso de fluxo passou a
+recuperar o ponto de integração no domínio e terminou com nove afirmações
+auditadas e sustentadas. A suíte estrita permaneceu em 0/2: resultados novos de
+`find_callees` eram observados, mas o agente voltava ao coordenador original e
+o conjunto final descartava a fronteira do grafo. No caso de localização, isso
+permitiu uma resposta verdadeira sobre código adjacente, mas que não respondia à
+operação solicitada.
+
+A 0.41.1 trata esse achado sem conhecer nenhum subsistema. Evidências retornadas
+por chamadores e chamados recebem prioridade temporária enquanto ainda são uma
+fronteira não explorada. Um chamador novo é percorrido por suas chamadas para
+expor a orquestração ao redor do alvo; um chamado novo é seguido a jusante antes
+de reabrir o coordenador. Até duas evidências por travessia são preservadas em
+uma fila limitada e intercaladas com as escolhas do modelo no contexto final.
+O SQL passa a ordenar arestas pela linha da chamada, em vez do hash do chunk, e
+a síntese é instruída a omitir operações adjacentes que não respondam à pergunta.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

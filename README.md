@@ -415,7 +415,10 @@ branch, commit, caminho e linhas. Relações puramente derivadas, como pares de
 arquivos, podem não possuir chunk próprio. O agente de `/ask` usa esse mapa por
 ferramentas somente leitura: pode abrir relações gerais e, a partir de um chunk
 já observado, localizar chamadores ou definições chamadas. O PostgreSQL reaplica
-projeto, branch e ACL antes de devolver os chunks primários.
+projeto, branch e ACL antes de devolver os chunks primários. Fronteiras novas
+do grafo recebem uma oportunidade limitada de expansão e algumas evidências são
+preservadas no contexto final; isso evita que o agente volte repetidamente ao
+mesmo coordenador e descarte todos os passos a montante ou a jusante.
 
 O parser piloto respeita seções Markdown e reconhece âncoras básicas de
 C/C++/headers, Fortran, CMake e shell; arquivos sem estrutura reconhecida usam

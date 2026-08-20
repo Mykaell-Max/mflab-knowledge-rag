@@ -105,7 +105,9 @@ CONTEXT_INSTRUCTIONS = (
     "Preserve repository, branch, commit, "
     "path, and line distinctions. When sources span projects or branches, "
     "explicitly distinguish their scopes and never collapse them into one "
-    "version. Prefer omitting secondary detail over ending mid-sentence. "
+    "version. Answer the requested operation before adjacent code, and omit "
+    "nearby but unrelated initialization or cleanup even when it is citable. "
+    "Prefer omitting secondary detail over ending mid-sentence. "
     "If the sources are insufficient, say that the indexed "
     "evidence is insufficient instead of inventing an answer."
 )
@@ -1216,6 +1218,7 @@ class RagApiService:
         agent_coverage: list[dict[str, object]] = []
         agent_actions: list[dict[str, str]] = []
         kept_chunk_ids: list[str] = []
+        graph_frontier_chunk_ids: list[str] = []
         investigator = getattr(self.generator, "investigate", None)
         if (
             query_plan is not None
@@ -1561,7 +1564,7 @@ class RagApiService:
                                     self.settings.database_url,
                                     chunk_id=action["chunk_id"],
                                     direction=direction,
-                                    limit=12,
+                                    limit=6,
                                     project=str(observation.get("project", ""))
                                     or None,
                                     branch=str(observation.get("branch", ""))
@@ -1573,7 +1576,7 @@ class RagApiService:
                                 fetched = fetch_chunks_by_id(
                                     self.settings.database_url,
                                     chunk_ids=call_ids,
-                                    limit=12,
+                                    limit=6,
                                     project=str(observation.get("project", ""))
                                     or None,
                                     branch=str(observation.get("branch", ""))
@@ -1586,6 +1589,14 @@ class RagApiService:
                                     result["source_kind"] = (
                                         f"agent_{direction}_evidence"
                                     )
+                                for result in fetched[:2]:
+                                    frontier_id = str(result.get("chunk_id", ""))
+                                    if (
+                                        frontier_id
+                                        and frontier_id not in graph_frontier_chunk_ids
+                                        and len(graph_frontier_chunk_ids) < 8
+                                    ):
+                                        graph_frontier_chunk_ids.append(frontier_id)
                                 iteration_results.extend(fetched)
                     except Exception:
                         self.log(
@@ -1634,10 +1645,19 @@ class RagApiService:
                 in {"expanded", "empty_action_results", "replanning"}
             ):
                 agent_status = "budget_exhausted"
-            if kept_chunk_ids:
+            selected_chunk_ids: list[str] = []
+            for position in range(
+                max(len(kept_chunk_ids), len(graph_frontier_chunk_ids))
+            ):
+                for values in (kept_chunk_ids, graph_frontier_chunk_ids):
+                    if position >= len(values):
+                        continue
+                    chunk_id = values[position]
+                    if chunk_id not in selected_chunk_ids:
+                        selected_chunk_ids.append(chunk_id)
+            if selected_chunk_ids:
                 selected_results: list[dict[str, object]] = []
-                selected_set = set(kept_chunk_ids)
-                seen_selected: set[tuple[str, str, str]] = set()
+                selected_by_chunk: dict[str, dict[str, object]] = {}
                 for retrieval_item in retrievals:
                     values = retrieval_item.get("results")
                     if not isinstance(values, list):
@@ -1645,17 +1665,17 @@ class RagApiService:
                     for result in values:
                         if not isinstance(result, dict):
                             continue
-                        occurrence = result.get("selected_occurrence")
-                        if not isinstance(occurrence, dict):
-                            occurrence = {}
-                        identity = (
-                            str(result.get("project", "")),
-                            str(occurrence.get("branch", "")),
-                            str(result.get("chunk_id", "")),
-                        )
-                        if identity[2] in selected_set and identity not in seen_selected:
-                            seen_selected.add(identity)
-                            selected_results.append(result)
+                        chunk_id = str(result.get("chunk_id", ""))
+                        if (
+                            chunk_id in selected_chunk_ids
+                            and chunk_id not in selected_by_chunk
+                        ):
+                            selected_by_chunk[chunk_id] = result
+                selected_results.extend(
+                    selected_by_chunk[chunk_id]
+                    for chunk_id in selected_chunk_ids
+                    if chunk_id in selected_by_chunk
+                )
                 if selected_results:
                     retrievals.insert(
                         0,
@@ -1840,6 +1860,7 @@ class RagApiService:
                 "actions": agent_actions,
                 "coverage": agent_coverage,
                 "kept_chunk_ids": kept_chunk_ids,
+                "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
             },
             "instructions": instructions,
             "source_count": len(sources),

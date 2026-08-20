@@ -7,11 +7,12 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v6"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v7"
 MAX_AGENT_ITERATIONS = 4
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
 MAX_OBSERVATION_PREVIEW = 500
+CALL_FRONTIER_BONUS = 1000.0
 
 ALLOWED_ACTIONS = {
     "find_callees",
@@ -310,6 +311,14 @@ def fallback_investigation_actions(
                 / (document_frequency.get(term, 0) + 1)
             ) + 1.0
             score += rarity * (3.0 if term in path_title_terms else 1.0)
+        source_kind = str(observation.get("source_kind", ""))
+        if source_kind in {
+            "agent_callers_evidence",
+            "agent_callees_evidence",
+        }:
+            # A resolved graph edge is a new, bounded frontier. Prefer observing
+            # it once instead of repeatedly reopening the original coordinator.
+            score += CALL_FRONTIER_BONUS
         # Stable retrieval order remains the final tie-breaker.
         ranked.append((score, -position, observation))
     ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -325,15 +334,41 @@ def fallback_investigation_actions(
         candidates: list[dict[str, str]] = []
         chunk_id = str(selected.get("chunk_id", "")).strip()
         if chunk_id:
-            candidates.append(
-                {"tool": "open_neighborhood", "chunk_id": chunk_id}
-            )
-            candidates.append(
-                {"tool": "find_callers", "chunk_id": chunk_id}
-            )
-            candidates.append(
-                {"tool": "find_callees", "chunk_id": chunk_id}
-            )
+            source_kind = str(selected.get("source_kind", ""))
+            if source_kind == "agent_callers_evidence":
+                # From an upstream caller, its outgoing calls expose the
+                # orchestration around the originally observed operation.
+                candidates.append(
+                    {"tool": "find_callees", "chunk_id": chunk_id}
+                )
+                candidates.append(
+                    {"tool": "find_callers", "chunk_id": chunk_id}
+                )
+                candidates.append(
+                    {"tool": "open_neighborhood", "chunk_id": chunk_id}
+                )
+            elif source_kind == "agent_callees_evidence":
+                # Continue downstream before returning to the already explored
+                # coordinator. The neighborhood remains an independent read.
+                candidates.append(
+                    {"tool": "find_callees", "chunk_id": chunk_id}
+                )
+                candidates.append(
+                    {"tool": "open_neighborhood", "chunk_id": chunk_id}
+                )
+                candidates.append(
+                    {"tool": "find_callers", "chunk_id": chunk_id}
+                )
+            else:
+                candidates.append(
+                    {"tool": "open_neighborhood", "chunk_id": chunk_id}
+                )
+                candidates.append(
+                    {"tool": "find_callers", "chunk_id": chunk_id}
+                )
+                candidates.append(
+                    {"tool": "find_callees", "chunk_id": chunk_id}
+                )
             candidates.append(
                 {"tool": "open_related", "chunk_id": chunk_id}
             )

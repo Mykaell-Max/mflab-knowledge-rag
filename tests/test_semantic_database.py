@@ -392,9 +392,17 @@ class SemanticDatabaseTests(unittest.TestCase):
         self.assertEqual(connection.parameters["allowed_access"], ["lab"])
 
     def test_call_graph_reads_both_directions_with_scope_and_acl(self) -> None:
-        for direction, sql_marker in (
-            ("callers", "relation.target_document_id = origin.document_id"),
-            ("callees", "relation.source_document_id = origin.document_id"),
+        for direction, sql_marker, ordering_marker in (
+            (
+                "callers",
+                "relation.target_document_id = origin.document_id",
+                "coalesce(relation.line",
+            ),
+            (
+                "callees",
+                "relation.source_document_id = origin.document_id",
+                "coalesce(calls.line",
+            ),
         ):
             connection = _StatusConnection([{"chunk_id": f"{direction}-chunk"}])
             with mock.patch.object(
@@ -420,6 +428,7 @@ class SemanticDatabaseTests(unittest.TestCase):
             self.assertIn(sql_marker, connection.sql)
             self.assertIn("relation.kind = 'calls_symbol'", connection.sql)
             self.assertIn("semantic_relation_occurrences", connection.sql)
+            self.assertIn(ordering_marker, connection.sql)
             self.assertEqual(connection.parameters["branch"], "feature/solver")
             self.assertEqual(connection.parameters["allowed_access"], ["lab"])
 

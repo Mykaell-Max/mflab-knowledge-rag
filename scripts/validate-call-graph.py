@@ -49,6 +49,8 @@ def _resolved_sample(
                 "evidence_chunk_id"
             ):
                 continue
+            if value.get("target_document_id") == value.get("source_document_id"):
+                continue
             occurrences = value.get("occurrences")
             if not isinstance(occurrences, list):
                 continue

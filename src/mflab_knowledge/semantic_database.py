@@ -287,7 +287,7 @@ WITH origin AS (
                  OR occurrence.branch = %(branch)s::text)
       )
 )
-SELECT DISTINCT relation.evidence_chunk_id AS chunk_id
+SELECT relation.evidence_chunk_id AS chunk_id
 FROM origin
 JOIN mflab_knowledge.semantic_relations AS relation
   ON relation.target_document_id = origin.document_id
@@ -310,7 +310,11 @@ WHERE relation.evidence_chunk_id IS NOT NULL
         AND (%(branch)s::text IS NULL
              OR occurrence.branch = %(branch)s::text)
   )
-ORDER BY relation.evidence_chunk_id
+GROUP BY relation.evidence_chunk_id
+ORDER BY
+    min(caller.path),
+    min(coalesce(relation.line, 0)),
+    relation.evidence_chunk_id
 LIMIT %(limit)s
 """
 
@@ -352,8 +356,11 @@ WITH origin AS (
             AND (%(branch)s::text IS NULL
                  OR occurrence.branch = %(branch)s::text)
       )
-)
-SELECT DISTINCT target_chunk.chunk_id
+), candidates AS (
+SELECT DISTINCT ON (target_chunk.chunk_id)
+    target_chunk.chunk_id,
+    calls.line,
+    target.path AS target_path
 FROM calls
 JOIN mflab_knowledge.documents AS target
   ON target.document_id = calls.target_document_id
@@ -383,7 +390,14 @@ WHERE target.access_class = ANY(%(allowed_access)s::text[])
         AND (%(branch)s::text IS NULL
              OR occurrence.branch = %(branch)s::text)
   )
-ORDER BY target_chunk.chunk_id
+ORDER BY
+    target_chunk.chunk_id,
+    coalesce(calls.line, 0),
+    target.path
+)
+SELECT chunk_id
+FROM candidates
+ORDER BY coalesce(line, 0), target_path, chunk_id
 LIMIT %(limit)s
 """
 
