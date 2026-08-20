@@ -214,6 +214,22 @@ lista que acrescenta qualquer verbo ou explicação continua sendo auditada como
 prosa factual; portanto, essa distinção não transforma presença de citação em
 prova automática.
 
+A execução real da 0.41.7 confirmou que sondar aspectos distintos encontra
+integração a montante, mas também mostrou duas perdas posteriores. Perguntas de
+localização multietapa ainda podiam encerrar sem grafo, e vários chunks de um
+coordenador podiam excluir uma implementação ou estado já observados. Na
+0.41.8, localizações com múltiplos aspectos recebem a mesma exigência mínima de
+conexão estrutural. Perguntas de inicialização reservam uma consulta genérica
+para construção ou fábrica, independentemente das hipóteses produzidas pelo
+modelo; o resultado continua precisando ser observado e auditado.
+
+A composição final mantém uma pequena amostra relevante da recuperação base em
+paralelo ao caderno e ao grafo. O empacotador reserva até quatro caminhos
+distintos e mantém duas posições para métodos complementares de um mesmo
+arquivo. Essa diversidade é de
+evidência, não de verdade: não promove um arquivo a mecanismo correto, e toda
+afirmação produzida continua vinculada às fontes e submetida à auditoria.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

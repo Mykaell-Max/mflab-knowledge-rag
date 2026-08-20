@@ -6,6 +6,7 @@ from mflab_knowledge.investigator import (
     bounded_action_batch,
     build_observations,
     coverage_integration_probes,
+    coverage_needs_structural_connection,
     fallback_investigation_actions,
     normalize_investigation_decision,
     pending_graph_continuations,
@@ -508,6 +509,21 @@ class InvestigatorTests(unittest.TestCase):
                 {"tool": "find_callers", "chunk_id": "advance"},
                 {"tool": "find_callers", "chunk_id": "state"},
             ],
+        )
+
+    def test_multi_stage_location_requires_structural_connection(self) -> None:
+        self.assertTrue(coverage_needs_structural_connection("mechanism", []))
+        self.assertFalse(
+            coverage_needs_structural_connection(
+                "location",
+                [{"aspect": "definition"}],
+            )
+        )
+        self.assertTrue(
+            coverage_needs_structural_connection(
+                "location",
+                [{"aspect": "construction"}, {"aspect": "runtime setup"}],
+            )
         )
 
     def test_terminal_continuation_uses_only_observed_unexpanded_call_edges(self) -> None:

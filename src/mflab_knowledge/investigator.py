@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v13"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v14"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -449,6 +449,25 @@ def successful_graph_traversal(actions: Iterable[dict[str, object]]) -> bool:
         if count > 0:
             return True
     return False
+
+
+def coverage_needs_structural_connection(
+    intent: object,
+    coverage: Iterable[dict[str, object]],
+) -> bool:
+    """Require graph evidence for mechanisms and multi-stage locations."""
+
+    normalized_intent = str(intent)
+    if normalized_intent == "mechanism":
+        return True
+    if normalized_intent != "location":
+        return False
+    aspects = {
+        str(item.get("aspect", "")).strip().casefold()
+        for item in coverage
+        if str(item.get("aspect", "")).strip()
+    }
+    return len(aspects) > 1
 
 
 def coverage_integration_probes(

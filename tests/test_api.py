@@ -202,6 +202,40 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(used, 600)
         self.assertTrue(truncated)
 
+    def test_context_packing_preserves_distinct_paths_before_repeated_chunks(self) -> None:
+        packed, _used, _truncated = api._pack_context_results(
+            [
+                {"chunk_id": "manager-1", "path": "src/manager.cpp", "text": "a"},
+                {"chunk_id": "manager-2", "path": "src/manager.cpp", "text": "b"},
+                {"chunk_id": "state", "path": "src/state.cpp", "text": "c"},
+            ],
+            max_context_characters=3000,
+        )
+
+        self.assertEqual(
+            [result["chunk_id"] for result in packed],
+            ["manager-1", "state", "manager-2"],
+        )
+
+    def test_context_packing_keeps_room_for_repeated_lifecycle_methods(self) -> None:
+        packed, _used, _truncated = api._pack_context_results(
+            [
+                {"chunk_id": "manager-init", "path": "src/manager.cpp", "text": "a"},
+                {"chunk_id": "manager-run", "path": "src/manager.cpp", "text": "b"},
+                {"chunk_id": "domain", "path": "src/domain.cpp", "text": "c"},
+                {"chunk_id": "state", "path": "src/state.cpp", "text": "d"},
+                {"chunk_id": "factory", "path": "src/factory.cpp", "text": "e"},
+                {"chunk_id": "config", "path": "src/config.cpp", "text": "f"},
+                {"chunk_id": "test", "path": "tests/test.cpp", "text": "g"},
+            ],
+            max_context_characters=6000,
+        )
+
+        self.assertEqual(
+            [result["chunk_id"] for result in packed],
+            ["manager-init", "domain", "state", "factory", "manager-run", "config"],
+        )
+
     def test_unit_settings_do_not_implicitly_load_working_directory_catalog(
         self,
     ) -> None:

@@ -116,6 +116,30 @@ class ExplorationTests(unittest.TestCase):
         self.assertEqual(plan["identifiers"], ["MeshFactory", "initialize", "generate"])
         self.assertTrue(plan["generated"])
 
+    def test_location_plan_reserves_a_construction_hypothesis(self) -> None:
+        deterministic = plan_exploration(
+            "Mostre o trecho responsável por inicializar o componente"
+        )
+        plan = normalize_query_plan(
+            {
+                "queries": [
+                    "component initializer",
+                    "component setup",
+                    "component configuration",
+                    "component lifecycle",
+                    "component tests",
+                ],
+                "identifiers": [],
+            },
+            original_query="Mostre o trecho responsável por inicializar o componente",
+            fallback_queries=[str(value) for value in deterministic["queries"]],
+        )
+
+        self.assertEqual(len(plan["queries"]), 6)
+        self.assertTrue(
+            any("factory creation" in query for query in plan["queries"])
+        )
+
     def test_query_plan_rejects_malformed_output(self) -> None:
         with self.assertRaisesRegex(ValueError, "JSON"):
             normalize_query_plan(

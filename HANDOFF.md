@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.41.7**. Antes de
+> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.41.8**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -647,6 +647,29 @@ perguntas de inicialização. Essas hipóteses apenas guiam buscas: nenhum está
 por um símbolo ou caminho em código inline e sua citação é tratado como rótulo
 de apresentação, não como alegação de que houve chamada ou uso. Qualquer texto
 factual ao redor dele continua passando pela auditoria semântica normal.
+
+A validação real da 0.41.7 confirmou a correção multiaspect no caso de fluxo. O
+agente sondou separadamente construção, avanço e configuração, recuperou os
+pontos de integração em `Domain`, entregou a resposta e terminou com 12/12
+afirmações sustentadas. A suíte ainda reprovou esse caso porque o contexto final
+repetiu chunks de gerência e domínio e excluiu um arquivo de estado que já havia
+sido recuperado. No caso de localização, a classificação permaneceu como
+`location`; por isso, a exigência de travessia usada em `mechanism` não foi
+aplicada. O agente encerrou em dois ciclos e zero ferramentas, aceitando como
+cobertura uma inicialização adjacente que não explicava a construção concreta.
+
+A 0.41.8 reserva uma das seis consultas para uma hipótese determinística de
+construção, fábrica, criação e implementação concreta quando a pergunta de
+localização contém linguagem de inicialização ou construção. No máximo quatro
+hipóteses do modelo ocupam as demais posições; a hipótese determinística é uma
+busca, nunca uma afirmação factual. Localizações com mais de um aspecto coberto
+também exigem ao menos uma conexão estrutural antes de encerrar. Na composição,
+até quatro candidatos relevantes da recuperação original permanecem ao lado das
+escolhas do agente e da fronteira do grafo. O empacotamento reserva até quatro
+caminhos distintos antes de repetir chunks do mesmo arquivo, mantendo duas
+posições disponíveis para métodos complementares de um coordenador. Assim,
+implementações e objetos de estado já encontrados não são expulsos apenas
+porque um coordenador possui várias unidades relevantes.
 
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir

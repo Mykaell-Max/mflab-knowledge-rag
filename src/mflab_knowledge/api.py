@@ -60,6 +60,7 @@ from mflab_knowledge.investigator import (
     bounded_action_batch,
     build_observations,
     coverage_integration_probes,
+    coverage_needs_structural_connection,
     coverage_summary,
     fallback_investigation_actions,
     normalize_investigation_decision,
@@ -125,6 +126,7 @@ CONTEXT_INSTRUCTIONS = (
 )
 
 CONTEXT_DIVERSITY_TARGET = 6
+CONTEXT_PATH_DIVERSITY_TARGET = 4
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 
 
@@ -142,10 +144,37 @@ def _pack_context_results(
         MIN_CONTEXT_SOURCE_CHARACTERS,
         max(1, max_context_characters // target),
     )
+    # Reserve several scoped paths before repeated chunks from the same file.
+    # The quota remains below the source cap because a coordinator may need
+    # more than one method to explain its own lifecycle.
+    diverse: list[dict[str, object]] = []
+    diverse_ids: set[int] = set()
+    seen_paths: set[tuple[str, str, str]] = set()
+    for result in results:
+        if len(diverse) >= min(CONTEXT_PATH_DIVERSITY_TARGET, target):
+            break
+        path = str(result.get("path", ""))
+        occurrence = result.get("selected_occurrence")
+        occurrence = occurrence if isinstance(occurrence, dict) else {}
+        identity = (
+            str(result.get("project", "")),
+            str(occurrence.get("branch", "")),
+            path,
+        )
+        if not path or identity in seen_paths:
+            continue
+        seen_paths.add(identity)
+        diverse.append(result)
+        diverse_ids.add(id(result))
+    ordered_results = [
+        *diverse,
+        *(result for result in results if id(result) not in diverse_ids),
+    ]
+
     packed: list[dict[str, object]] = []
     used = 0
     truncated = False
-    for result in results:
+    for result in ordered_results:
         if len(packed) >= target:
             truncated = True
             break
@@ -1261,6 +1290,7 @@ class RagApiService:
         agent_coverage: list[dict[str, object]] = []
         agent_actions: list[dict[str, str]] = []
         kept_chunk_ids: list[str] = []
+        baseline_chunk_ids: list[str] = []
         graph_frontier_chunk_ids: list[str] = []
         graph_frontier_results: list[dict[str, object]] = []
         selected_graph_frontier: list[dict[str, object]] = []
@@ -1355,7 +1385,10 @@ class RagApiService:
                     )
                 structural_stop_deferred = bool(
                     decision["stop"]
-                    and exploration.get("intent") == "mechanism"
+                    and coverage_needs_structural_connection(
+                        exploration.get("intent"),
+                        agent_coverage,
+                    )
                     and not successful_graph_traversal(agent_actions)
                 )
                 if structural_stop_deferred:
@@ -1854,16 +1887,46 @@ class RagApiService:
                 kept_chunk_ids,
                 agent_coverage,
             )
+            baseline_candidates: list[dict[str, object]] = []
+            baseline_seen: set[str] = set()
+            for retrieval_item in retrievals:
+                if str(retrieval_item.get("mode", "")).startswith("agent_"):
+                    continue
+                values = retrieval_item.get("results")
+                if not isinstance(values, list):
+                    continue
+                for result in values:
+                    if not isinstance(result, dict):
+                        continue
+                    chunk_id = str(result.get("chunk_id", ""))
+                    if not chunk_id or chunk_id in baseline_seen:
+                        continue
+                    baseline_seen.add(chunk_id)
+                    baseline_candidates.append(result)
+            selected_baseline = select_graph_frontier_results(
+                question=query,
+                search_hints=frontier_hints,
+                results=baseline_candidates,
+                limit=4,
+            )
+            baseline_chunk_ids = [
+                str(result.get("chunk_id", ""))
+                for result in selected_baseline
+                if result.get("chunk_id")
+            ]
             selected_chunk_ids: list[str] = []
             for position in range(
                 max(
                     len(prioritized_kept_chunk_ids),
                     len(graph_frontier_chunk_ids),
+                    len(baseline_chunk_ids),
                 )
             ):
                 candidates: list[str] = []
                 if position < len(prioritized_kept_chunk_ids):
                     candidates.append(prioritized_kept_chunk_ids[position])
+                if position < len(baseline_chunk_ids):
+                    candidates.append(baseline_chunk_ids[position])
                 frontier_offset = position * 2
                 candidates.extend(
                     graph_frontier_chunk_ids[frontier_offset : frontier_offset + 2]
@@ -2067,6 +2130,7 @@ class RagApiService:
                 "prioritized_kept_chunk_ids": (
                     prioritize_kept_chunk_ids(kept_chunk_ids, agent_coverage)
                 ),
+                "baseline_chunk_ids": baseline_chunk_ids,
                 "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
                 "graph_frontier": [
                     {

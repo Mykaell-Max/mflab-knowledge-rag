@@ -49,6 +49,11 @@ MECHANISM_PATTERNS = (
     r"\bexplain .+\b(?:flow|lifecycle|architecture|integration)\b",
 )
 
+CONSTRUCTION_PATTERNS = (
+    r"\b(?:inicializ|cria|constr)[a-z0-9]*\b",
+    r"\b(?:initializ|creat|construct)[a-z0-9]*\b",
+)
+
 
 def _normalized(value: str) -> str:
     decomposed = unicodedata.normalize("NFKD", value.casefold())
@@ -87,9 +92,19 @@ def plan_exploration(query: str) -> dict[str, object]:
         )
     elif location:
         intent = "location"
-        hints = (
-            "definition declaration implementation",
-            "call usage configuration",
+        construction = any(
+            re.search(pattern, normalized) for pattern in CONSTRUCTION_PATTERNS
+        )
+        hints = tuple(
+            [
+                *(
+                    ["construction factory creation concrete implementation"]
+                    if construction
+                    else []
+                ),
+                "definition declaration implementation",
+                "call usage configuration",
+            ]
         )
     elif mechanism:
         intent = "mechanism"
@@ -165,7 +180,7 @@ def normalize_query_plan(
     if not original or len(original) > 2_000:
         raise ValueError("consulta original inválida para planejamento")
     proposed_queries = safe_strings(
-        value.get("queries"), maximum=MAX_PLANNED_QUERIES - 1, length=200
+        value.get("queries"), maximum=MAX_PLANNED_QUERIES - 2, length=200
     )
     queries = safe_strings(
         [original, *proposed_queries, *fallback_queries],
