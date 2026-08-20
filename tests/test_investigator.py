@@ -5,6 +5,7 @@ import unittest
 from mflab_knowledge.investigator import (
     bounded_action_batch,
     build_observations,
+    coverage_integration_probes,
     fallback_investigation_actions,
     normalize_investigation_decision,
     pending_graph_continuations,
@@ -487,6 +488,26 @@ class InvestigatorTests(unittest.TestCase):
             successful_graph_traversal(
                 [{"tool": "find_callees", "result_count": "3"}]
             )
+        )
+
+    def test_integration_probes_cover_distinct_observed_aspects(self) -> None:
+        actions = coverage_integration_probes(
+            [
+                {"aspect": "construction", "chunk_ids": ["ctor", "helper"]},
+                {"aspect": "runtime", "chunk_ids": ["advance"]},
+                {"aspect": "state", "chunk_ids": ["advance", "state"]},
+                {"aspect": "invented", "chunk_ids": ["not-observed"]},
+            ],
+            observable_chunk_ids={"ctor", "advance", "state"},
+        )
+
+        self.assertEqual(
+            actions,
+            [
+                {"tool": "find_callers", "chunk_id": "ctor"},
+                {"tool": "find_callers", "chunk_id": "advance"},
+                {"tool": "find_callers", "chunk_id": "state"},
+            ],
         )
 
     def test_terminal_continuation_uses_only_observed_unexpanded_call_edges(self) -> None:

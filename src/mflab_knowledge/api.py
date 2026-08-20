@@ -59,6 +59,7 @@ from mflab_knowledge.investigator import (
     MAX_AGENT_ITERATIONS,
     bounded_action_batch,
     build_observations,
+    coverage_integration_probes,
     coverage_summary,
     fallback_investigation_actions,
     normalize_investigation_decision,
@@ -1378,24 +1379,10 @@ class RagApiService:
                 raw_actions = decision["actions"]
                 assert isinstance(raw_actions, list)
                 if structural_stop_deferred:
-                    for coverage_item in decision["coverage"]:
-                        raw_ids = coverage_item.get("chunk_ids")
-                        if not isinstance(raw_ids, list):
-                            continue
-                        target = next(
-                            (
-                                str(chunk_id)
-                                for chunk_id in raw_ids
-                                if str(chunk_id) in observable_ids
-                            ),
-                            "",
-                        )
-                        if target:
-                            raw_actions = [
-                                {"tool": "find_callers", "chunk_id": target},
-                                {"tool": "find_callees", "chunk_id": target},
-                            ]
-                            break
+                    raw_actions = coverage_integration_probes(
+                        decision["coverage"],
+                        observable_chunk_ids=observable_ids,
+                    )
                 supplemental_action: dict[str, str] | None = None
                 if not raw_actions and not decision["stop"]:
                     inconclusive_decisions += 1
@@ -1441,7 +1428,11 @@ class RagApiService:
                                     "actions": raw_actions,
                                 },
                             )
-                elif raw_actions and not decision["stop"]:
+                elif (
+                    raw_actions
+                    and not decision["stop"]
+                    and not structural_stop_deferred
+                ):
                     # Keep one independent, deterministic lead alive beside the
                     # model-selected hypothesis. This bounded hedge prevents an
                     # early generic match from monopolizing all later cycles.

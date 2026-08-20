@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import unittest
 
-from mflab_knowledge.grounding import citation_coverage, citation_ids
+from mflab_knowledge.grounding import citation_coverage, citation_ids, factual_units
 
 
 class GroundingTests(unittest.TestCase):
@@ -43,6 +43,16 @@ run_without_citation();
             {"S1", "S2", "S3", "S4"},
         )
         self.assertEqual(citation_ids("Not citations: [S1 text] or S2."), set())
+
+    def test_isolated_cited_code_label_is_not_a_runtime_claim(self) -> None:
+        answer = """- `Worker::advance()` [S1]
+- `Worker::advance()` is called by the driver [S2].
+"""
+
+        self.assertEqual(
+            factual_units(answer),
+            ["- `Worker::advance()` is called by the driver [S2]."],
+        )
 
 
 if __name__ == "__main__":

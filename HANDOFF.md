@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **19 de agosto de 2026**, na versão candidata **0.37.0**. Antes de
+> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.41.7**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -623,6 +623,30 @@ backend valida os IDs, anexa somente associações aprovadas e então executa a
 auditoria semântica normal novamente. Unidades sem suporte permanecem sem
 citação e continuam sujeitas a remoção ou abstinência. Assim, corrigir uma falha
 de formatação não reduz a exigência de sustentação factual.
+
+A validação real da 0.41.6 mostrou avanço substancial, apesar de a suíte estrita
+permanecer em 0/2. A localização da malha foi respondida, terminou normalmente e
+teve duas afirmações integralmente sustentadas; faltou somente a implementação
+concreta exigida pelo gabarito. O fluxo do subsistema recuperou construção,
+avanço e estado, mas a sondagem estrutural se concentrou apenas no construtor e
+não trouxe o chamador do método de avanço. A resposta acabou bloqueada por uma
+única unidade: um rótulo isolado de símbolo foi interpretado pelo auditor como
+se afirmasse que o método era chamado. A cobertura média de citações foi 100% e
+nenhuma afirmação não sustentada foi liberada.
+
+A 0.41.7 separa esses defeitos sem inserir conhecimento científico no motor.
+Quando cobertura local ainda precisa ser conectada ao fluxo, o servidor sonda
+um chunk observável distinto de até três aspectos declarados no caderno, em vez
+de usar as duas direções somente no primeiro símbolo. A direção inicial procura
+chamadores, favorecendo pontos de integração a montante; outras travessias
+continuam disponíveis nos ciclos seguintes. O planejador e o investigador
+também passam a tratar construção ou seleção por fábrica, implementação
+concreta, configuração posterior e uso em runtime como hipóteses separadas em
+perguntas de inicialização. Essas hipóteses apenas guiam buscas: nenhum estágio
+é aceito sem fonte primária observada. Por fim, um item de lista formado somente
+por um símbolo ou caminho em código inline e sua citação é tratado como rótulo
+de apresentação, não como alegação de que houve chamada ou uso. Qualquer texto
+factual ao redor dele continua passando pela auditoria semântica normal.
 
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir

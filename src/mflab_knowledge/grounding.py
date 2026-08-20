@@ -7,6 +7,7 @@ CITATION_GROUP_PATTERN = re.compile(
 )
 CITATION_ID_PATTERN = re.compile(r"S(\d+)")
 LIST_ITEM_PATTERN = re.compile(r"^(?:[-*+]\s+|\d+[.)]\s+)")
+ISOLATED_CODE_LABEL_PATTERN = re.compile(r"^`[^`\r\n]+`$")
 
 
 def citation_ids(text: str) -> set[str]:
@@ -52,6 +53,14 @@ def factual_units(text: str) -> list[str]:
 
     selected: list[str] = []
     for unit in units:
+        if LIST_ITEM_PATTERN.match(unit) and citation_ids(unit):
+            label = LIST_ITEM_PATTERN.sub("", unit, count=1)
+            label = CITATION_GROUP_PATTERN.sub("", label).strip()
+            if ISOLATED_CODE_LABEL_PATTERN.fullmatch(label):
+                # A cited symbol/path shown by itself is presentation metadata,
+                # not prose claiming that the symbol is invoked or controls a
+                # runtime operation. Prose around the label remains auditable.
+                continue
         plain = re.sub(r"[`*_>#]", "", unit).strip()
         if len(plain) < 12 or not any(character.isalpha() for character in plain):
             continue

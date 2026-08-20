@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v12"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v13"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -449,6 +449,45 @@ def successful_graph_traversal(actions: Iterable[dict[str, object]]) -> bool:
         if count > 0:
             return True
     return False
+
+
+def coverage_integration_probes(
+    coverage: Iterable[dict[str, object]],
+    *,
+    observable_chunk_ids: set[str],
+    limit: int = MAX_ACTIONS_PER_ITERATION,
+) -> list[dict[str, str]]:
+    """Probe distinct covered aspects for their upstream integration points.
+
+    The targets are supplied by the model's coverage ledger but must already be
+    observable. Selecting at most one unique target per aspect prevents the
+    first local method from monopolizing a multi-stage mechanism probe.
+    """
+
+    if limit < 1:
+        return []
+    actions: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for coverage_item in coverage:
+        raw_ids = coverage_item.get("chunk_ids")
+        if not isinstance(raw_ids, list):
+            continue
+        target = next(
+            (
+                str(chunk_id)
+                for chunk_id in raw_ids
+                if str(chunk_id) in observable_chunk_ids
+                and str(chunk_id) not in seen
+            ),
+            "",
+        )
+        if not target:
+            continue
+        seen.add(target)
+        actions.append({"tool": "find_callers", "chunk_id": target})
+        if len(actions) >= limit:
+            break
+    return actions
 
 
 def pending_graph_continuations(

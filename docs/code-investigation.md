@@ -196,6 +196,24 @@ exatas, mas não pode alterá-las. Toda associação é validada estruturalmente
 depois submetida à mesma auditoria de implicação usada para citações produzidas
 na síntese. Essa etapa não transforma similaridade lexical em prova.
 
+O teste real da 0.41.6 distinguiu dois tipos de lacuna. Em uma consulta, o
+agente explicou configuração e remesh com afirmações auditadas, mas não
+investigou separadamente onde a implementação concreta era construída. Em
+outra, três aspectos locais estavam presentes, porém apenas o primeiro recebeu
+sondagem estrutural. Na 0.41.7, perguntas de inicialização mantêm construção ou
+fábrica, implementação concreta, configuração e uso como hipóteses distintas.
+Quando o servidor precisa conectar cobertura local ao fluxo, escolhe um alvo
+observável por aspecto e procura até três chamadores. Isso evita que o primeiro
+construtor ou helper esgote a cota, sem inventar símbolos ou aceitar hipóteses
+como evidência.
+
+Itens de apresentação contendo somente um símbolo ou caminho em código inline
+e uma citação não entram no conjunto de afirmações factuais. Eles indicam apenas
+a existência do item naquela fonte, não chamada, efeito ou papel no fluxo. Uma
+lista que acrescenta qualquer verbo ou explicação continua sendo auditada como
+prosa factual; portanto, essa distinção não transforma presença de citação em
+prova automática.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

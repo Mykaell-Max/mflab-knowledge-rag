@@ -305,6 +305,8 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(payload["max_tokens"], 512)
         self.assertIn("general scientific", payload["messages"][0]["content"])
         self.assertIn("acronyms", payload["messages"][0]["content"])
+        self.assertIn("factory selection", payload["messages"][0]["content"])
+        self.assertIn("later configuration", payload["messages"][0]["content"])
         self.assertIn("MeshFactory", result)
 
     def test_investigator_observes_results_and_requests_read_only_actions(self) -> None:
@@ -352,6 +354,10 @@ class GenerationTests(unittest.TestCase):
             payload["messages"][0]["content"],
         )
         self.assertIn("downstream operations", payload["messages"][0]["content"])
+        self.assertIn(
+            "does not explain its construction",
+            payload["messages"][0]["content"],
+        )
         self.assertIn(
             "prior decision was inconclusive",
             payload["messages"][1]["content"],
