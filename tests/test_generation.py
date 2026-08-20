@@ -68,6 +68,27 @@ class GenerationTests(unittest.TestCase):
                     self._write_config(root, "https://llm.example/v1")
                 )
 
+    def test_updates_generation_limits_atomically_and_preserves_other_values(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            root = Path(temporary_directory)
+            path = self._write_config(root, "http://127.0.0.1:8000/v1")
+            before = path.read_text(encoding="utf-8")
+
+            updated = generation.update_generation_limits(
+                path,
+                max_output_tokens=2048,
+                max_context_characters=12000,
+            )
+
+            after = path.read_text(encoding="utf-8")
+            self.assertEqual(updated.max_output_tokens, 2048)
+            self.assertEqual(updated.max_context_characters, 12000)
+            self.assertIn('model = "local-test-model"', after)
+            self.assertIn("max_output_tokens = 2048", after)
+            self.assertIn("max_context_characters = 12000", after)
+            self.assertNotEqual(before, after)
+            self.assertEqual(list(root.glob("*.tmp")), [])
+
     def test_unknown_options_are_rejected_instead_of_ignored(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             root = Path(temporary_directory)

@@ -563,6 +563,39 @@ ainda não é suficiente. Projeto, branch, commit e ACL continuam sendo aplicado
 antes de qualquer leitura. A mudança reutiliza mapa semântico, corpus e
 embeddings existentes.
 
+A validação real da 0.41.4 confirmou a diversidade da fronteira, mas revelou
+três gargalos de composição. Resultados recentes do grafo podiam ficar atrás de
+vizinhanças na janela observável; o empacotamento do contexto podia consumir o
+orçamento com os primeiros arquivos e excluir uma integração já descoberta; e
+uma cobertura completa idêntica podia provocar ciclos desnecessários. Também
+foi observado que uma revisão textual malsucedida podia substituir afirmações
+úteis já aprovadas por uma recapitulação redundante.
+
+A 0.41.5 corrige esses pontos de forma genérica. Arestas recentes do grafo são
+observadas antes de resultados lexicais, fontes distintas compartilham o
+orçamento de evidências em vez de serem descartadas pela primeira fonte longa,
+e duas coberturas completas consecutivas encerram a exploração. Falhas do canal
+de progresso não interferem no resultado. Uma revisão rejeitada preserva
+preferencialmente as unidades aprovadas da resposta original e recebe instrução
+explícita para não criar segunda síntese ou rótulos factuais isolados.
+
+Orçamento de evidências, teto de saída e janela do provedor passam a ser
+tratados como grandezas diferentes. O teto local padrão de resposta sobe para
+2.048 tokens e pode ser alterado atomicamente por configuração; ele não obriga
+respostas longas. Perguntas diretas podem terminar cedo, enquanto perguntas de
+mecanismo, fluxo ou comparação são orientadas a explicar todas as etapas
+sustentadas, mesmo quando distribuídas por vários arquivos. O teto efetivamente
+aplicado é devolvido pela API. O limite de 8.192 tokens do runtime atual ainda é
+compartilhado por instruções, evidências e resposta.
+
+Explicações maiores que uma única janela exigirão síntese hierárquica, não um
+número fixo cada vez maior. A evolução prevista divide a pergunta em aspectos,
+investiga e audita cada aspecto, produz resumos intermediários citados e então
+compõe a resposta final mantendo os vínculos com as fontes primárias. Os
+orçamentos dessa camada deverão derivar da configuração do provedor e da
+complexidade observada da pergunta, sem nomes de repositório, branch, arquivo ou
+domínio codificados no motor.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

@@ -167,6 +167,21 @@ quinto ciclo limitado fica disponível somente quando os anteriores ainda não
 encerraram a investigação. Essas regras operam apenas sobre metadados e
 evidências observados, sem vocabulário de projeto ou domínio embutido.
 
+Na 0.41.5, arestas de chamada produzidas pela ferramenta mais recente precedem
+vizinhanças e buscas na cota observável. Duas coberturas completas e idênticas
+encerram o agente, evitando ciclos sem ganho. O empacotamento final reserva uma
+parcela do orçamento para várias fontes ordenadas, impedindo que um único
+arquivo longo elimine integrações já descobertas. Essa divisão não atribui
+verdade nem relevância por tamanho: a ordem continua vindo da investigação e
+cada afirmação continua sujeita à auditoria semântica.
+
+O orçamento atual permanece limitado por uma chamada ao modelo. A resposta usa
+um teto configurável e pode terminar antes dele; mecanismos complexos recebem
+instrução de profundidade proporcional à pergunta. Para ultrapassar com
+segurança a janela única do provedor, a próxima arquitetura deverá sintetizar
+seções auditadas por aspecto e compô-las hierarquicamente sem perder as fontes
+primárias. Aumentar apenas o contexto ou a saída não substitui essa etapa.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

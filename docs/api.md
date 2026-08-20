@@ -217,8 +217,12 @@ instrução não substitui isolamento ou ACL.
 Aceita os campos de `/context` e, opcionalmente, `max_output_tokens` (64 a
 8.192) e `temperature` (0 a 1). A recuperação e a ACL ocorrem antes de qualquer
 texto chegar ao gerador. Se nenhuma fonte for encontrada, o serviço se abstém
-sem chamar o modelo. O orçamento solicitado nunca ultrapassa
-`provider.max_context_characters`. Se um provedor OpenAI-compatible ainda
+sem chamar o modelo. Os orçamentos solicitados nunca ultrapassam
+`provider.max_context_characters` e `provider.max_output_tokens`. O segundo é
+um teto, não um tamanho obrigatório: o modelo pode encerrar cedo uma resposta
+direta, mas perguntas de mecanismo, fluxo e comparação recebem espaço para uma
+explicação detalhada. A resposta expõe os limites solicitados e efetivos em
+`context`. Se um provedor OpenAI-compatible ainda
 recusar a janela, o backend reduz o pacote de evidências preservando sua ordem e
 IDs, e tenta novamente até duas vezes. Os campos `generation_attempts` e
 `reduced_for_generation` tornam esse comportamento observável na resposta.
@@ -337,9 +341,19 @@ kind = "openai_compatible"
 base_url = "http://127.0.0.1:8000/v1"
 model = "modelo-local"
 timeout_seconds = 180
-max_output_tokens = 1024
+max_output_tokens = 2048
 temperature = 0.1
 max_context_characters = 8000
+```
+
+Os limites não secretos de uma configuração existente podem ser atualizados
+sem editar TOML manualmente. A alteração é validada antes da substituição
+atômica do arquivo:
+
+```bash
+python scripts/configure-generation-limits.py \
+  --config generation.toml \
+  --max-output-tokens 2048
 ```
 
 Depois de criar ou alterar esse arquivo, reinicie a API. Comandos

@@ -8,6 +8,7 @@ from mflab_knowledge.investigator import (
     fallback_investigation_actions,
     normalize_investigation_decision,
     prioritize_kept_chunk_ids,
+    repeated_complete_coverage,
     select_graph_frontier_results,
 )
 
@@ -151,6 +152,35 @@ class InvestigatorTests(unittest.TestCase):
             [f"latest-{position}" for position in range(6)],
         )
         self.assertIn("older-0-0", [item["chunk_id"] for item in observations])
+
+    def test_observations_show_new_call_edges_before_other_tool_results(self) -> None:
+        def result(chunk_id: str, source_kind: str) -> dict[str, object]:
+            return {
+                "chunk_id": chunk_id,
+                "project": "Solver",
+                "path": f"src/{chunk_id}.cpp",
+                "source_kind": source_kind,
+                "selected_occurrence": {"branch": "trunk"},
+            }
+
+        observations = build_observations(
+            [
+                {
+                    "mode": "agent_tools",
+                    "results": [
+                        result("nearby-1", "agent_neighborhood_evidence"),
+                        result("nearby-2", "agent_search_evidence"),
+                        result("caller", "agent_callers_evidence"),
+                        result("callee", "agent_callees_evidence"),
+                    ],
+                }
+            ]
+        )
+
+        self.assertEqual(
+            [item["chunk_id"] for item in observations[:2]],
+            ["caller", "callee"],
+        )
 
     def test_fallback_uses_qualified_terms_and_only_observed_targets(self) -> None:
         observations = [
@@ -420,6 +450,29 @@ class InvestigatorTests(unittest.TestCase):
         )
 
         self.assertEqual(selected, ["entry", "runtime", "state", "build-file"])
+
+    def test_complete_coverage_must_repeat_with_the_same_evidence(self) -> None:
+        complete = [
+            {
+                "aspect": "runtime entry",
+                "status": "covered",
+                "chunk_ids": ["entry"],
+            },
+            {
+                "aspect": "state change",
+                "status": "covered",
+                "chunk_ids": ["state"],
+            },
+        ]
+
+        self.assertTrue(repeated_complete_coverage(complete, list(reversed(complete))))
+        self.assertFalse(repeated_complete_coverage([], complete))
+        self.assertFalse(
+            repeated_complete_coverage(
+                complete,
+                [*complete[:1], {**complete[1], "status": "partial"}],
+            )
+        )
 
     def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:
         results = [

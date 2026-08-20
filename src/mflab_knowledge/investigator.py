@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v10"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v11"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -240,8 +240,21 @@ def build_observations(
     # had an opportunity to inspect. Reserve a small bounded part of the window
     # for it, while leaving most slots to independent earlier hypotheses.
     if result_groups and result_groups[0][0] == "agent_tools":
+        latest_results = sorted(
+            enumerate(result_groups[0][1]),
+            key=lambda item: (
+                str(item[1].get("source_kind", ""))
+                not in {
+                    "agent_callers_evidence",
+                    "agent_callees_evidence",
+                }
+                if isinstance(item[1], dict)
+                else True,
+                item[0],
+            ),
+        )
         latest_added = 0
-        for result in result_groups[0][1]:
+        for _position, result in latest_results:
             if append_observation(result):
                 latest_added += 1
             if latest_added >= LATEST_TOOL_OBSERVATION_QUOTA:
@@ -387,6 +400,40 @@ def prioritize_kept_chunk_ids(
         chunk_id for chunk_id in kept if chunk_id not in prioritized
     )
     return prioritized
+
+
+def repeated_complete_coverage(
+    previous: Iterable[dict[str, object]],
+    current: Iterable[dict[str, object]],
+) -> bool:
+    """Detect a stable, fully evidenced ledger without domain assumptions."""
+
+    def signature(
+        values: Iterable[dict[str, object]],
+    ) -> tuple[tuple[str, str, tuple[str, ...]], ...]:
+        normalized: list[tuple[str, str, tuple[str, ...]]] = []
+        for item in values:
+            raw_ids = item.get("chunk_ids")
+            chunk_ids = (
+                tuple(sorted(dict.fromkeys(str(value) for value in raw_ids)))
+                if isinstance(raw_ids, list)
+                else ()
+            )
+            normalized.append(
+                (
+                    str(item.get("aspect", "")).casefold(),
+                    str(item.get("status", "")),
+                    chunk_ids,
+                )
+            )
+        return tuple(sorted(normalized))
+
+    previous_signature = signature(previous)
+    current_signature = signature(current)
+    return bool(current_signature) and current_signature == previous_signature and all(
+        status == "covered" and bool(chunk_ids)
+        for _aspect, status, chunk_ids in current_signature
+    )
 
 
 def bounded_action_batch(

@@ -7,7 +7,7 @@ from collections.abc import Callable
 from mflab_knowledge.grounding import citation_ids, factual_units
 
 VERIFICATION_ALGORITHM = "claim_evidence_audit_v3"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v12"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v13"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -28,7 +28,12 @@ def emit_progress(
     if data:
         event["data"] = data
     if callback is not None:
-        callback(dict(event))
+        try:
+            callback(dict(event))
+        except Exception:
+            # Progress is observational. A disconnected client or failed state
+            # sink must never change the evidence or the answer.
+            pass
     return event
 
 

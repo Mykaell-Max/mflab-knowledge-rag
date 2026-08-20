@@ -101,9 +101,12 @@ do caminho do arquivo ou da marcação cercada e recebe realce léxico local com
 paleta inspirada no editor VS Code. A implementação não usa CDN ou JavaScript
 de terceiros.
 Os limites de geração pertencem ao backend: a interface não fixa orçamento de
-contexto ou saída, e `generation.toml` controla o teto de evidências conforme a
-janela do modelo local. Respostas de excesso de contexto causam redução segura
-e nova tentativa, sem remover a proveniência das fontes.
+contexto ou saída, e `generation.toml` controla separadamente o teto de
+evidências e o teto da resposta conforme a janela do modelo local. O teto não é
+um comprimento obrigatório; respostas diretas podem terminar cedo e perguntas
+complexas recebem espaço para detalhamento sustentado. Respostas de excesso de
+contexto causam redução segura e nova tentativa, sem remover a proveniência das
+fontes.
 Depois da síntese, uma chamada separada ao mesmo modelo local confronta cada
 afirmação com os trechos que ela própria cita. Correspondência de termos não é
 tratada como prova. Uma conclusão não sustentada provoca no máximo uma revisão;

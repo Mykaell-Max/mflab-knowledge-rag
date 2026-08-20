@@ -4,12 +4,27 @@ import unittest
 
 from mflab_knowledge.verification import (
     claims_for_verification,
+    emit_progress,
     normalize_verification,
     supported_claim_subset,
 )
 
 
 class VerificationTests(unittest.TestCase):
+    def test_progress_callback_failure_does_not_change_the_event(self) -> None:
+        def disconnected(_event: dict[str, object]) -> None:
+            raise RuntimeError("client disconnected")
+
+        event = emit_progress(
+            disconnected,
+            stage="evidence",
+            title="Evidence selected",
+            data={"sources": 3},
+        )
+
+        self.assertEqual(event["stage"], "evidence")
+        self.assertEqual(event["data"], {"sources": 3})
+
     def test_builds_claims_with_their_own_citations(self) -> None:
         claims = claims_for_verification(
             "The first operation happens here [S1].\n\n"

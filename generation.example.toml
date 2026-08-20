@@ -5,7 +5,8 @@ kind = "openai_compatible"
 base_url = "http://127.0.0.1:8000/v1"
 model = "replace-with-the-model-served-locally"
 timeout_seconds = 180
-max_output_tokens = 1024
+# É um teto, não um tamanho obrigatório: respostas simples podem terminar antes.
+max_output_tokens = 2048
 temperature = 0.1
 # Limite de evidência textual enviado ao modelo; ajuste à janela do servidor.
 max_context_characters = 8000

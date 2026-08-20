@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import tempfile
 import tomllib
 import urllib.error
 import urllib.request
@@ -33,7 +35,7 @@ class GenerationConfig:
     base_url: str
     model: str
     timeout_seconds: int = 180
-    max_output_tokens: int = 1024
+    max_output_tokens: int = 2048
     temperature: float = 0.1
     max_context_characters: int = 8000
     verify_evidence: bool = True
@@ -115,7 +117,7 @@ def load_generation_config(
     if not isinstance(model, str) or not model.strip():
         raise ValueError("provider.model é obrigatório")
     timeout_seconds = provider.get("timeout_seconds", 180)
-    max_output_tokens = provider.get("max_output_tokens", 1024)
+    max_output_tokens = provider.get("max_output_tokens", 2048)
     temperature = provider.get("temperature", 0.1)
     max_context_characters = provider.get("max_context_characters", 8000)
     verify_evidence = provider.get("verify_evidence", True)
@@ -177,6 +179,99 @@ def load_generation_config(
         verification_max_attempts=verification_max_attempts,
         max_repair_attempts=max_repair_attempts,
     )
+
+
+def update_generation_limits(
+    path: Path,
+    *,
+    max_output_tokens: int | None = None,
+    max_context_characters: int | None = None,
+) -> GenerationConfig:
+    """Atomically update non-secret generation limits in an existing config."""
+
+    resolved = path.expanduser().resolve()
+    current = load_generation_config(resolved)
+    assert current is not None
+    updates: dict[str, int] = {}
+    if max_output_tokens is not None:
+        if (
+            isinstance(max_output_tokens, bool)
+            or not 64 <= max_output_tokens <= 8192
+        ):
+            raise ValueError("max_output_tokens deve estar entre 64 e 8192")
+        updates["max_output_tokens"] = max_output_tokens
+    if max_context_characters is not None:
+        if (
+            isinstance(max_context_characters, bool)
+            or not 1000 <= max_context_characters <= 100000
+        ):
+            raise ValueError(
+                "max_context_characters deve estar entre 1000 e 100000"
+            )
+        updates["max_context_characters"] = max_context_characters
+    if not updates:
+        return current
+
+    text = resolved.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+    provider_start: int | None = None
+    provider_end = len(lines)
+    for index, line in enumerate(lines):
+        section = re.match(r"^\s*\[([^]]+)]\s*(?:#.*)?$", line.rstrip("\r\n"))
+        if not section:
+            continue
+        if section.group(1).strip() == "provider":
+            provider_start = index
+            continue
+        if provider_start is not None and index > provider_start:
+            provider_end = index
+            break
+    if provider_start is None:
+        raise ValueError("generation.toml exige a tabela [provider]")
+
+    missing = dict(updates)
+    for index in range(provider_start + 1, provider_end):
+        for key, value in tuple(missing.items()):
+            match = re.match(
+                rf"^(\s*{re.escape(key)}\s*=\s*)[^#\r\n]*(\s*(?:#.*)?)(\r?\n)?$",
+                lines[index],
+            )
+            if match:
+                newline = match.group(3) or ""
+                lines[index] = f"{match.group(1)}{value}{match.group(2)}{newline}"
+                del missing[key]
+    if missing:
+        newline = "\r\n" if "\r\n" in text else "\n"
+        if provider_end > 0 and not lines[provider_end - 1].endswith(("\n", "\r")):
+            lines[provider_end - 1] += newline
+        additions = [f"{key} = {value}{newline}" for key, value in missing.items()]
+        lines[provider_end:provider_end] = additions
+
+    candidate = "".join(lines)
+    temporary_path: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w",
+            encoding="utf-8",
+            newline="",
+            dir=resolved.parent,
+            prefix=f".{resolved.name}.",
+            suffix=".tmp",
+            delete=False,
+        ) as handle:
+            handle.write(candidate)
+            temporary_path = Path(handle.name)
+        # Reuse the complete parser before replacing the live configuration.
+        load_generation_config(temporary_path)
+        os.chmod(temporary_path, resolved.stat().st_mode)
+        os.replace(temporary_path, resolved)
+        temporary_path = None
+    finally:
+        if temporary_path is not None:
+            temporary_path.unlink(missing_ok=True)
+    updated = load_generation_config(resolved)
+    assert updated is not None
+    return updated
 
 
 def _is_context_length_error(error: urllib.error.HTTPError) -> bool:

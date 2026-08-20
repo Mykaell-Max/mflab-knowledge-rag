@@ -627,11 +627,13 @@ class ApiServiceTests(unittest.TestCase):
                 max_context_characters=1000,
             )
 
-        self.assertEqual(context["source_count"], 1)
-        self.assertEqual(context["context_characters"], 700)
+        self.assertEqual(context["source_count"], 2)
+        self.assertEqual(context["context_characters"], 1000)
         self.assertTrue(context["truncated"])
         source = context["sources"][0]
         self.assertEqual(source["source_id"], "S1")
+        self.assertEqual(len(source["text"]), 500)
+        self.assertEqual(len(context["sources"][1]["text"]), 500)
         self.assertNotIn("chunk_hash", source)
         self.assertIn("untrusted evidence", context["instructions"])
 
@@ -1927,16 +1929,20 @@ class ApiServiceTests(unittest.TestCase):
             result = service.ask(
                 query="explain",
                 max_context_characters=16000,
+                max_output_tokens=3000,
             )
 
         self.assertEqual(
             context.call_args.kwargs["max_context_characters"], 4000
         )
         self.assertEqual(len(generator.calls), 2)
-        self.assertEqual(len(generator.calls[1]["sources"]), 1)
+        self.assertEqual(len(generator.calls[1]["sources"]), 2)
         self.assertEqual(result["context"]["generation_attempts"], 2)
         self.assertTrue(result["context"]["reduced_for_generation"])
         self.assertEqual(result["context"]["context_characters"], 2000)
+        self.assertEqual(generator.calls[-1]["max_output_tokens"], 2048)
+        self.assertEqual(result["context"]["requested_max_output_tokens"], 3000)
+        self.assertEqual(result["context"]["max_output_tokens"], 2048)
         self.assertEqual(
             result["context"]["requested_max_context_characters"], 16000
         )
