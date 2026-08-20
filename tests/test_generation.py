@@ -308,6 +308,10 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("factory selection", payload["messages"][0]["content"])
         self.assertIn("later configuration", payload["messages"][0]["content"])
         self.assertIn("organizational facets", payload["messages"][0]["content"])
+        self.assertIn(
+            "unless the user asks about them",
+            payload["messages"][0]["content"],
+        )
         self.assertIn("MeshFactory", result)
 
     def test_investigator_observes_results_and_requests_read_only_actions(self) -> None:

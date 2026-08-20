@@ -1073,7 +1073,7 @@ class ApiServiceTests(unittest.TestCase):
                     progress_callback=progress.append,
                 )
 
-        self.assertEqual(len(investigator.calls), 5)
+        self.assertEqual(len(investigator.calls), 6)
         self.assertEqual(
             investigator.calls[0].get("decision_feedback"), ""
         )
@@ -1083,6 +1083,10 @@ class ApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(
             context["agent_investigation"]["status"], "budget_exhausted"
+        )
+        self.assertIn(
+            "Cobertura final reconciliada",
+            [step["title"] for step in progress],
         )
         self.assertIn(
             "Decisão inconclusiva será reavaliada",
@@ -2025,6 +2029,116 @@ class ApiServiceTests(unittest.TestCase):
             "Investigação concluída com limitações",
             [step["title"] for step in progress],
         )
+
+    def test_deterministic_salvage_converges_when_audit_verdicts_fluctuate(self) -> None:
+        generator = _VerifyingGenerator(
+            answers=[
+                "First fact [S1].\n\nSecond fact [S1].\n\nBroad claim [S1]."
+            ],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported","source_ids":["S1"]},'
+                '{"claim_id":"C2","verdict":"supported","source_ids":["S1"]},'
+                '{"claim_id":"C3","verdict":"unsupported","source_ids":["S1"]}]}',
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"unsupported","source_ids":["S1"]},'
+                '{"claim_id":"C2","verdict":"supported","source_ids":["S1"]}]}',
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported","source_ids":["S1"]}]}',
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the flow",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 20,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "path": "src/model.cpp",
+                        "text": "First fact. Second fact.",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                    }
+                ],
+            },
+        ):
+            result = service.ask(query="Explain the flow")
+
+        self.assertFalse(result["abstained"])
+        self.assertEqual(result["answer"], "Second fact [S1].")
+        self.assertEqual(result["answer_completeness"], "supported_subset")
+        self.assertEqual(len(generator.verify_calls), 3)
+
+    def test_unresolved_coverage_is_not_reported_as_complete(self) -> None:
+        generator = _Generator("The observed step advances state [S1].")
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                verify_evidence=False,
+            ),
+        )
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the complete flow",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 20,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "path": "src/model.cpp",
+                        "text": "advance state",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                    }
+                ],
+                "agent_investigation": {
+                    "coverage": [
+                        {
+                            "aspect": "integration",
+                            "status": "gap",
+                            "chunk_ids": [],
+                        }
+                    ]
+                },
+            },
+        ):
+            result = service.ask(query="Explain the complete flow")
+
+        self.assertFalse(result["abstained"])
+        self.assertEqual(result["answer_completeness"], "coverage_limited")
 
     def test_overview_reports_when_answer_cites_only_one_scope(self) -> None:
         generator = _Generator("Solver A is the complete system [S1].")

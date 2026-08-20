@@ -22,6 +22,8 @@ def show_response(label: str, response: dict[str, object]) -> None:
     verification = verification if isinstance(verification, dict) else {}
     actions = agent.get("actions")
     actions = actions if isinstance(actions, list) else []
+    coverage = agent.get("coverage")
+    coverage = coverage if isinstance(coverage, list) else []
     graph_frontier = agent.get("graph_frontier_chunk_ids")
     graph_frontier = graph_frontier if isinstance(graph_frontier, list) else []
     graph_frontier_details = agent.get("graph_frontier")
@@ -47,6 +49,18 @@ def show_response(label: str, response: dict[str, object]) -> None:
             f"    - {raw_action.get('tool')}: {value}"
             f" -> {raw_action.get('result_count', '?')} resultados"
         )
+    if coverage:
+        print("  cobertura solicitada:")
+        for raw_aspect in coverage:
+            if not isinstance(raw_aspect, dict):
+                continue
+            chunk_ids = raw_aspect.get("chunk_ids")
+            chunk_count = len(chunk_ids) if isinstance(chunk_ids, list) else 0
+            print(
+                f"    - {raw_aspect.get('aspect')}:"
+                f" {raw_aspect.get('status')}"
+                f" ({chunk_count} evidência(s))"
+            )
     if graph_frontier_details:
         print("  fronteira estrutural selecionada:")
         for raw_frontier in graph_frontier_details:

@@ -711,6 +711,28 @@ interface identificam o resultado como pontos sustentados com limitações, em
 vez de anunciar uma resposta completa. Isso não relaxa a auditoria nem cria
 prosa científica nova durante a recuperação de segurança.
 
+A validação real da 0.42.1 confirmou que o contrato passou a sobreviver aos
+cinco ciclos: no caso detalhado foram registrados quatro aspectos parciais e
+duas lacunas. Também revelou três problemas subsequentes. Evidências já
+encontradas para avanço e integração perderam espaço para preâmbulos e funções
+secundárias na janela final; o último lote de ferramentas não era observado por
+uma nova decisão; e uma afirmação aprovada em uma auditoria podia ser rejeitada
+na conferência seguinte, enquanto a poda determinística executava apenas uma
+rodada. O caso de localização ainda chamou de completa uma resposta reduzida de
+oito para duas afirmações porque a marcação de subconjunto estava restrita ao
+modo detalhado.
+
+A 0.42.2 reserva primeiro uma evidência por aspecto do caderno, reconcilia a
+cobertura uma vez após a última leitura sem executar ferramentas adicionais e
+só então preenche a janela com recuperação-base e fronteiras do grafo. A poda
+de afirmações passa a ser monotônica: cada nova reprovação remove unidades e é
+auditada novamente até aprovação, ausência de progresso ou ausência de texto.
+`answer_completeness` distingue resposta completa, cobertura limitada,
+subconjunto sustentado e resposta não entregue em qualquer profundidade. O
+planejador também deixa de transformar testes, documentação, saída ou limpeza
+em aspectos obrigatórios quando a pergunta não os solicita. Nenhuma dessas
+regras contém nomes de projeto, branch, arquivo, símbolo ou mecanismo.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

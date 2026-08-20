@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v15"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v16"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -388,14 +388,24 @@ def prioritize_kept_chunk_ids(
     kept = list(dict.fromkeys(str(chunk_id) for chunk_id in kept_chunk_ids))
     kept_set = set(kept)
     prioritized: list[str] = []
+    deferred: list[str] = []
     for item in coverage:
         raw_ids = item.get("chunk_ids")
         if not isinstance(raw_ids, list):
             continue
+        aspect_ids: list[str] = []
         for chunk_id in raw_ids:
             value = str(chunk_id)
-            if value in kept_set and value not in prioritized:
-                prioritized.append(value)
+            if value in kept_set and value not in aspect_ids:
+                aspect_ids.append(value)
+        if aspect_ids and aspect_ids[0] not in prioritized:
+            prioritized.append(aspect_ids[0])
+        deferred.extend(
+            value
+            for value in aspect_ids[1:]
+            if value not in prioritized and value not in deferred
+        )
+    prioritized.extend(deferred)
     prioritized.extend(
         chunk_id for chunk_id in kept if chunk_id not in prioritized
     )

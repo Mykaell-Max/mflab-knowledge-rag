@@ -490,6 +490,27 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertEqual(selected, ["entry", "runtime", "state", "build-file"])
 
+    def test_coverage_prioritization_reserves_one_chunk_per_aspect(self) -> None:
+        selected = prioritize_kept_chunk_ids(
+            ["entry-a", "entry-b", "runtime", "integration"],
+            [
+                {
+                    "aspect": "entry",
+                    "chunk_ids": ["entry-a", "entry-b"],
+                },
+                {"aspect": "runtime", "chunk_ids": ["runtime"]},
+                {
+                    "aspect": "integration",
+                    "chunk_ids": ["integration"],
+                },
+            ],
+        )
+
+        self.assertEqual(
+            selected,
+            ["entry-a", "runtime", "integration", "entry-b"],
+        )
+
     def test_complete_coverage_must_repeat_with_the_same_evidence(self) -> None:
         complete = [
             {

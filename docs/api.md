@@ -284,10 +284,13 @@ gerador não recebe autorização para reconstruir código ausente das fontes.
 A resposta inclui `answer`, `answer_completeness`, `citations_used`,
 `invalid_citations`, `sources`, `scopes`, `citation_coverage`,
 `scope_citation_coverage`, `verification` e `investigation`.
-`answer_completeness` vale `complete` normalmente. No modo detalhado, quando a
-auditoria consegue preservar apenas afirmações isoladas de uma síntese maior,
-ele vale `supported_subset`; a interface apresenta explicitamente a limitação
-em vez de anunciar uma explicação completa. A cobertura continua sendo
+`answer_completeness` vale `complete` somente quando a resposta não perdeu
+afirmações na auditoria e o caderno não conservou aspectos pendentes. O valor
+`coverage_limited` indica aspectos parciais ou ausentes; `supported_subset`
+indica que a auditoria preservou somente afirmações isoladas de uma síntese
+maior; e `not_delivered` acompanha uma resposta bloqueada. A interface apresenta
+essas limitações em linguagem simples, sem anunciar uma explicação completa.
+A cobertura continua sendo
 estrutural; `verification` é uma
 segunda avaliação automatizada e não deve ser confundida com verdade absoluta
 ou revisão científica humana. `grounding_status` vale `cited`,

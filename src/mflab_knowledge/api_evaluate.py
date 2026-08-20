@@ -292,9 +292,14 @@ def _evaluate_expectations(
 
     if "answer_completeness" in expectations:
         expected = expectations["answer_completeness"]
-        if expected not in {"complete", "supported_subset"}:
+        if expected not in {
+            "complete",
+            "coverage_limited",
+            "supported_subset",
+            "not_delivered",
+        }:
             raise ValueError(
-                "answer_completeness deve ser complete ou supported_subset"
+                "answer_completeness possui valor desconhecido"
             )
         actual = response.get("answer_completeness")
         _check(

@@ -1934,6 +1934,57 @@ class RagApiService:
                         "new_evidence": len(terminal_results),
                     },
                 )
+            # The last bounded tool batch has not yet been seen by the model.
+            # Reconcile coverage once without executing any further action so
+            # newly observed entry points and state transitions can influence
+            # evidence packing. The server still validates every chunk ID.
+            final_observations = build_observations(retrievals)
+            if final_observations and agent_status != "sufficient":
+                try:
+                    raw_reconciliation = investigator(
+                        question=query,
+                        intent=str(exploration.get("intent", "direct")),
+                        observations=final_observations,
+                        previous_actions=agent_actions,
+                        previous_coverage=agent_coverage,
+                        decision_feedback=(
+                            "The read-only tool budget is exhausted. Do not request "
+                            "another action. Reconcile every existing coverage aspect "
+                            "against the final observations, retain directly supporting "
+                            "chunk IDs, and leave unsupported aspects partial or gap."
+                        ),
+                    )
+                    reconciliation = normalize_investigation_decision(
+                        raw_reconciliation,
+                        observable_chunk_ids={
+                            str(item.get("chunk_id", ""))
+                            for item in final_observations
+                        },
+                    )
+                    agent_coverage = merge_required_coverage(
+                        planned_aspects,
+                        agent_coverage,
+                        reconciliation["coverage"],
+                    )
+                    for chunk_id in reconciliation["keep_chunk_ids"]:
+                        if chunk_id not in kept_chunk_ids:
+                            kept_chunk_ids.append(str(chunk_id))
+                    for coverage_item in agent_coverage:
+                        for chunk_id in coverage_item.get("chunk_ids", []):
+                            if str(chunk_id) not in kept_chunk_ids:
+                                kept_chunk_ids.append(str(chunk_id))
+                    record(
+                        "agent",
+                        "Cobertura final reconciliada",
+                        "A última leitura foi incorporada ao caderno sem "
+                        "ampliar o orçamento de ferramentas.",
+                        {"coverage": coverage_summary(agent_coverage)},
+                    )
+                except Exception:
+                    self.log(
+                        "Reconciliação final indisponível; preservando o caderno já validado",
+                        "warning",
+                    )
             graph_frontier_chunk_ids = [
                 str(result.get("chunk_id", ""))
                 for result in selected_graph_frontier
@@ -1970,7 +2021,12 @@ class RagApiService:
                 for result in selected_baseline
                 if result.get("chunk_id")
             ]
-            selected_chunk_ids: list[str] = []
+            # Evidence explicitly retained for distinct coverage aspects owns
+            # the first positions. Baseline retrieval and graph frontiers fill
+            # the remainder, instead of displacing later requested stages.
+            selected_chunk_ids: list[str] = list(
+                dict.fromkeys(prioritized_kept_chunk_ids)
+            )
             for position in range(
                 max(
                     len(prioritized_kept_chunk_ids),
@@ -1979,8 +2035,6 @@ class RagApiService:
                 )
             ):
                 candidates: list[str] = []
-                if position < len(prioritized_kept_chunk_ids):
-                    candidates.append(prioritized_kept_chunk_ids[position])
                 if position < len(baseline_chunk_ids):
                     candidates.append(baseline_chunk_ids[position])
                 frontier_offset = position * 2
@@ -2823,79 +2877,94 @@ class RagApiService:
             # preference. Even when model-based rewriting is disabled locally,
             # one rejected sentence must not discard independently audited
             # statements. No new prose or citation is introduced here.
-            if (
+            while (
                 verification.get("performed") is True
                 and verification.get("passed") is False
             ):
                 supported_answer = supported_claim_subset(verification)
-                if supported_answer and supported_answer.strip() != answer.strip():
+                if not supported_answer or supported_answer.strip() == answer.strip():
+                    break
+                record(
+                    "revision",
+                    "Afirmações rejeitadas removidas",
+                    "Somente unidades já aprovadas pela auditoria foram "
+                    "preservadas antes da conferência final.",
+                    {
+                        "retained_claims": len(
+                            claims_for_verification(supported_answer)
+                        ),
+                        "mode": "deterministic_supported_subset",
+                    },
+                )
+                answer = supported_answer
+                supported_subset_only = True
+                assessment = _grounding_assessment(
+                    answer,
+                    raw_sources,
+                    require_scope_coverage=require_scope_coverage,
+                )
+                quality_issues = overview_quality_issues(
+                    answer,
+                    exploration if isinstance(exploration, dict) else {},
+                )
+                try:
+                    verification = audit_with_retry(answer)
+                except (
+                    GenerationUnavailableError,
+                    ValueError,
+                    TypeError,
+                ) as exc:
+                    self.log(
+                        f"Auditoria do conjunto sustentado indisponível: {exc}",
+                        "warning",
+                    )
+                    verification = unavailable_verification(
+                        "supported_subset_audit_unavailable"
+                    )
+                subset_counts = verification.get("counts")
+                if isinstance(subset_counts, dict):
                     record(
-                        "revision",
-                        "Afirmações rejeitadas removidas",
-                        "Somente unidades já aprovadas pela auditoria foram "
-                        "preservadas antes da conferência final.",
+                        "verification",
+                        "Conjunto sustentado conferido novamente",
+                        "A remoção determinística não dispensou uma nova auditoria.",
                         {
-                            "retained_claims": len(
-                                claims_for_verification(supported_answer)
+                            "supported": int(
+                                subset_counts.get("supported", 0)
                             ),
-                            "mode": "deterministic_supported_subset",
+                            "unsupported": int(
+                                subset_counts.get("unsupported", 0)
+                            ),
+                            "uncertain": int(
+                                subset_counts.get("uncertain", 0)
+                            ),
                         },
                     )
-                    answer = supported_answer
-                    supported_subset_only = True
-                    assessment = _grounding_assessment(
-                        answer,
-                        raw_sources,
-                        require_scope_coverage=require_scope_coverage,
-                    )
-                    quality_issues = overview_quality_issues(
-                        answer,
-                        exploration if isinstance(exploration, dict) else {},
-                    )
-                    try:
-                        verification = audit_with_retry(answer)
-                    except (
-                        GenerationUnavailableError,
-                        ValueError,
-                        TypeError,
-                    ) as exc:
-                        self.log(
-                            f"Auditoria do conjunto sustentado indisponível: {exc}",
-                            "warning",
-                        )
-                        verification = unavailable_verification(
-                            "supported_subset_audit_unavailable"
-                        )
-                    subset_counts = verification.get("counts")
-                    if isinstance(subset_counts, dict):
-                        record(
-                            "verification",
-                            "Conjunto sustentado conferido novamente",
-                            "A remoção determinística não dispensou uma nova auditoria.",
-                            {
-                                "supported": int(
-                                    subset_counts.get("supported", 0)
-                                ),
-                                "unsupported": int(
-                                    subset_counts.get("unsupported", 0)
-                                ),
-                                "uncertain": int(
-                                    subset_counts.get("uncertain", 0)
-                                ),
-                            },
-                        )
 
         verification_failed = bool(
             verification_expected and verification.get("passed") is not True
         )
-        answer_completeness = (
-            "supported_subset"
-            if not verification_failed
-            and supported_subset_only
-            and response_depth == "detailed"
-            else "complete"
+        raw_agent = context.get("agent_investigation")
+        raw_coverage = (
+            raw_agent.get("coverage", [])
+            if isinstance(raw_agent, dict)
+            else []
         )
-        if answer_completeness == "supported_subset":
+        coverage_limited = bool(raw_coverage) and any(
+            isinstance(item, dict) and item.get("status") != "covered"
+            for item in raw_coverage
+        )
+        if verification_failed:
+            answer_completeness = "not_delivered"
+        elif supported_subset_only:
+            answer_completeness = "supported_subset"
+        elif coverage_limited:
+            answer_completeness = "coverage_limited"
+        else:
+            answer_completeness = "complete"
+        if (
+            answer_completeness == "supported_subset"
+            and response_depth == "detailed"
+        ):
             answer = "### Pontos sustentados pela investigação\n\n" + answer
         if verification_failed:
             assessment["grounding_status"] = "evidence_not_supported"
@@ -2904,7 +2973,7 @@ class RagApiService:
                 "Investigação encerrada sem resposta conclusiva",
                 "A resposta candidata não permaneceu sustentada após a revisão limitada.",
             )
-        elif answer_completeness == "supported_subset":
+        elif answer_completeness in {"supported_subset", "coverage_limited"}:
             counts = verification.get("counts")
             supported = (
                 int(counts.get("supported", 0))
@@ -2914,7 +2983,12 @@ class RagApiService:
             record(
                 "complete",
                 "Investigação concluída com limitações",
-                "A conferência preservou pontos sustentados, mas não uma explicação completa.",
+                (
+                    "A conferência preservou pontos sustentados, mas não "
+                    "uma explicação completa."
+                    if answer_completeness == "supported_subset"
+                    else "Alguns aspectos solicitados permaneceram parciais ou sem cobertura."
+                ),
                 {"claims_audited": supported},
             )
         else:
