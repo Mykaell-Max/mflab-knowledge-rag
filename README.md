@@ -383,10 +383,14 @@ ACL e citações. Conteúdo textual idêntico usa a mesma `embedding_key`, prepa
 a deduplicação dos embeddings.
 
 O mapa semântico determinístico deriva símbolos das âncoras estruturais e
-relações de alta confiança, como includes, imports, módulos usados e pares
-fonte/header. Cada registro preserva documento, chunk de evidência quando
-aplicável, ACL e ocorrências por branch/commit. Esses artefatos orientam
-navegação futura; não substituem os chunks primários como evidência factual.
+relações como includes, imports, módulos usados, pares fonte/header e chamadas
+de símbolos. Cada registro preserva documento, chunk de evidência quando
+aplicável, ACL e ocorrências por branch/commit. Chamadas são resolvidas somente
+quando o destino é unívoco no mesmo repositório, branch e commit; qualificação
+explícita, nome único e indício do receptor permanecem diferenciados nos dados.
+Ambiguidades ficam como `unresolved_symbol`, nunca como uma aresta factual.
+Esses artefatos orientam a navegação; não substituem os chunks primários como
+evidência factual.
 
 Depois de `index-all`, o mapa persistido pode ser consultado sem retornar o
 texto-fonte nem carregar o modelo de embeddings:
@@ -408,14 +412,16 @@ antes do retorno. Relações com um destino fora da ACL permanecem apenas como a
 referência observada na fonte autorizada; o documento de destino não é exposto.
 O resultado informa se há chunk de evidência e inclui uma citação com projeto,
 branch, commit, caminho e linhas. Relações puramente derivadas, como pares de
-arquivos, podem não possuir chunk próprio. Nesta etapa a consulta é deliberadamente separada de
-`/ask`: ela será avaliada no corpus real antes de orientar a exploração do
-assistente.
+arquivos, podem não possuir chunk próprio. O agente de `/ask` usa esse mapa por
+ferramentas somente leitura: pode abrir relações gerais e, a partir de um chunk
+já observado, localizar chamadores ou definições chamadas. O PostgreSQL reaplica
+projeto, branch e ACL antes de devolver os chunks primários.
 
 O parser piloto respeita seções Markdown e reconhece âncoras básicas de
 C/C++/headers, Fortran, CMake e shell; arquivos sem estrutura reconhecida usam
-janelas por linha com sobreposição. Tree-sitter/Clang ainda será incorporado para
-símbolos e relações de código exatas.
+janelas por linha com sobreposição. A primeira camada de chamadas cobre
+C/C++/headers, Fortran e Python por regras conservadoras. Tree-sitter/Clang
+ainda será incorporado para escopos, sobrecargas, tipos e usos exatos.
 
 Teste uma busca lexical com citações:
 
@@ -714,8 +720,9 @@ As regras serão transformadas em política configurável depois que o inventár
 ## Próximas entregas
 
 1. Executar e ampliar as suítes lexical e semântica com perguntas reais.
-2. Acrescentar símbolos e relações de código ao mapa estrutural determinístico.
-3. Expor `/sources/{id}` e `/index/status`.
-4. Receber webhooks do GitLab como aceleração da reconciliação agendada.
+2. Validar o grafo genérico de chamadas nos corpora reais e refinar resolução
+   sintática por linguagem sem alterar o contrato de proveniência.
+3. Exibir o subgrafo comprovado e percorrido em cada resposta.
+4. Implementar identidade individual, grupos e auditoria multiusuário.
 
 As decisões gerais e os limites de segurança estão documentados no `HANDOFF.md` do projeto de continuidade que originou este repositório.

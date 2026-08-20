@@ -63,8 +63,11 @@ painel administrativo.
 6. **Extração, persistência e consulta concluídas:** símbolos e relações
    estruturais são produzidos em JSONL, carregados transacionalmente no
    PostgreSQL e consultáveis com filtros SQL de ACL, projeto, branch, caminho e
-   tipo. A consulta não retorna texto e ainda não influencia `/ask`. A avaliação
-   real dessa camada forma a próxima subetapa.
-7. Resumos hierárquicos incrementais com proveniência.
-8. Planejador local com ferramentas de exploração estrutural somente leitura.
-9. Avaliações de localização, conceito, diagnóstico e comparação.
+   tipo.
+7. **Exploração limitada concluída:** o planejador local usa busca, símbolos,
+   vizinhança, relações, chamadores e chamados por ferramentas somente leitura.
+8. **Grafo de chamadas inicial concluído:** relações conservadoras são
+   persistidas por branch/commit e destinos ambíguos não são adivinhados.
+9. Resumos hierárquicos incrementais com proveniência.
+10. Subgrafo percorrido e citável na interface.
+11. Avaliações ampliadas de localização, conceito, diagnóstico e comparação.

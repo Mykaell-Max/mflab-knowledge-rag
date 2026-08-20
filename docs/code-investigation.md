@@ -47,8 +47,9 @@ o raciocínio interno do modelo e não expõe prompts ocultos.
 A 0.39.0 acrescenta um primeiro runtime agentivo sobre essa fundação. Depois
 da recuperação inicial, o modelo observa metadados, proveniência e previews
 limitados dos chunks reais. Em até quatro ciclos, escolhe até três ferramentas de
-leitura entre `search_code`, `find_symbol`, `open_neighborhood` e
-`open_related`. A última abre chunks citáveis de arquivos companheiros,
+leitura entre `search_code`, `find_symbol`, `open_neighborhood`,
+`open_related`, `find_callers` e `find_callees`. `open_related` abre chunks
+citáveis de arquivos companheiros,
 dependências e dependentes que já estejam ligados no mapa estrutural, sempre
 reaplicando projeto, branch e ACL no SQL. Resultados de um ciclo alimentam a
 decisão seguinte; ações repetidas ou fora do esquema são descartadas. Um
@@ -113,12 +114,21 @@ salvaguarda obrigatória quando há unidades aprovadas, mesmo se a reescrita pel
 modelo estiver desativada na configuração local. O subconjunto continua sendo
 auditado novamente e não recebe texto novo.
 
+A 0.41.0 acrescenta um grafo genérico de chamadas ao mapa persistido. O extrator
+identifica chamadas dentro de funções, subrotinas e programas, associa o destino
+somente dentro do mesmo repositório e das ocorrências compartilhadas de
+branch/commit e separa resolução qualificada, nome único, nome único na branch e
+indício lexical de receptor. Múltiplos destinos continuam não resolvidos. As
+ferramentas `find_callers` e `find_callees` aceitam apenas IDs de chunks já
+observados e devolvem chunks primários depois de reaplicar escopo e ACL no banco.
+Essa camada é conservadora e determinística; parsing sintático por linguagem
+deverá aumentar sua precisão sem mudar o contrato de segurança.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos
-de símbolos mais precisos, busca bidirecional entre chamadores e definições e
-mais ferramentas estruturais. Essas extensões devem continuar genéricas,
-versionadas e avaliadas separadamente por corpus.
+de símbolos mais precisos e mais ferramentas estruturais. Essas extensões devem
+continuar genéricas, versionadas e avaliadas separadamente por corpus.
 
 O subgrafo realmente percorrido também deverá ser devolvido como dado público
 da resposta e exibido, depois das citações, em um painel recolhível. A

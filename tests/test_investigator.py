@@ -143,11 +143,11 @@ class InvestigatorTests(unittest.TestCase):
         )
         self.assertEqual(
             actions[1],
-            {"tool": "open_related", "chunk_id": "qualified"},
+            {"tool": "find_callers", "chunk_id": "qualified"},
         )
         self.assertEqual(
             actions[2],
-            {"tool": "find_symbol", "query": "AdaptiveManager::buildGrid"},
+            {"tool": "find_callees", "chunk_id": "qualified"},
         )
         self.assertTrue(
             all(
@@ -187,8 +187,9 @@ class InvestigatorTests(unittest.TestCase):
         self.assertEqual(
             actions,
             [
+                {"tool": "find_callers", "chunk_id": "observed"},
+                {"tool": "find_callees", "chunk_id": "observed"},
                 {"tool": "open_related", "chunk_id": "observed"},
-                {"tool": "search_code", "query": "Driver advance"},
             ],
         )
 
@@ -209,6 +210,8 @@ class InvestigatorTests(unittest.TestCase):
         ]
         previous = [
             {"tool": "open_neighborhood", "chunk_id": "first"},
+            {"tool": "find_callers", "chunk_id": "first"},
+            {"tool": "find_callees", "chunk_id": "first"},
             {"tool": "open_related", "chunk_id": "first"},
             {"tool": "find_symbol", "query": "GridManager::initialize"},
             {"tool": "search_code", "query": "Grid Manager initialize"},

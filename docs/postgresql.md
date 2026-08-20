@@ -82,6 +82,14 @@ textual reutilizado ainda pode atualizar o mapa quando relações ou ocorrência
 de branch mudarem. Os artefatos continuam sendo a fonte auditável e podem ser
 comparados ao banco com `scripts/validate-semantic-database.py`.
 
+Relações `calls_symbol` preservam o chunk chamador como evidência e somente
+recebem `target_document_id` quando existe um único destino aplicável à
+branch/commit. As consultas internas de chamadores e chamados partem de um chunk
+já autorizado e repetem ACL, projeto e branch antes de retornar IDs de chunks.
+`scripts/validate-call-graph.py` escolhe uma aresta resolvida dos artefatos e
+confirma no PostgreSQL a travessia chamada→destino→chamador sem imprimir texto
+do corpus ou credenciais.
+
 O mapa pode ser inspecionado diretamente, sem iniciar embeddings ou geração:
 
 ```bash

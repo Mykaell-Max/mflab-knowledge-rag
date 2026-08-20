@@ -72,6 +72,7 @@ from mflab_knowledge.repository_config import (
 from mflab_knowledge.service_runner import read_last_run
 from mflab_knowledge.scope import resolve_query_scopes
 from mflab_knowledge.semantic_database import (
+    call_graph_chunk_ids,
     related_semantic_chunk_ids,
     search_semantic_map,
 )
@@ -1539,6 +1540,51 @@ class RagApiService:
                                 for result in fetched:
                                     result["source_kind"] = (
                                         "agent_related_evidence"
+                                    )
+                                iteration_results.extend(fetched)
+                        elif tool in {"find_callers", "find_callees"}:
+                            observation = next(
+                                (
+                                    item
+                                    for item in observations
+                                    if item.get("chunk_id") == action["chunk_id"]
+                                ),
+                                None,
+                            )
+                            if observation is not None:
+                                direction = (
+                                    "callers"
+                                    if tool == "find_callers"
+                                    else "callees"
+                                )
+                                call_ids = call_graph_chunk_ids(
+                                    self.settings.database_url,
+                                    chunk_id=action["chunk_id"],
+                                    direction=direction,
+                                    limit=12,
+                                    project=str(observation.get("project", ""))
+                                    or None,
+                                    branch=str(observation.get("branch", ""))
+                                    or None,
+                                    allowed_access=self._allowed_access(
+                                        allowed_access
+                                    ),
+                                )
+                                fetched = fetch_chunks_by_id(
+                                    self.settings.database_url,
+                                    chunk_ids=call_ids,
+                                    limit=12,
+                                    project=str(observation.get("project", ""))
+                                    or None,
+                                    branch=str(observation.get("branch", ""))
+                                    or None,
+                                    allowed_access=self._allowed_access(
+                                        allowed_access
+                                    ),
+                                )
+                                for result in fetched:
+                                    result["source_kind"] = (
+                                        f"agent_{direction}_evidence"
                                     )
                                 iteration_results.extend(fetched)
                     except Exception:

@@ -68,8 +68,10 @@ um embedding uma vez e reutilizá-lo sem perder as citações.
 A mesma normalização produz `symbols.jsonl` e `relations.jsonl`. A extração é
 determinística e baseada em construções de linguagem, sem vocabulário
 científico ou nomes de repositórios. Símbolos apontam para o chunk que contém a
-âncora; relações de include, import, uso de módulo, build e arquivos companheiros
-preservam ACL e ocorrências por branch/commit. Referências ambíguas permanecem
+âncora; relações de include, import, uso de módulo, build, arquivos companheiros
+e chamadas de símbolo preservam ACL e ocorrências por branch/commit. Chamadas
+são ligadas somente a um destino unívoco no mesmo escopo. Referências ambíguas
+permanecem
 explicitamente não resolvidas em vez de serem ligadas por aproximação. O mapa é
 um índice de navegação derivado: respostas continuam exigindo evidência dos
 chunks originais.
@@ -101,8 +103,11 @@ Símbolos, relações e ocorrências relacionais são carregados em uma segunda
 transação idempotente depois do corpus primário. O fingerprint cobre os registros
 completos, inclusive proveniência, de modo que uma mudança apenas nas branches
 também invalida a reutilização. Relações obsoletas são removidas somente dentro
-do `repository_id` processado. Essa persistência ainda não participa do ranking;
-ela pode ser comparada aos JSONLs antes de habilitar consultas exploratórias.
+do `repository_id` processado. Essa persistência não altera o ranking híbrido e
+pode ser comparada aos JSONLs de origem. O agente acessa a projeção apenas por
+operações limitadas e somente leitura;
+chamadores e chamados retornam IDs de chunks primários após nova aplicação de
+ACL, projeto e branch.
 
 A busca textual usa `tsvector` armazenado e índice GIN com configuração
 `simple`, complementados por correspondência literal para caminhos e

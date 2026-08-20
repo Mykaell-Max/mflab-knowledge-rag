@@ -459,6 +459,27 @@ modelo e continua exigindo uma auditoria final. A próxima execução real deve
 confirmar se a navegação recupera os pontos de integração esperados e se o caso
 de fluxo deixa de abster sem relaxar a sustentação.
 
+A validação real da 0.40.2 confirmou a salvaguarda central: os dois casos
+produziram respostas citadas e a auditoria final marcou todas as afirmações
+liberadas como sustentadas. A navegação recuperou arquivos centrais, cabeçalhos,
+coordenação e saída, mas a suíte estrita permaneceu em 0/2 porque faltaram
+pontos de integração esperados em ambos os fluxos. O achado separou claramente
+qualidade de síntese de cobertura de navegação: `open_related` funciona, porém
+relações somente entre arquivos não revelam o fluxo de chamadas entre símbolos.
+
+A 0.41.0 implementa a primeira resposta genérica a esse gargalo. O mapa v2
+extrai chamadas dentro das unidades estruturais reconhecidas em C, C++, headers,
+Fortran e Python. O destino é resolvido somente no mesmo repositório e em
+ocorrências compartilhadas de branch/commit; qualificação explícita, nome único,
+unicidade na branch e indício de receptor permanecem categorias distintas.
+Ambiguidades recebem `unresolved_symbol` e não viram conexões factuais. O agente
+ganha `find_callers` e `find_callees`, limitados a chunks já observados, com
+projeto, branch e ACL reaplicados no PostgreSQL. Não existem nomes de projetos,
+branches, arquivos ou mecanismos científicos nessa implementação. A próxima
+execução na Morgoth deve reconstruir somente o mapa do MFSim-NG, inspecionar as
+contagens de resolução e repetir a suíte de investigação antes de promover a
+mesma migração aos demais corpora.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

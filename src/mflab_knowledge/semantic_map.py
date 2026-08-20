@@ -9,8 +9,8 @@ from collections import defaultdict
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
-SEMANTIC_MAP_SCHEMA_VERSION = "0.1"
-SEMANTIC_MAP_ALGORITHM = "deterministic_symbols_relations_v1"
+SEMANTIC_MAP_SCHEMA_VERSION = "0.2"
+SEMANTIC_MAP_ALGORITHM = "deterministic_symbols_relations_v2"
 
 SYMBOL_KINDS = {
     "function",
@@ -41,6 +41,31 @@ CMAKE_RELATION = re.compile(
     re.IGNORECASE,
 )
 SHELL_SOURCE = re.compile(r"^\s*(?:source|\.)\s+([^\s;]+)")
+CALL_TOKEN = re.compile(
+    r"(?<![A-Za-z0-9_])"
+    r"([A-Za-z_]\w*(?:(?:::|->|\.)[A-Za-z_]\w*)*)\s*\("
+)
+FORTRAN_CALL = re.compile(r"\bcall\s+([A-Za-z_]\w*)", re.IGNORECASE)
+BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.DOTALL)
+QUOTED_LITERAL = re.compile(r'"(?:\\.|[^"\\])*"|\'(?:\\.|[^\'\\])*\'')
+
+CALL_SOURCE_KINDS = {"function", "program", "subroutine"}
+CALL_TARGET_KINDS = {"function", "macro", "subroutine"}
+CALL_STOPWORDS = {
+    "alignof",
+    "catch",
+    "decltype",
+    "defined",
+    "do",
+    "else",
+    "for",
+    "if",
+    "return",
+    "sizeof",
+    "switch",
+    "typeid",
+    "while",
+}
 
 
 def _stable_id(*parts: str) -> str:
@@ -110,6 +135,72 @@ def _write_jsonl(path: Path, values: Iterable[dict[str, object]]) -> None:
 
 def _symbol_name(qualified_name: str) -> str:
     return qualified_name.rsplit("::", 1)[-1].strip()
+
+
+def _occurrences_by_scope(
+    document: dict[str, object],
+) -> dict[tuple[str, str], dict[str, object]]:
+    values: dict[tuple[str, str], dict[str, object]] = {}
+    raw_occurrences = document.get("occurrences")
+    if not isinstance(raw_occurrences, list):
+        return values
+    for raw_occurrence in raw_occurrences:
+        if not isinstance(raw_occurrence, dict):
+            continue
+        branch = str(raw_occurrence.get("branch") or "")
+        commit_sha = str(raw_occurrence.get("commit_sha") or "")
+        if branch and commit_sha:
+            values[(branch, commit_sha)] = raw_occurrence
+    return values
+
+
+def _identifier_terms(value: str) -> set[str]:
+    expanded = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", value)
+    expanded = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", expanded)
+    return {
+        token.casefold()
+        for token in re.findall(r"[A-Za-z0-9]+", expanded)
+        if len(token) >= 2 and token.casefold() not in {"m", "self", "this"}
+    }
+
+
+def _masked_code_lines(text: str, *, file_format: str) -> list[str]:
+    if file_format in {"c", "cpp", "cpp_header"}:
+        text = BLOCK_COMMENT.sub(
+            lambda match: "\n" * match.group(0).count("\n"),
+            text,
+        )
+    lines: list[str] = []
+    for line in text.splitlines():
+        masked = QUOTED_LITERAL.sub("", line)
+        if file_format in {"c", "cpp", "cpp_header"}:
+            masked = masked.split("//", 1)[0]
+        elif file_format == "fortran":
+            masked = masked.split("!", 1)[0]
+        elif file_format == "python":
+            masked = masked.split("#", 1)[0]
+        lines.append(masked)
+    return lines
+
+
+def _calls_for_line(line: str, *, file_format: str) -> list[tuple[str, int]]:
+    calls: list[tuple[str, int]] = []
+    if file_format == "fortran":
+        calls.extend(
+            (match.group(1), match.start(1))
+            for match in FORTRAN_CALL.finditer(line)
+        )
+    if file_format not in {"c", "cpp", "cpp_header", "fortran", "python"}:
+        return calls
+    for match in CALL_TOKEN.finditer(line):
+        value = match.group(1)
+        leaf = re.split(r"::|->|\.", value)[-1].casefold()
+        if leaf in CALL_STOPWORDS:
+            continue
+        candidate = (value, match.start(1))
+        if candidate not in calls:
+            calls.append(candidate)
+    return calls
 
 
 def _symbol_records(
@@ -386,6 +477,229 @@ def _companion_relations(
     return relations
 
 
+def _candidate_call_symbols(
+    raw_target: str,
+    *,
+    repository_id: str,
+    symbols_by_name: dict[tuple[str, str], list[dict[str, object]]],
+) -> tuple[list[dict[str, object]], str]:
+    parts = re.split(r"::|->|\.", raw_target)
+    leaf = parts[-1].casefold()
+    candidates = list(symbols_by_name.get((repository_id, leaf), []))
+    if not candidates:
+        return [], "unresolved"
+
+    normalized = raw_target.casefold()
+    if "::" in raw_target:
+        exact = [
+            symbol
+            for symbol in candidates
+            if str(symbol["qualified_name"]).casefold().endswith(normalized)
+        ]
+        if exact:
+            return exact, "exact_qualified"
+
+    if len(candidates) == 1:
+        return candidates, "unique_name"
+    if len(parts) < 2:
+        return candidates, "branch_unique"
+    receiver_terms = _identifier_terms(" ".join(parts[:-1]))
+    if not receiver_terms:
+        return candidates, "branch_unique"
+    ranked: list[tuple[float, dict[str, object]]] = []
+    for symbol in candidates:
+        qualified_name = str(symbol["qualified_name"])
+        owner = qualified_name.rsplit("::", 1)[0] if "::" in qualified_name else ""
+        owner_terms = _identifier_terms(owner)
+        score = (
+            len(receiver_terms & owner_terms) / len(owner_terms)
+            if owner_terms
+            else 0.0
+        )
+        ranked.append((score, symbol))
+    highest = max(score for score, _symbol in ranked)
+    if highest <= 0:
+        return candidates, "branch_unique"
+    return (
+        [symbol for score, symbol in ranked if score == highest],
+        "receiver_hint",
+    )
+
+
+def _call_target_scopes(
+    *,
+    source_document: dict[str, object],
+    candidate_symbols: list[dict[str, object]],
+    documents: dict[str, dict[str, object]],
+    occurrences_by_document: dict[
+        str, dict[tuple[str, str], dict[str, object]]
+    ],
+) -> tuple[
+    dict[str, list[dict[str, object]]],
+    list[dict[str, object]],
+]:
+    source_document_id = str(source_document["document_id"])
+    source_scopes = occurrences_by_document.get(source_document_id, {})
+    target_documents = {
+        str(symbol["document_id"])
+        for symbol in candidate_symbols
+        if str(symbol.get("document_id") or "") in documents
+    }
+    targets_by_scope: dict[tuple[str, str], set[str]] = defaultdict(set)
+    for target_document_id in target_documents:
+        for scope in occurrences_by_document.get(target_document_id, {}):
+            if scope in source_scopes:
+                targets_by_scope[scope].add(target_document_id)
+
+    resolved: dict[str, list[dict[str, object]]] = defaultdict(list)
+    unresolved: list[dict[str, object]] = []
+    for scope, occurrence in source_scopes.items():
+        targets = targets_by_scope.get(scope, set())
+        if len(targets) == 1:
+            resolved[next(iter(targets))].append(occurrence)
+        elif targets:
+            unresolved.append(occurrence)
+    return dict(resolved), unresolved
+
+
+def _call_relations(
+    documents: dict[str, dict[str, object]],
+    chunks: list[dict[str, object]],
+    symbols: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    symbols_by_name: dict[tuple[str, str], list[dict[str, object]]] = defaultdict(list)
+    for symbol in symbols:
+        if str(symbol.get("kind")) not in CALL_TARGET_KINDS:
+            continue
+        symbols_by_name[
+            (
+                str(symbol["repository_id"]),
+                str(symbol["name"]).casefold(),
+            )
+        ].append(symbol)
+
+    occurrences_by_document = {
+        document_id: _occurrences_by_scope(document)
+        for document_id, document in documents.items()
+    }
+
+    relations: list[dict[str, object]] = []
+    seen: set[tuple[str, str, int, str | None]] = set()
+    for chunk in sorted(
+        chunks,
+        key=lambda item: (
+            str(item.get("document_id") or ""),
+            int(item.get("line_start") or 0),
+            str(item.get("chunk_id") or ""),
+        ),
+    ):
+        if str(chunk.get("kind") or "").casefold() not in CALL_SOURCE_KINDS:
+            continue
+        document_id = str(chunk.get("document_id") or "")
+        source_document = documents.get(document_id)
+        if source_document is None:
+            continue
+        file_format = str(source_document.get("format") or "unknown")
+        current_name = _symbol_name(str(chunk.get("title") or "")).casefold()
+        body_started = file_format not in {"c", "cpp", "cpp_header"}
+        line_start = int(chunk.get("line_start") or 1)
+        for offset, line in enumerate(
+            _masked_code_lines(str(chunk.get("text") or ""), file_format=file_format)
+        ):
+            line_number = line_start + offset
+            opening_brace = line.find("{")
+            for raw_target, column in _calls_for_line(line, file_format=file_format):
+                target_leaf = re.split(r"::|->|\.", raw_target)[-1].casefold()
+                if target_leaf == current_name and (
+                    (not body_started and (opening_brace < 0 or column < opening_brace))
+                    or re.match(
+                        r"^\s*(?:async\s+def|def|function|subroutine)\b",
+                        line,
+                        re.IGNORECASE,
+                    )
+                ):
+                    continue
+                candidates, resolution = _candidate_call_symbols(
+                    raw_target,
+                    repository_id=str(source_document["repository_id"]),
+                    symbols_by_name=symbols_by_name,
+                )
+                if not candidates:
+                    continue
+                resolved, unresolved = _call_target_scopes(
+                    source_document=source_document,
+                    candidate_symbols=candidates,
+                    documents=documents,
+                    occurrences_by_document=occurrences_by_document,
+                )
+                targets: list[tuple[str | None, list[dict[str, object]]]] = [
+                    *sorted(resolved.items())
+                ]
+                if unresolved:
+                    targets.append((None, unresolved))
+                for target_document_id, occurrences in targets:
+                    identity = (
+                        f"{document_id}:{chunk.get('title', '')}",
+                        raw_target.casefold(),
+                        line_number,
+                        target_document_id,
+                    )
+                    if identity in seen:
+                        continue
+                    seen.add(identity)
+                    target_document = (
+                        documents[target_document_id]
+                        if target_document_id is not None
+                        else None
+                    )
+                    access_class = (
+                        max(
+                            (
+                                str(source_document["access_class"]),
+                                str(target_document["access_class"]),
+                            ),
+                            key=lambda value: ACCESS_ORDER.get(
+                                value, len(ACCESS_ORDER)
+                            ),
+                        )
+                        if target_document is not None
+                        else str(source_document["access_class"])
+                    )
+                    relations.append(
+                        {
+                            "schema_version": SEMANTIC_MAP_SCHEMA_VERSION,
+                            "algorithm": SEMANTIC_MAP_ALGORITHM,
+                            "relation_id": _stable_id(
+                                SEMANTIC_MAP_ALGORITHM,
+                                str(chunk["chunk_id"]),
+                                "calls_symbol",
+                                raw_target,
+                                str(line_number),
+                                target_document_id or "unresolved",
+                            ),
+                            "repository_id": source_document["repository_id"],
+                            "project": source_document["project"],
+                            "source_document_id": document_id,
+                            "source_path": source_document["path"],
+                            "target_kind": (
+                                f"symbol_{resolution}"
+                                if target_document_id is not None
+                                else "unresolved_symbol"
+                            ),
+                            "target_document_id": target_document_id,
+                            "target_name": raw_target,
+                            "kind": "calls_symbol",
+                            "evidence_chunk_id": chunk["chunk_id"],
+                            "line": line_number,
+                            "access_class": access_class,
+                            "occurrences": occurrences,
+                        }
+                    )
+            if opening_brace >= 0:
+                body_started = True
+    return relations
+
+
 def build_semantic_map(
     *,
     documents: list[dict[str, object]],
@@ -401,6 +715,7 @@ def build_semantic_map(
     symbols = _symbol_records(documents_by_id, chunks)
     relations = _reference_relations(documents_by_id, chunks)
     relations.extend(_companion_relations(documents_by_id))
+    relations.extend(_call_relations(documents_by_id, chunks, symbols))
     relations.sort(
         key=lambda item: (
             str(item["source_path"]),
@@ -436,6 +751,22 @@ def build_semantic_map(
                 {
                     kind: sum(item["kind"] == kind for item in relations)
                     for kind in {str(item["kind"]) for item in relations}
+                }.items()
+            )
+        ),
+        "call_resolutions": dict(
+            sorted(
+                {
+                    target_kind: sum(
+                        item["kind"] == "calls_symbol"
+                        and item["target_kind"] == target_kind
+                        for item in relations
+                    )
+                    for target_kind in {
+                        str(item["target_kind"])
+                        for item in relations
+                        if item["kind"] == "calls_symbol"
+                    }
                 }.items()
             )
         ),

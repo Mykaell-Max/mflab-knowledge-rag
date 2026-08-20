@@ -265,6 +265,129 @@ LIMIT %(limit)s
 """
 
 
+CALLER_CHUNKS_SQL = """
+WITH origin AS (
+    SELECT
+        chunk.document_id,
+        lower(regexp_replace(chunk.title, '^.*::', '')) AS symbol_name
+    FROM mflab_knowledge.chunks AS chunk
+    JOIN mflab_knowledge.documents AS document
+      ON document.document_id = chunk.document_id
+    JOIN mflab_knowledge.repositories AS repository
+      ON repository.repository_id = document.repository_id
+    WHERE chunk.chunk_id = %(chunk_id)s
+      AND document.access_class = ANY(%(allowed_access)s::text[])
+      AND (%(project)s::text IS NULL
+           OR repository.project = %(project)s::text)
+      AND EXISTS (
+          SELECT 1
+          FROM mflab_knowledge.document_occurrences AS occurrence
+          WHERE occurrence.document_id = document.document_id
+            AND (%(branch)s::text IS NULL
+                 OR occurrence.branch = %(branch)s::text)
+      )
+)
+SELECT DISTINCT relation.evidence_chunk_id AS chunk_id
+FROM origin
+JOIN mflab_knowledge.semantic_relations AS relation
+  ON relation.target_document_id = origin.document_id
+ AND relation.kind = 'calls_symbol'
+JOIN mflab_knowledge.documents AS caller
+  ON caller.document_id = relation.source_document_id
+JOIN mflab_knowledge.repositories AS repository
+  ON repository.repository_id = caller.repository_id
+WHERE relation.evidence_chunk_id IS NOT NULL
+  AND relation.access_class = ANY(%(allowed_access)s::text[])
+  AND caller.access_class = ANY(%(allowed_access)s::text[])
+  AND (%(project)s::text IS NULL
+       OR repository.project = %(project)s::text)
+  AND lower(regexp_replace(relation.target_name, '^.*(::|->|\.)', ''))
+      = origin.symbol_name
+  AND EXISTS (
+      SELECT 1
+      FROM mflab_knowledge.semantic_relation_occurrences AS occurrence
+      WHERE occurrence.relation_id = relation.relation_id
+        AND (%(branch)s::text IS NULL
+             OR occurrence.branch = %(branch)s::text)
+  )
+ORDER BY relation.evidence_chunk_id
+LIMIT %(limit)s
+"""
+
+
+CALLEE_CHUNKS_SQL = """
+WITH origin AS (
+    SELECT chunk.document_id, chunk.chunk_id
+    FROM mflab_knowledge.chunks AS chunk
+    JOIN mflab_knowledge.documents AS document
+      ON document.document_id = chunk.document_id
+    JOIN mflab_knowledge.repositories AS repository
+      ON repository.repository_id = document.repository_id
+    WHERE chunk.chunk_id = %(chunk_id)s
+      AND document.access_class = ANY(%(allowed_access)s::text[])
+      AND (%(project)s::text IS NULL
+           OR repository.project = %(project)s::text)
+      AND EXISTS (
+          SELECT 1
+          FROM mflab_knowledge.document_occurrences AS occurrence
+          WHERE occurrence.document_id = document.document_id
+            AND (%(branch)s::text IS NULL
+                 OR occurrence.branch = %(branch)s::text)
+      )
+), calls AS (
+    SELECT relation.*,
+           lower(regexp_replace(relation.target_name, '^.*(::|->|\.)', ''))
+               AS symbol_name
+    FROM origin
+    JOIN mflab_knowledge.semantic_relations AS relation
+      ON relation.source_document_id = origin.document_id
+     AND relation.evidence_chunk_id = origin.chunk_id
+     AND relation.kind = 'calls_symbol'
+    WHERE relation.target_document_id IS NOT NULL
+      AND relation.access_class = ANY(%(allowed_access)s::text[])
+      AND EXISTS (
+          SELECT 1
+          FROM mflab_knowledge.semantic_relation_occurrences AS occurrence
+          WHERE occurrence.relation_id = relation.relation_id
+            AND (%(branch)s::text IS NULL
+                 OR occurrence.branch = %(branch)s::text)
+      )
+)
+SELECT DISTINCT target_chunk.chunk_id
+FROM calls
+JOIN mflab_knowledge.documents AS target
+  ON target.document_id = calls.target_document_id
+JOIN mflab_knowledge.repositories AS repository
+  ON repository.repository_id = target.repository_id
+JOIN LATERAL (
+    SELECT chunk.chunk_id
+    FROM mflab_knowledge.chunks AS chunk
+    WHERE chunk.document_id = target.document_id
+    ORDER BY
+        CASE
+            WHEN lower(regexp_replace(chunk.title, '^.*::', ''))
+                 = calls.symbol_name THEN 0
+            ELSE 1
+        END,
+        chunk.line_start,
+        chunk.chunk_id
+    LIMIT 1
+) AS target_chunk ON true
+WHERE target.access_class = ANY(%(allowed_access)s::text[])
+  AND (%(project)s::text IS NULL
+       OR repository.project = %(project)s::text)
+  AND EXISTS (
+      SELECT 1
+      FROM mflab_knowledge.document_occurrences AS occurrence
+      WHERE occurrence.document_id = target.document_id
+        AND (%(branch)s::text IS NULL
+             OR occurrence.branch = %(branch)s::text)
+  )
+ORDER BY target_chunk.chunk_id
+LIMIT %(limit)s
+"""
+
+
 SYMBOL_UPSERT = """
 INSERT INTO mflab_knowledge.semantic_symbols (
     symbol_id, document_id, evidence_chunk_id, name, qualified_name,
@@ -760,6 +883,46 @@ def related_semantic_chunk_ids(
     with _connect(database_url, row_factory=dict_row) as connection:
         rows = connection.execute(
             RELATED_CHUNKS_SQL,
+            {
+                "chunk_id": selected_id,
+                "limit": limit,
+                "project": project,
+                "branch": branch,
+                "allowed_access": sorted(effective_access),
+            },
+        ).fetchall()
+    return [str(row["chunk_id"]) for row in rows if row.get("chunk_id")]
+
+
+def call_graph_chunk_ids(
+    database_url: str,
+    *,
+    chunk_id: str,
+    direction: str,
+    limit: int = 12,
+    project: str | None = None,
+    branch: str | None = None,
+    allowed_access: set[str] | None = None,
+) -> list[str]:
+    """Return caller or callee evidence for one observed symbol chunk."""
+
+    selected_id = chunk_id.strip()
+    if not selected_id or len(selected_id) > 200:
+        raise ValueError("chunk_id inválido")
+    if direction not in {"callers", "callees"}:
+        raise ValueError("direction deve ser callers ou callees")
+    if limit < 1 or limit > 50:
+        raise ValueError("limit deve estar entre 1 e 50")
+    effective_access = allowed_access if allowed_access is not None else {"public"}
+    if not effective_access or not effective_access.issubset(
+        RETRIEVABLE_ACCESS_CLASSES
+    ):
+        raise ValueError("filtro de acesso inválido ou vazio")
+    statement = CALLER_CHUNKS_SQL if direction == "callers" else CALLEE_CHUNKS_SQL
+    _psycopg, dict_row = _driver()
+    with _connect(database_url, row_factory=dict_row) as connection:
+        rows = connection.execute(
+            statement,
             {
                 "chunk_id": selected_id,
                 "limit": limit,

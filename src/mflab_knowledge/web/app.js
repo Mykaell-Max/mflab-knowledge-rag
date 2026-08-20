@@ -15,6 +15,14 @@ const statusLabels = {
   failed: "Falhou",
   running: "Em execução",
 };
+const investigationToolLabels = {
+  search_code: "buscar no código",
+  find_symbol: "localizar símbolo",
+  open_neighborhood: "abrir vizinhança",
+  open_related: "abrir relações",
+  find_callers: "localizar chamadores",
+  find_callees: "seguir chamadas",
+};
 
 function formatStatus(value) {
   return statusLabels[value] || value || "Não disponível";
@@ -87,7 +95,8 @@ function investigationDetail(step) {
     const actions = data.actions.map((action) => {
       const value = action.query || action.chunk_id || "";
       const count = action.result_count === undefined ? "" : ` (${action.result_count} resultados)`;
-      return `${action.tool}: ${value}${count}`;
+      const label = investigationToolLabels[action.tool] || action.tool;
+      return `${label}: ${value}${count}`;
     });
     details.push(`Ações: ${actions.join("; ")}`);
   }

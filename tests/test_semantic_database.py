@@ -391,6 +391,45 @@ class SemanticDatabaseTests(unittest.TestCase):
         self.assertEqual(connection.parameters["branch"], "feature/solver")
         self.assertEqual(connection.parameters["allowed_access"], ["lab"])
 
+    def test_call_graph_reads_both_directions_with_scope_and_acl(self) -> None:
+        for direction, sql_marker in (
+            ("callers", "relation.target_document_id = origin.document_id"),
+            ("callees", "relation.source_document_id = origin.document_id"),
+        ):
+            connection = _StatusConnection([{"chunk_id": f"{direction}-chunk"}])
+            with mock.patch.object(
+                semantic_database,
+                "_driver",
+                return_value=(object(), object()),
+            ):
+                with mock.patch.object(
+                    semantic_database,
+                    "_connect",
+                    return_value=connection,
+                ):
+                    result = semantic_database.call_graph_chunk_ids(
+                        "postgresql://not-logged",
+                        chunk_id="origin",
+                        direction=direction,
+                        project="Solver",
+                        branch="feature/solver",
+                        allowed_access={"lab"},
+                    )
+
+            self.assertEqual(result, [f"{direction}-chunk"])
+            self.assertIn(sql_marker, connection.sql)
+            self.assertIn("relation.kind = 'calls_symbol'", connection.sql)
+            self.assertIn("semantic_relation_occurrences", connection.sql)
+            self.assertEqual(connection.parameters["branch"], "feature/solver")
+            self.assertEqual(connection.parameters["allowed_access"], ["lab"])
+
+        with self.assertRaisesRegex(ValueError, "direction"):
+            semantic_database.call_graph_chunk_ids(
+                "postgresql://not-logged",
+                chunk_id="origin",
+                direction="sideways",
+            )
+
     def test_search_rejects_pending_access_and_invalid_limits(self) -> None:
         with self.assertRaisesRegex(ValueError, "filtro de acesso"):
             semantic_database.search_semantic_map(

@@ -165,6 +165,211 @@ class SemanticMapTests(unittest.TestCase):
 
         self.assertEqual(relations, "")
 
+    def test_extracts_resolved_cpp_and_fortran_calls_without_self_definitions(
+        self,
+    ) -> None:
+        documents = [
+            _document("driver", "src/driver.cpp", "cpp"),
+            _document("manager", "src/manager.cpp", "cpp"),
+            _document("fortran-driver", "src/driver.f90", "fortran"),
+            _document("fortran-step", "src/step.f90", "fortran"),
+        ]
+        chunks = [
+            _chunk(
+                "driver-run",
+                "driver",
+                title="Driver::run",
+                kind="function",
+                line_start=10,
+                line_end=14,
+                text=(
+                    "void Driver::run() {\n"
+                    "  manager->initialize();\n"
+                    "  manager->advance();\n"
+                    "}"
+                ),
+            ),
+            _chunk(
+                "manager-initialize",
+                "manager",
+                title="Manager::initialize",
+                kind="function",
+                line_start=2,
+                line_end=3,
+                text="void Manager::initialize() {}",
+            ),
+            _chunk(
+                "manager-advance",
+                "manager",
+                title="Manager::advance",
+                kind="function",
+                line_start=5,
+                line_end=6,
+                text="void Manager::advance() {}",
+            ),
+            _chunk(
+                "fortran-run",
+                "fortran-driver",
+                title="run_solver",
+                kind="subroutine",
+                line_start=1,
+                line_end=3,
+                text="subroutine run_solver()\n  call advance_step()\nend",
+            ),
+            _chunk(
+                "fortran-advance",
+                "fortran-step",
+                title="advance_step",
+                kind="subroutine",
+                line_start=1,
+                line_end=2,
+                text="subroutine advance_step()\nend",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = build_semantic_map(
+                documents=documents,
+                chunks=chunks,
+                output_dir=Path(temporary),
+            )
+            relations = [
+                json.loads(line)
+                for line in Path(str(result["relations"])).read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        calls = [item for item in relations if item["kind"] == "calls_symbol"]
+        self.assertEqual(
+            {item["target_name"] for item in calls},
+            {"manager->initialize", "manager->advance", "advance_step"},
+        )
+        self.assertEqual(
+            {
+                (item["source_document_id"], item["target_document_id"])
+                for item in calls
+            },
+            {
+                ("driver", "manager"),
+                ("fortran-driver", "fortran-step"),
+            },
+        )
+        self.assertEqual(
+            {item["target_kind"] for item in calls},
+            {"symbol_unique_name"},
+        )
+        self.assertTrue(
+            all(item["occurrences"][0]["branch"] == "trunk" for item in calls)
+        )
+
+    def test_keeps_ambiguous_call_unresolved_instead_of_guessing(self) -> None:
+        documents = [
+            _document("caller", "src/caller.cpp", "cpp"),
+            _document("first", "src/first.cpp", "cpp"),
+            _document("second", "src/second.cpp", "cpp"),
+        ]
+        chunks = [
+            _chunk(
+                "caller-run",
+                "caller",
+                title="Caller::run",
+                kind="function",
+                line_start=1,
+                line_end=3,
+                text="void Caller::run() { object.step(); }",
+            ),
+            _chunk(
+                "first-step",
+                "first",
+                title="First::step",
+                kind="function",
+                line_start=1,
+                line_end=2,
+                text="void First::step() {}",
+            ),
+            _chunk(
+                "second-step",
+                "second",
+                title="Second::step",
+                kind="function",
+                line_start=1,
+                line_end=2,
+                text="void Second::step() {}",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = build_semantic_map(
+                documents=documents,
+                chunks=chunks,
+                output_dir=Path(temporary),
+            )
+            relations = [
+                json.loads(line)
+                for line in Path(str(result["relations"])).read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        call = next(item for item in relations if item["kind"] == "calls_symbol")
+        self.assertEqual(call["target_name"], "object.step")
+        self.assertIsNone(call["target_document_id"])
+        self.assertEqual(call["target_kind"], "unresolved_symbol")
+
+    def test_labels_receiver_hint_separately_from_exact_resolution(self) -> None:
+        documents = [
+            _document("caller", "src/caller.cpp", "cpp"),
+            _document("first", "src/first.cpp", "cpp"),
+            _document("second", "src/second.cpp", "cpp"),
+        ]
+        chunks = [
+            _chunk(
+                "caller-run",
+                "caller",
+                title="Caller::run",
+                kind="function",
+                line_start=1,
+                line_end=3,
+                text="void Caller::run() { first.step(); }",
+            ),
+            _chunk(
+                "first-step",
+                "first",
+                title="First::step",
+                kind="function",
+                line_start=1,
+                line_end=2,
+                text="void First::step() {}",
+            ),
+            _chunk(
+                "second-step",
+                "second",
+                title="Second::step",
+                kind="function",
+                line_start=1,
+                line_end=2,
+                text="void Second::step() {}",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = build_semantic_map(
+                documents=documents,
+                chunks=chunks,
+                output_dir=Path(temporary),
+            )
+            relations = [
+                json.loads(line)
+                for line in Path(str(result["relations"])).read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        call = next(item for item in relations if item["kind"] == "calls_symbol")
+        self.assertEqual(call["target_kind"], "symbol_receiver_hint")
+        self.assertEqual(call["target_document_id"], "first")
+
 
 if __name__ == "__main__":
     unittest.main()

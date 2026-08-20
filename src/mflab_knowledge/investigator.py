@@ -7,13 +7,15 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v5"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v6"
 MAX_AGENT_ITERATIONS = 4
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
 MAX_OBSERVATION_PREVIEW = 500
 
 ALLOWED_ACTIONS = {
+    "find_callees",
+    "find_callers",
     "search_code",
     "find_symbol",
     "open_neighborhood",
@@ -325,6 +327,12 @@ def fallback_investigation_actions(
         if chunk_id:
             candidates.append(
                 {"tool": "open_neighborhood", "chunk_id": chunk_id}
+            )
+            candidates.append(
+                {"tool": "find_callers", "chunk_id": chunk_id}
+            )
+            candidates.append(
+                {"tool": "find_callees", "chunk_id": chunk_id}
             )
             candidates.append(
                 {"tool": "open_related", "chunk_id": chunk_id}

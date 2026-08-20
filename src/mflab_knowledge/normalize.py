@@ -481,6 +481,10 @@ def normalize_manifest(
     chunks_path = destination / "chunks.jsonl"
     _write_jsonl(documents_path, documents)
     _write_jsonl(chunks_path, chunks)
+    logger(
+        f"Construindo mapa estrutural v2 para {len(chunks)} chunks",
+        "info",
+    )
     semantic_map = build_semantic_map(
         documents=documents,
         chunks=chunks,

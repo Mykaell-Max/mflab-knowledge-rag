@@ -108,6 +108,29 @@ class _InvalidThenStoppingGenerator:
         )
 
 
+class _CallGraphGenerator:
+    def __init__(self) -> None:
+        self.calls = 0
+        self.history: list[dict[str, object]] = []
+
+    def investigate(self, **kwargs: object) -> str:
+        self.calls += 1
+        self.history.append(kwargs)
+        if self.calls == 1:
+            return (
+                '{"coverage":[{"aspect":"call flow","status":"gap",'
+                '"chunk_ids":[]}],"actions":['
+                '{"tool":"find_callers","chunk_id":"observed"},'
+                '{"tool":"find_callees","chunk_id":"observed"}],'
+                '"keep_chunk_ids":["observed"],"stop":false}'
+            )
+        return (
+            '{"coverage":[{"aspect":"call flow","status":"covered",'
+            '"chunk_ids":["caller","callee"]}],"actions":[],'
+            '"keep_chunk_ids":["caller","callee"],"stop":true}'
+        )
+
+
 class _RetryGenerator(_Generator):
     def generate(self, **kwargs: object) -> dict[str, object]:
         self.calls.append(kwargs)
@@ -1027,6 +1050,89 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn(
             "Leitura de contingência selecionada",
             [step["title"] for step in progress],
+        )
+
+    def test_context_follows_resolved_callers_and_callees(self) -> None:
+        generator = _CallGraphGenerator()
+        service = api.RagApiService(self.settings(), generator=generator)
+        occurrence = {
+            "branch": "trunk",
+            "commit_sha": "a" * 40,
+        }
+        initial_result = {
+            "chunk_id": "observed",
+            "project": "Solver",
+            "path": "src/component.cpp",
+            "title": "Component::run",
+            "text": "void Component::run() { helper(); }",
+            "selected_occurrence": occurrence,
+        }
+        graph_results = {
+            "caller": {
+                **initial_result,
+                "chunk_id": "caller",
+                "path": "src/driver.cpp",
+                "title": "Driver::advance",
+            },
+            "callee": {
+                **initial_result,
+                "chunk_id": "callee",
+                "path": "src/helper.cpp",
+                "title": "helper",
+            },
+        }
+
+        def call_ids(*_args: object, **values: object) -> list[str]:
+            return ["caller" if values["direction"] == "callers" else "callee"]
+
+        def fetch(*_args: object, **values: object) -> list[dict[str, object]]:
+            return [graph_results[value] for value in values["chunk_ids"]]
+
+        initial = {
+            "query": "Explain the component call flow",
+            "mode": "hybrid",
+            "count": 1,
+            "scope_resolution": {
+                "mode": "explicit",
+                "automatic": False,
+                "scopes": [{"project": "Solver", "branch": "trunk"}],
+            },
+            "results": [initial_result],
+        }
+        with mock.patch.object(service, "search", return_value=initial):
+            with mock.patch.object(api, "search_semantic_map", return_value=[]):
+                with mock.patch.object(
+                    api, "call_graph_chunk_ids", side_effect=call_ids
+                ) as graph:
+                    with mock.patch.object(
+                        api, "fetch_chunks_by_id", side_effect=fetch
+                    ):
+                        with mock.patch.object(
+                            api, "fetch_chunk_neighborhood", return_value=[]
+                        ):
+                            context = service.context(
+                                query="Explain the component call flow",
+                                project="Solver",
+                                branch="trunk",
+                                allowed_access={"lab"},
+                                query_plan={
+                                    "algorithm": "test",
+                                    "generated": True,
+                                    "queries": ["component call flow"],
+                                    "identifiers": [],
+                                },
+                            )
+
+        self.assertEqual(generator.calls, 2, generator.history)
+        self.assertEqual(graph.call_count, 2)
+        self.assertEqual(
+            {call.kwargs["direction"] for call in graph.call_args_list},
+            {"callers", "callees"},
+        )
+        self.assertTrue(
+            {"src/driver.cpp", "src/helper.cpp"}.issubset(
+                {source["path"] for source in context["sources"]}
+            )
         )
 
     def test_ask_audits_long_answers_in_bounded_batches(self) -> None:
