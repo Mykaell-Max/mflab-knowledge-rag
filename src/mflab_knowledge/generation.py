@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 
 GENERATION_CONFIG_SCHEMA_VERSION = "0.1"
 MAX_GENERATION_RESPONSE_BYTES = 4 * 1024 * 1024
+STRUCTURED_GENERATION_SEED = 0
 MAX_GENERATION_ERROR_BYTES = 64 * 1024
 
 
@@ -493,6 +494,7 @@ class OpenAICompatibleGenerator:
                 },
             ],
             "temperature": 0.0,
+            "seed": STRUCTURED_GENERATION_SEED,
             "max_tokens": 512,
             "stream": False,
             "response_format": {"type": "json_object"},
@@ -599,6 +601,7 @@ class OpenAICompatibleGenerator:
                 },
             ],
             "temperature": 0.0,
+            "seed": STRUCTURED_GENERATION_SEED,
             "max_tokens": 900,
             "stream": False,
             "response_format": {"type": "json_object"},
@@ -657,6 +660,7 @@ class OpenAICompatibleGenerator:
                 },
             ],
             "temperature": 0.0,
+            "seed": STRUCTURED_GENERATION_SEED,
             "max_tokens": self.config.verification_max_tokens,
             "stream": False,
             "response_format": {"type": "json_object"},
@@ -715,6 +719,7 @@ class OpenAICompatibleGenerator:
                 },
             ],
             "temperature": 0.0,
+            "seed": STRUCTURED_GENERATION_SEED,
             "max_tokens": self.config.verification_max_tokens,
             "stream": False,
             "response_format": {"type": "json_object"},
@@ -759,6 +764,7 @@ class OpenAICompatibleGenerator:
                 },
             ],
             "temperature": 0.0,
+            "seed": STRUCTURED_GENERATION_SEED,
             "max_tokens": self.config.verification_max_tokens,
             "stream": False,
             "response_format": {"type": "json_object"},

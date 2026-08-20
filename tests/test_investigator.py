@@ -91,6 +91,38 @@ class InvestigatorTests(unittest.TestCase):
             ],
         )
 
+    def test_single_answer_aspect_is_unambiguous_without_echoed_id(self) -> None:
+        result = normalize_answer_coverage(
+            {
+                "coverage": [
+                    {
+                        "aspect": "rótulo traduzido",
+                        "status": "partial",
+                        "claim_ids": ["C1"],
+                    }
+                ]
+            },
+            required_aspects=[
+                {
+                    "aspect_id": "A1",
+                    "aspect": "runtime flow",
+                    "question_span": "flow",
+                }
+            ],
+            valid_claim_ids={"C1"},
+        )
+
+        self.assertEqual(
+            result["coverage"],
+            [
+                {
+                    "aspect": "runtime flow",
+                    "status": "partial",
+                    "claim_ids": ["C1"],
+                }
+            ],
+        )
+
     def test_required_only_coverage_discards_planner_adjacent_facets(self) -> None:
         merged = merge_required_coverage(
             ["initialization"],

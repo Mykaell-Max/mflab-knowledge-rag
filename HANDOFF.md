@@ -769,6 +769,22 @@ final reserva cinco caminhos distintos e uma posição repetida, preservando
 diversidade sem eliminar métodos complementares. Todas as regras continuam
 independentes de repositório, branch, arquivo, símbolo e domínio científico.
 
+O teste real da 0.42.5 confirmou ganho na navegação: os cinco aspectos da
+consulta de malha receberam evidências parciais, a implementação concreta
+chegou à janela e a resposta trouxe código exato. A auditoria final, porém,
+continuou zerando todos os aspectos porque o modelo não devolveu a identidade
+no protocolo esperado. Também foi observada oscilação ao reavaliar exatamente
+a mesma afirmação depois da poda.
+
+Na 0.42.6, chamadas de cobertura com uma única faceta são reconciliadas pela
+posição controlada pelo servidor. Veredictos factuais idênticos são armazenados
+somente durante a pergunta e reutilizados quando texto e fontes citadas não
+mudaram; qualquer modificação exige nova auditoria. Chamadas estruturadas usam
+semente fixa no provedor local. Uma amostra ranqueada das observações iniciais
+também permanece candidata à composição, evitando que descobertas de consultas
+distintas sejam deslocadas por vizinhos tardios. Nada disso contém nomes de
+projeto, branch, arquivo, símbolo ou conceito científico.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

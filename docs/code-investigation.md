@@ -270,6 +270,25 @@ lugares para caminhos distintos e ainda mantém um lugar para outro método do
 mesmo arquivo. Isso reduz a perda de implementações já observadas sem assumir
 qual arquivo ou subsistema deveria ser escolhido.
 
+Na 0.42.6, uma auditoria isolada de aspecto é tratada como posicional: como a
+chamada contém somente uma faceta pertencente ao servidor, omitir o ID ou
+traduzir o rótulo não torna sua identidade ambígua. Status e IDs de afirmação
+continuam limitados aos valores validados; essa tolerância não cria cobertura
+nem aceita uma afirmação nova.
+
+Veredictos factuais passam a ser reutilizados durante a mesma pergunta quando
+o texto integral da afirmação e o conjunto de fontes citadas forem idênticos.
+Qualquer alteração invalida a chave e exige nova auditoria. Isso impede que a
+mesma unidade oscile entre sustentada e rejeitada apenas por ser reavaliada
+depois de uma poda, mantendo a verificação conservadora para conteúdo novo. As
+chamadas estruturadas usam ainda uma semente fixa aceita pelo provedor local.
+
+Por fim, uma amostra pequena e ranqueada das observações iniciais é preservada
+como candidata de base. Evidências descobertas cedo por consultas distintas não
+somem apenas porque ciclos posteriores produziram muitos vizinhos do mesmo
+coordenador. A seleção continua baseada na pergunta, nas hipóteses configuradas
+e nos resultados observados, sem vocabulário científico incorporado ao motor.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

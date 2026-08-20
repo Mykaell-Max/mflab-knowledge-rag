@@ -1644,7 +1644,7 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["answer"], "The operation advances state. [S1]")
         self.assertTrue(result["context"]["citation_discovery"])
         self.assertEqual(len(generator.discovery_calls), 1)
-        self.assertEqual(len(generator.verify_calls), 2)
+        self.assertEqual(len(generator.verify_calls), 1)
 
     def test_ask_repairs_a_cited_claim_that_the_source_does_not_support(self) -> None:
         generator = _VerifyingGenerator(
@@ -1905,7 +1905,7 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["answer"], "The operation advances state [S1].")
         self.assertTrue(result["verification"]["passed"])
         self.assertEqual(len(generator.calls), 2)
-        self.assertEqual(len(generator.verify_calls), 3)
+        self.assertEqual(len(generator.verify_calls), 2)
         self.assertIn(
             "Afirmações rejeitadas removidas",
             [step["title"] for step in progress],
@@ -1975,7 +1975,7 @@ class ApiServiceTests(unittest.TestCase):
         )
         self.assertFalse(result["context"]["evidence_repair"])
         self.assertEqual(len(generator.calls), 1)
-        self.assertEqual(len(generator.verify_calls), 2)
+        self.assertEqual(len(generator.verify_calls), 1)
         self.assertIn(
             "Afirmações rejeitadas removidas",
             [step["title"] for step in progress],
@@ -2229,7 +2229,7 @@ class ApiServiceTests(unittest.TestCase):
             ["A1", "A2"],
         )
 
-    def test_deterministic_salvage_converges_when_audit_verdicts_fluctuate(self) -> None:
+    def test_deterministic_salvage_reuses_verdicts_for_identical_claims(self) -> None:
         generator = _VerifyingGenerator(
             answers=[
                 "First fact [S1].\n\nSecond fact [S1].\n\nBroad claim [S1]."
@@ -2284,9 +2284,9 @@ class ApiServiceTests(unittest.TestCase):
             result = service.ask(query="Explain the flow")
 
         self.assertFalse(result["abstained"])
-        self.assertEqual(result["answer"], "Second fact [S1].")
+        self.assertEqual(result["answer"], "First fact [S1].\n\nSecond fact [S1].")
         self.assertEqual(result["answer_completeness"], "supported_subset")
-        self.assertEqual(len(generator.verify_calls), 3)
+        self.assertEqual(len(generator.verify_calls), 1)
 
     def test_unresolved_coverage_is_not_reported_as_complete(self) -> None:
         generator = _Generator("The observed step advances state [S1].")

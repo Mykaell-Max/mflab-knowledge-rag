@@ -232,6 +232,11 @@ def normalize_answer_coverage(
                 # Stable IDs prevent a local model from accidentally invalidating
                 # the whole judgment by translating or paraphrasing an aspect.
                 aspect = aspect_ids[aspect_id]
+            elif len(required) == 1:
+                # Each final coverage request contains exactly one server-owned
+                # aspect. Its position is therefore unambiguous even if a local
+                # model omits the opaque ID or translates the display label.
+                aspect = required[0]
             status = str(raw_item.get("status", ""))
             if (
                 aspect is None

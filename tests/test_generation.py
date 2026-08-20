@@ -195,6 +195,7 @@ class GenerationTests(unittest.TestCase):
         payload = json.loads(request.data.decode("utf-8"))
         self.assertEqual(result, '{"claims":[]}')
         self.assertEqual(payload["temperature"], 0.0)
+        self.assertEqual(payload["seed"], generation.STRUCTURED_GENERATION_SEED)
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertIn("S1", payload["messages"][1]["content"])
 

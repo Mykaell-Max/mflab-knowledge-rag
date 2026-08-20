@@ -1370,6 +1370,22 @@ class RagApiService:
         graph_frontier_chunk_ids: list[str] = []
         graph_frontier_results: list[dict[str, object]] = []
         selected_graph_frontier: list[dict[str, object]] = []
+        raw_initial_hints = exploration.get("queries")
+        initial_hints = (
+            [str(value) for value in raw_initial_hints]
+            if isinstance(raw_initial_hints, list)
+            else []
+        )
+        initial_baseline_chunk_ids = [
+            str(result.get("chunk_id", ""))
+            for result in select_graph_frontier_results(
+                question=query,
+                search_hints=initial_hints,
+                results=build_observations(retrievals),
+                limit=4,
+            )
+            if result.get("chunk_id")
+        ]
         investigator = getattr(self.generator, "investigate", None)
         if (
             query_plan is not None
@@ -2041,11 +2057,16 @@ class RagApiService:
                 results=baseline_candidates,
                 limit=4,
             )
-            baseline_chunk_ids = [
+            ranked_baseline_chunk_ids = [
                 str(result.get("chunk_id", ""))
                 for result in selected_baseline
                 if result.get("chunk_id")
             ]
+            baseline_chunk_ids = list(
+                dict.fromkeys(
+                    [*initial_baseline_chunk_ids, *ranked_baseline_chunk_ids]
+                )
+            )[:4]
             # Evidence explicitly retained for distinct coverage aspects owns
             # the first positions. Baseline retrieval and graph frontiers fill
             # the remainder, instead of displacing later requested stages.
@@ -2266,6 +2287,7 @@ class RagApiService:
                     prioritize_kept_chunk_ids(kept_chunk_ids, agent_coverage)
                 ),
                 "baseline_chunk_ids": baseline_chunk_ids,
+                "initial_baseline_chunk_ids": initial_baseline_chunk_ids,
                 "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
                 "graph_frontier": [
                     {
@@ -2655,6 +2677,22 @@ class RagApiService:
         verification_expected = bool(
             self.generation_config.verify_evidence and callable(verifier)
         )
+        verification_cache: dict[
+            tuple[str, tuple[str, ...]], dict[str, object]
+        ] = {}
+
+        def claim_cache_key(
+            claim: dict[str, object],
+        ) -> tuple[str, tuple[str, ...]]:
+            return (
+                str(claim.get("text", "")),
+                tuple(
+                    sorted(
+                        str(value)
+                        for value in claim.get("cited_source_ids", [])
+                    )
+                ),
+            )
 
         def audit(candidate_answer: str) -> dict[str, object]:
             claims = claims_for_verification(candidate_answer)
@@ -2667,13 +2705,33 @@ class RagApiService:
             # deterministic while still auditing every factual unit.
             batch_size = 3
             findings: list[dict[str, object]] = []
-            counts = {"supported": 0, "unsupported": 0, "uncertain": 0}
             batches = 0
+            cache_hits = 0
             for offset in range(0, len(claims), batch_size):
                 claim_batch = claims[offset : offset + batch_size]
+                batch_findings: dict[str, dict[str, object]] = {}
+                unresolved_claims: list[dict[str, object]] = []
+                for claim in claim_batch:
+                    cached = verification_cache.get(claim_cache_key(claim))
+                    claim_id = str(claim.get("claim_id", ""))
+                    if cached is None:
+                        unresolved_claims.append(claim)
+                        continue
+                    batch_findings[claim_id] = {
+                        **cached,
+                        "claim_id": claim_id,
+                        "claim": str(claim.get("text", "")),
+                    }
+                    cache_hits += 1
+                if not unresolved_claims:
+                    findings.extend(
+                        batch_findings[str(claim.get("claim_id", ""))]
+                        for claim in claim_batch
+                    )
+                    continue
                 cited = {
                     str(source_id)
-                    for claim in claim_batch
+                    for claim in unresolved_claims
                     for source_id in claim.get("cited_source_ids", [])
                     if str(source_id) in valid_source_ids
                 }
@@ -2686,26 +2744,50 @@ class RagApiService:
                 raw_audit = verifier(  # type: ignore[misc]
                     question=str(context["query"]),
                     answer=candidate_answer,
-                    claims=claim_batch,
+                    claims=unresolved_claims,
                     sources=evidence,
                 )
                 normalized = normalize_verification(
                     raw_audit,
-                    claims=claim_batch,
+                    claims=unresolved_claims,
                     valid_source_ids=valid_source_ids,
                 )
                 raw_findings = normalized.get("claims")
-                raw_counts = normalized.get("counts")
-                if not isinstance(raw_findings, list) or not isinstance(
-                    raw_counts, dict
-                ):
+                if not isinstance(raw_findings, list):
                     raise ValueError("auditoria normalizada incompleta")
+                unresolved_by_id = {
+                    str(claim.get("claim_id", "")): claim
+                    for claim in unresolved_claims
+                }
+                for finding in raw_findings:
+                    if not isinstance(finding, dict):
+                        continue
+                    claim_id = str(finding.get("claim_id", ""))
+                    source_claim = unresolved_by_id.get(claim_id)
+                    if source_claim is None:
+                        continue
+                    stable_finding = {
+                        "verdict": str(finding.get("verdict", "uncertain")),
+                        "source_ids": list(finding.get("source_ids", [])),
+                        "finding": str(finding.get("finding", "")),
+                    }
+                    verification_cache[claim_cache_key(source_claim)] = stable_finding
+                    batch_findings[claim_id] = {
+                        **stable_finding,
+                        "claim_id": claim_id,
+                        "claim": str(source_claim.get("text", "")),
+                    }
                 findings.extend(
-                    finding for finding in raw_findings if isinstance(finding, dict)
+                    batch_findings[str(claim.get("claim_id", ""))]
+                    for claim in claim_batch
                 )
-                for verdict in counts:
-                    counts[verdict] += int(raw_counts.get(verdict, 0))
                 batches += 1
+            counts = {
+                verdict: sum(
+                    finding.get("verdict") == verdict for finding in findings
+                )
+                for verdict in ("supported", "unsupported", "uncertain")
+            }
             return {
                 "algorithm": VERIFICATION_ALGORITHM,
                 "performed": True,
@@ -2715,6 +2797,7 @@ class RagApiService:
                 "claims": findings,
                 "counts": counts,
                 "batches": batches,
+                "cache_hits": cache_hits,
             }
 
         def audit_with_retry(candidate_answer: str) -> dict[str, object]:
