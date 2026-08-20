@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.42.7**. Antes de
+> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.42.8**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -797,6 +797,26 @@ por proveniência pode elevar `gap` somente a `partial`, mantendo a declaração
 cobertura completa exclusivamente na auditoria semântica. Âncoras distintas
 ligadas ao mesmo trecho literal da pergunta são deduplicadas. Toda essa lógica é
 genérica e usa apenas estrutura, facetas e proveniência da consulta atual.
+
+A validação da 0.42.7 aumentou a explicação de fluxo de três para dezoito
+afirmações factualmente aprovadas, com quatro fontes citadas e blocos exatos para
+configuração e avanço. A consulta curta de localização, porém, ainda sintetizou
+somente a primeira das fontes disponíveis; em ambos os casos, uma evidência
+estrutural útil ficou logo depois do limite de seis fontes. Na 0.42.8,
+investigações agentivas podem levar até oito fontes ao mesmo orçamento total de
+caracteres, preservando a divisão equilibrada. O papel original de uma fronteira
+de chamadas é copiado ao registrá-la, impedindo que uma leitura posterior do
+mesmo resultado o desclassifique antes da continuação terminal. Essa continuação
+pode percorrer duas rodadas limitadas de arestas persistidas, permitindo ligar
+um chamador ao coordenador e então às operações downstream sem busca livre. A
+instrução de síntese exige percorrer todas as facetas que possuem fontes, sem
+aceitar a primeira etapa como resposta completa. Os limites permanecem
+genéricos e independentes de qualquer corpus.
+
+Como a mesma execução mostrou que uma definição local podia ser citada para uma
+frase global como “o fluxo começa aqui”, a geração e a auditoria agora exigem
+evidência da própria relação para afirmações de ordem, chamada ou causalidade.
+Encontrar ou citar separadamente os dois extremos não comprova a conexão.
 
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir

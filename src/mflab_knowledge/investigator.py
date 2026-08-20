@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v18"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v19"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v2"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
@@ -728,6 +728,7 @@ def pending_graph_continuations(
         if source_kind not in {
             "agent_callers_evidence",
             "agent_callees_evidence",
+            "agent_terminal_callees_evidence",
         }:
             continue
         chunk_id = str(result.get("chunk_id", "")).strip()
@@ -1004,7 +1005,11 @@ def synthesis_guidance(
         + ". The ledger is provisional planning metadata, not evidence and not a "
         "verdict about the final source package. Use it to organize a coherent "
         "explanation, but inspect the supplied sources themselves and support every "
-        "factual statement with them. A prior gap may be answered when a final source "
-        "directly supports it; otherwise leave it unresolved instead of filling it "
-        "with outside knowledge."
+        "factual statement with them. Before finishing, walk through every facet "
+        "that names one or more source IDs; do not stop after explaining only the "
+        "first facet. For a detailed request, give each supported stage its own "
+        "paragraph or section and connect stages only when the sources establish the "
+        "connection. A partial facet still permits explaining its supported portion. "
+        "A prior gap may be answered when a final source directly supports it; "
+        "otherwise leave it unresolved instead of filling it with outside knowledge."
     )

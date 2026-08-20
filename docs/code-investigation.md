@@ -315,6 +315,32 @@ promove para completa. Aspectos diferentes ancorados nas mesmas palavras da
 pergunta também são deduplicados, evitando contratos redundantes criados por
 paráfrases do planejador.
 
+O teste real da 0.42.7 confirmou o ganho de retenção: uma explicação complexa
+passou a apresentar configuração e avanço com dezoito afirmações aprovadas,
+quatro fontes citadas e código exato. Ainda assim, uma sétima evidência podia
+ficar fora e uma resposta curta podia encerrar após a primeira faceta apesar de
+outras fontes já estarem disponíveis. Na 0.42.8, somente consultas que realmente
+executaram investigação agentiva recebem uma janela de até oito fontes; o
+orçamento total não aumenta e continua dividido igualmente. Consultas comuns
+mantêm o limite anterior.
+
+O registro da fronteira passa a copiar o resultado e seu papel estrutural no
+momento em que uma aresta resolvida é observada. Assim, reutilizar o mesmo chunk
+em uma busca relacionada posterior não o impede de receber a continuação final
+no grafo. A continuação terminal admite até duas rodadas limitadas, sempre sobre
+arestas persistidas e resultados observados. Isso permite que um primeiro salto
+revele um coordenador e o segundo alcance suas operações, sem inventar símbolos
+nem ampliar a investigação indefinidamente. A síntese também recebe um contrato
+explícito para percorrer cada faceta associada a fontes, dando uma seção ou
+parágrafo a cada estágio sustentado em respostas detalhadas. Nenhuma dessas
+regras escolhe arquivos ou mecanismos: elas controlam apenas limite, identidade
+estrutural e cobertura da pergunta.
+
+Afirmações relacionais recebem a mesma restrição na síntese e na auditoria. Dizer
+que uma etapa inicia, chama, antecede, sucede ou causa outra exige uma fonte que
+mostre essa relação. A definição isolada de uma função comprova apenas seu
+comportamento local, ainda que o nome pareça compatível com a pergunta.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

@@ -797,6 +797,10 @@ class InvestigatorTests(unittest.TestCase):
                 "chunk_id": "upstream",
                 "source_kind": "agent_callers_evidence",
             },
+            {
+                "chunk_id": "second-hop",
+                "source_kind": "agent_terminal_callees_evidence",
+            },
             {"chunk_id": "lexical", "source_kind": "retrieval"},
         ]
 
@@ -807,7 +811,10 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertEqual(
             actions,
-            [{"tool": "find_callees", "chunk_id": "downstream"}],
+            [
+                {"tool": "find_callees", "chunk_id": "downstream"},
+                {"tool": "find_callees", "chunk_id": "second-hop"},
+            ],
         )
 
     def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:

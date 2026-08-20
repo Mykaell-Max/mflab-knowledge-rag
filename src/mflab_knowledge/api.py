@@ -125,6 +125,9 @@ CONTEXT_INSTRUCTIONS = (
     "explicitly distinguish their scopes and never collapse them into one "
     "version. Answer the requested operation before adjacent code, and omit "
     "nearby but unrelated initialization or cleanup even when it is citable. "
+    "A claim that one stage starts, calls, precedes, follows, or causes another "
+    "must cite evidence that shows that relationship; a definition proves only "
+    "its own local behavior. "
     "Prefer omitting secondary detail over ending mid-sentence. "
     "If the sources are insufficient, say that the indexed "
     "evidence is insufficient instead of inventing an answer."
@@ -164,8 +167,11 @@ def _response_depth_instructions(response_depth: str) -> str:
         ) from exc
 
 CONTEXT_DIVERSITY_TARGET = 6
+AGENT_CONTEXT_DIVERSITY_TARGET = 8
 CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
+TERMINAL_GRAPH_ROUNDS = 2
+TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
 
 
 def _pack_context_results(
@@ -173,12 +179,17 @@ def _pack_context_results(
     *,
     max_context_characters: int,
     reserved_chunk_ids: list[str] | None = None,
+    source_limit: int = CONTEXT_DIVERSITY_TARGET,
 ) -> tuple[list[dict[str, object]], int, bool]:
     """Share a character budget across several ordered evidence sources."""
 
     if not results:
         return [], 0, False
-    target = min(CONTEXT_DIVERSITY_TARGET, len(results))
+    target = min(max(1, source_limit), len(results))
+    path_diversity_target = min(
+        target,
+        max(CONTEXT_PATH_DIVERSITY_TARGET, target - 1),
+    )
     minimum = min(
         MIN_CONTEXT_SOURCE_CHARACTERS,
         max(1, max_context_characters // target),
@@ -219,7 +230,7 @@ def _pack_context_results(
     for result in results:
         if len(reserved_results) + len(diverse) >= target:
             break
-        if len(seen_paths) >= min(CONTEXT_PATH_DIVERSITY_TARGET, target):
+        if len(seen_paths) >= path_diversity_target:
             break
         if id(result) in diverse_ids:
             continue
@@ -305,6 +316,7 @@ def _reduce_context_evidence(
     sources, used_characters, _truncated = _pack_context_results(
         candidates,
         max_context_characters=max_context_characters,
+        source_limit=len(candidates),
     )
     for position, source in enumerate(sources, start=1):
         source["source_id"] = f"S{position}"
@@ -1859,7 +1871,10 @@ class RagApiService:
                                         and frontier_id not in known_frontiers
                                         and len(graph_frontier_results) < 64
                                     ):
-                                        graph_frontier_results.append(result)
+                                        # Preserve the verified edge role even
+                                        # if another retrieval group later
+                                        # reuses the same result object.
+                                        graph_frontier_results.append(dict(result))
                                         known_frontiers.add(frontier_id)
                                 iteration_results.extend(fetched)
                     except Exception:
@@ -1923,74 +1938,91 @@ class RagApiService:
             )
             terminal_results: list[dict[str, object]] = []
             terminal_actions: list[dict[str, str]] = []
-            for action in pending_graph_continuations(
-                selected_graph_frontier,
-                agent_actions,
-                limit=8,
-            ):
-                frontier = next(
-                    (
-                        result
-                        for result in selected_graph_frontier
-                        if str(result.get("chunk_id", ""))
-                        == action["chunk_id"]
-                    ),
-                    None,
+            terminal_rounds_completed = 0
+            for terminal_round in range(1, TERMINAL_GRAPH_ROUNDS + 1):
+                round_results: list[dict[str, object]] = []
+                round_actions = pending_graph_continuations(
+                    selected_graph_frontier,
+                    agent_actions,
+                    limit=TERMINAL_GRAPH_ACTIONS_PER_ROUND,
                 )
-                if frontier is None:
-                    continue
-                occurrence = frontier.get("selected_occurrence")
-                occurrence = occurrence if isinstance(occurrence, dict) else {}
-                try:
-                    call_ids = call_graph_chunk_ids(
-                        self.settings.database_url,
-                        chunk_id=action["chunk_id"],
-                        direction="callees",
-                        limit=12,
-                        project=str(frontier.get("project", "")) or None,
-                        branch=str(occurrence.get("branch", "")) or None,
-                        allowed_access=self._allowed_access(allowed_access),
+                if not round_actions:
+                    break
+                for action in round_actions:
+                    frontier = next(
+                        (
+                            result
+                            for result in selected_graph_frontier
+                            if str(result.get("chunk_id", ""))
+                            == action["chunk_id"]
+                        ),
+                        None,
                     )
-                    fetched = fetch_chunks_by_id(
-                        self.settings.database_url,
-                        chunk_ids=call_ids,
-                        limit=12,
-                        project=str(frontier.get("project", "")) or None,
-                        branch=str(occurrence.get("branch", "")) or None,
-                        allowed_access=self._allowed_access(allowed_access),
+                    if frontier is None:
+                        continue
+                    occurrence = frontier.get("selected_occurrence")
+                    occurrence = (
+                        occurrence if isinstance(occurrence, dict) else {}
                     )
-                except Exception:
-                    self.log(
-                        "Continuação terminal do grafo indisponível; preservando a fronteira já observada",
-                        "warning",
-                    )
-                    continue
-                for result in fetched:
-                    result["source_kind"] = "agent_terminal_callees_evidence"
-                terminal_results.extend(fetched)
-                completed = {**action, "result_count": str(len(fetched))}
-                terminal_actions.append(completed)
-                agent_actions.append(completed)
-                known_frontiers = {
-                    str(item.get("chunk_id", ""))
-                    for item in graph_frontier_results
-                }
-                for result in fetched:
-                    frontier_id = str(result.get("chunk_id", ""))
-                    if (
-                        frontier_id
-                        and frontier_id not in known_frontiers
-                        and len(graph_frontier_results) < 96
-                    ):
-                        graph_frontier_results.append(result)
-                        known_frontiers.add(frontier_id)
-            if terminal_results:
+                    try:
+                        call_ids = call_graph_chunk_ids(
+                            self.settings.database_url,
+                            chunk_id=action["chunk_id"],
+                            direction="callees",
+                            limit=12,
+                            project=str(frontier.get("project", "")) or None,
+                            branch=str(occurrence.get("branch", "")) or None,
+                            allowed_access=self._allowed_access(allowed_access),
+                        )
+                        fetched = fetch_chunks_by_id(
+                            self.settings.database_url,
+                            chunk_ids=call_ids,
+                            limit=12,
+                            project=str(frontier.get("project", "")) or None,
+                            branch=str(occurrence.get("branch", "")) or None,
+                            allowed_access=self._allowed_access(allowed_access),
+                        )
+                    except Exception:
+                        self.log(
+                            "Continuação terminal do grafo indisponível; preservando a fronteira já observada",
+                            "warning",
+                        )
+                        continue
+                    for result in fetched:
+                        result["source_kind"] = (
+                            "agent_terminal_callees_evidence"
+                        )
+                    round_results.extend(fetched)
+                    completed = {
+                        **action,
+                        "result_count": str(len(fetched)),
+                        "round": str(terminal_round),
+                    }
+                    terminal_actions.append(completed)
+                    agent_actions.append(completed)
+                    known_frontiers = {
+                        str(item.get("chunk_id", ""))
+                        for item in graph_frontier_results
+                    }
+                    for result in fetched:
+                        frontier_id = str(result.get("chunk_id", ""))
+                        if (
+                            frontier_id
+                            and frontier_id not in known_frontiers
+                            and len(graph_frontier_results) < 96
+                        ):
+                            graph_frontier_results.append(dict(result))
+                            known_frontiers.add(frontier_id)
+                if not round_results:
+                    break
+                terminal_rounds_completed = terminal_round
+                terminal_results.extend(round_results)
                 retrievals.insert(
                     0,
                     {
                         "query": query,
                         "mode": "agent_terminal_graph",
-                        "results": terminal_results,
+                        "results": round_results,
                     },
                 )
                 selected_graph_frontier = select_graph_frontier_results(
@@ -1999,13 +2031,15 @@ class RagApiService:
                     results=graph_frontier_results,
                     limit=8,
                 )
+            if terminal_results:
                 record(
                     "agent",
                     "Fronteira estrutural concluída",
-                    "As conexões já descobertas receberam uma última travessia limitada antes da síntese.",
+                    "As conexões já descobertas receberam travessias limitadas antes da síntese.",
                     {
                         "actions": terminal_actions,
                         "new_evidence": len(terminal_results),
+                        "rounds": terminal_rounds_completed,
                     },
                 )
             # The last bounded tool batch has not yet been seen by the model.
@@ -2270,6 +2304,11 @@ class RagApiService:
                 reserve_chunk_ids_by_aspect(agent_coverage)
                 if agent_coverage
                 else None
+            ),
+            source_limit=(
+                AGENT_CONTEXT_DIVERSITY_TARGET
+                if agent_coverage
+                else CONTEXT_DIVERSITY_TARGET
             ),
         )
         sources: list[dict[str, object]] = []

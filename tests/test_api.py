@@ -272,6 +272,24 @@ class ApiServiceTests(unittest.TestCase):
             1,
         )
 
+    def test_agent_context_can_request_a_larger_bounded_source_window(self) -> None:
+        packed, used, truncated = api._pack_context_results(
+            [
+                {
+                    "chunk_id": str(position),
+                    "path": f"src/unit_{position}.cpp",
+                    "text": "x" * 2000,
+                }
+                for position in range(10)
+            ],
+            max_context_characters=8000,
+            source_limit=api.AGENT_CONTEXT_DIVERSITY_TARGET,
+        )
+
+        self.assertEqual(len(packed), api.AGENT_CONTEXT_DIVERSITY_TARGET)
+        self.assertEqual(used, 8000)
+        self.assertTrue(truncated)
+
     def test_context_packing_keeps_room_for_repeated_lifecycle_methods(self) -> None:
         packed, _used, _truncated = api._pack_context_results(
             [
@@ -787,6 +805,7 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("never emit raw HTML", api.CONTEXT_INSTRUCTIONS)
         self.assertIn("programming language tag", api.CONTEXT_INSTRUCTIONS)
         self.assertIn("citations outside code fences", api.CONTEXT_INSTRUCTIONS)
+        self.assertIn("definition proves only", api.CONTEXT_INSTRUCTIONS)
 
     def test_detailed_response_depth_requests_grounded_code_excerpts(self) -> None:
         instructions = api._response_depth_instructions("detailed")

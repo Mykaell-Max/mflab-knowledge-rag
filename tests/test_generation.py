@@ -268,6 +268,10 @@ class GenerationTests(unittest.TestCase):
             "operation actually requested",
             payload["messages"][0]["content"],
         )
+        self.assertIn(
+            "directly shows that relationship",
+            payload["messages"][0]["content"],
+        )
         self.assertIn("unsupported", result)
 
     def test_retrieval_planner_requests_only_bounded_structured_vocabulary(self) -> None:
