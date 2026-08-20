@@ -47,6 +47,7 @@ class ContextRequest(SearchRequest):
 class AskRequest(ContextRequest):
     max_output_tokens: int | None = Field(default=None, ge=64, le=8192)
     temperature: float | None = Field(default=None, ge=0, le=1)
+    response_depth: Literal["auto", "concise", "detailed"] = "auto"
 
 
 class StructureRequest(BaseModel):

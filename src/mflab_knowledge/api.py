@@ -125,6 +125,39 @@ CONTEXT_INSTRUCTIONS = (
     "evidence is insufficient instead of inventing an answer."
 )
 
+RESPONSE_DEPTH_INSTRUCTIONS = {
+    "auto": "",
+    "concise": (
+        " The user explicitly requested a direct response. State the supported "
+        "answer and only the essential evidence needed to understand it. Do not "
+        "add a tutorial, background section, or code excerpt unless the question "
+        "specifically asks for one."
+    ),
+    "detailed": (
+        " The user explicitly requested a detailed technical explanation. When "
+        "the evidence supports it, organize the answer with descriptive Markdown "
+        "headings and explain the end-to-end flow in stages, including entry "
+        "points, coordination, state changes, downstream effects, and limitations "
+        "that are relevant to the question. For source-code questions, place small "
+        "exact excerpts from the supplied evidence alongside the stage they "
+        "explain, using fenced code blocks with the correct language tag. Never "
+        "reconstruct code from memory, change identifiers, or merge non-contiguous "
+        "lines into a purported excerpt. Explain why each excerpt matters and put "
+        "its supporting source IDs in prose outside the code fence. Prefer several "
+        "distinct relevant sources when they establish different stages. Do not "
+        "pad the answer or create a section that the evidence cannot support."
+    ),
+}
+
+
+def _response_depth_instructions(response_depth: str) -> str:
+    try:
+        return RESPONSE_DEPTH_INSTRUCTIONS[response_depth]
+    except KeyError as exc:
+        raise ValueError(
+            "response_depth deve ser auto, concise ou detailed"
+        ) from exc
+
 CONTEXT_DIVERSITY_TARGET = 6
 CONTEXT_PATH_DIVERSITY_TARGET = 4
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
@@ -249,9 +282,12 @@ def _reduce_context_evidence(
     )
     exploration = reduced.get("exploration")
     if isinstance(exploration, dict):
-        reduced["instructions"] = CONTEXT_INSTRUCTIONS + exploration_instructions(
-            exploration,
-            sources,
+        reduced["instructions"] = (
+            CONTEXT_INSTRUCTIONS
+            + exploration_instructions(exploration, sources)
+            + _response_depth_instructions(
+                str(reduced.get("response_depth", "auto"))
+            )
         )
     return reduced
 
@@ -2170,6 +2206,7 @@ class RagApiService:
         max_context_characters: int = 24000,
         max_output_tokens: int | None = None,
         temperature: float | None = None,
+        response_depth: str = "auto",
         progress_callback: ProgressCallback | None = None,
     ) -> dict[str, object]:
         if self.generator is None or self.generation_config is None:
@@ -2186,6 +2223,7 @@ class RagApiService:
             or max_output_tokens > 8192
         ):
             raise ValueError("max_output_tokens deve estar entre 64 e 8192")
+        depth_instructions = _response_depth_instructions(response_depth)
         requested_context_limit = max_context_characters
         effective_context_limit = min(
             requested_context_limit,
@@ -2246,6 +2284,8 @@ class RagApiService:
             progress_callback=progress_callback,
             query_plan=query_plan,
         )
+        context["response_depth"] = response_depth
+        context["instructions"] = str(context["instructions"]) + depth_instructions
         raw_investigation = context.get("investigation")
         investigation_steps = (
             list(raw_investigation.get("steps", []))
@@ -2323,6 +2363,7 @@ class RagApiService:
                     "max_context_characters": effective_context_limit,
                     "requested_max_output_tokens": requested_output_limit,
                     "max_output_tokens": effective_output_limit,
+                    "response_depth": response_depth,
                     "generation_attempts": 0,
                     "reduced_for_generation": False,
                     "quality_retry": False,
@@ -2913,6 +2954,7 @@ class RagApiService:
                 ),
                 "requested_max_output_tokens": requested_output_limit,
                 "max_output_tokens": effective_output_limit,
+                "response_depth": response_depth,
                 "generation_attempts": generation_attempts,
                 "reduced_for_generation": reduced_for_generation,
                 "quality_retry": quality_retry,

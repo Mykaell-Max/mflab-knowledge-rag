@@ -261,6 +261,12 @@ local. C, C++, Fortran, Python, shell, JavaScript, TypeScript, JSON, YAML, TOML,
 CMake, Make e SQL possuem vocabulários visuais genéricos; formatos não
 reconhecidos continuam como texto simples.
 
+`response_depth` aceita `auto`, `concise` ou `detailed`. Esse campo controla a
+forma da síntese, não o teto de tokens: os limites continuam pertencendo a
+`generation.toml`. No modo `detailed`, perguntas sobre código solicitam etapas e
+excertos pequenos e literais das evidências, com citações fora dos blocos. O
+gerador não recebe autorização para reconstruir código ausente das fontes.
+
 ```json
 {
   "query": "how are distributed particle identifiers generated?",
@@ -268,6 +274,7 @@ reconhecidos continuam como texto simples.
   "limit": 10,
   "project": "MFSim-NG",
   "branch": "diagnostic/dpm",
+  "response_depth": "detailed",
   "allowed_access": ["lab"],
   "max_context_characters": 12000,
   "max_output_tokens": 700

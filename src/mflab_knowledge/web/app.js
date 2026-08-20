@@ -687,6 +687,7 @@ async function submitAsk(event) {
     query: byId("ask-query").value.trim(),
     mode: "hybrid",
     limit: 10,
+    response_depth: byId("ask-response-depth").value,
   };
   if (byId("ask-project").value) payload.project = byId("ask-project").value;
   if (byId("ask-branch").value) payload.branch = byId("ask-branch").value;

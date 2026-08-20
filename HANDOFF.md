@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.41.8**. Antes de
+> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.42.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -670,6 +670,27 @@ caminhos distintos antes de repetir chunks do mesmo arquivo, mantendo duas
 posições disponíveis para métodos complementares de um coordenador. Assim,
 implementações e objetos de estado já encontrados não são expulsos apenas
 porque um coordenador possui várias unidades relevantes.
+
+A execução real da 0.41.8 manteve cobertura textual de citações em 100% e
+entregou respostas auditadas nos dois casos, mas a suíte científica estrita
+permaneceu em 0/2. Na localização da malha, a recuperação trouxe fábrica e
+gerenciador, porém a síntese escolheu uma inicialização adjacente de fronteira
+imersa e deixou de fora integração no domínio e preenchimento concreto. No fluxo
+do subsistema, construção, avanço, estado e integração no domínio apareceram e
+sete afirmações foram aprovadas, mas a resposta utilizou duas citações distintas
+quando o gabarito exigia três. O resultado reforça que uma execução mede
+capacidade, não estabilidade: cobertura de navegação, qualidade da resposta e
+critérios científicos precisam ser reportados separadamente e avaliados em
+múltiplas tentativas.
+
+A 0.42.0 acrescenta profundidade de resposta como preferência explícita e
+genérica. A interface oferece `Automática`, `Direta` e `Detalhada`; o backend
+continua sendo o único responsável pelos tetos de contexto e saída. No modo
+detalhado, a síntese deve explicar as etapas sustentadas e, em perguntas sobre
+código, pode distribuir pequenos excertos literais das evidências ao longo da
+explicação. O modelo não pode reconstruir código ausente, alterar identificadores
+ou apresentar linhas não contíguas como um único trecho. Markdown e citações
+continuam passando pelo mesmo renderizador seguro e pela auditoria semântica.
 
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir

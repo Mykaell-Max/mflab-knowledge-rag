@@ -107,6 +107,11 @@ um comprimento obrigatório; respostas diretas podem terminar cedo e perguntas
 complexas recebem espaço para detalhamento sustentado. Respostas de excesso de
 contexto causam redução segura e nova tentativa, sem remover a proveniência das
 fontes.
+O seletor **Profundidade** permite pedir uma resposta automática, direta ou
+detalhada sem alterar esses tetos. No modo detalhado, explicações de código são
+organizadas por etapas e podem incluir pequenos excertos literais das fontes em
+blocos Markdown com linguagem; código não observado não pode ser reconstruído
+pelo modelo.
 Depois da síntese, uma chamada separada ao mesmo modelo local confronta cada
 afirmação com os trechos que ela própria cita. Correspondência de termos não é
 tratada como prova. Uma conclusão não sustentada provoca no máximo uma revisão;

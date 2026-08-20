@@ -733,6 +733,18 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("programming language tag", api.CONTEXT_INSTRUCTIONS)
         self.assertIn("citations outside code fences", api.CONTEXT_INSTRUCTIONS)
 
+    def test_detailed_response_depth_requests_grounded_code_excerpts(self) -> None:
+        instructions = api._response_depth_instructions("detailed")
+
+        self.assertIn("detailed technical explanation", instructions)
+        self.assertIn("exact excerpts from the supplied evidence", instructions)
+        self.assertIn("Never reconstruct code from memory", instructions)
+        self.assertIn("supporting source IDs", instructions)
+
+    def test_unknown_response_depth_is_rejected(self) -> None:
+        with self.assertRaisesRegex(ValueError, "response_depth"):
+            api._response_depth_instructions("exhaustive")
+
     def test_context_explores_overview_and_balances_repository_sources(self) -> None:
         service = api.RagApiService(self.settings())
 
@@ -1267,6 +1279,56 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["verification"]["batches"], 3)
         self.assertEqual(result["verification"]["counts"]["supported"], 7)
         self.assertEqual(len(generator.verify_calls), 3)
+
+    def test_ask_applies_detailed_response_depth_to_generation(self) -> None:
+        generator = _Generator("The flow is established [S1].")
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                verify_evidence=False,
+            ),
+        )
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the complete flow",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "exploration": {"intent": "mechanism"},
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 30,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "path": "src/solver.cpp",
+                        "text": "void advance() {}",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                    }
+                ],
+                "investigation": {"steps": []},
+            },
+        ):
+            result = service.ask(
+                query="Explain the complete flow",
+                response_depth="detailed",
+            )
+
+        self.assertIn(
+            "detailed technical explanation",
+            generator.calls[0]["instructions"],
+        )
+        self.assertEqual(result["context"]["response_depth"], "detailed")
 
     def test_ask_uses_local_query_planner_for_location_questions(self) -> None:
         generator = _PlanningGenerator()
