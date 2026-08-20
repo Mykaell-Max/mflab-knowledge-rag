@@ -467,16 +467,21 @@ class OpenAICompatibleGenerator:
                         "remeshing, or runtime lifecycle steps; include separate "
                         "retrieval hypotheses when both may matter. Prefer established "
                         "technical vocabulary over invented function names. aspects must "
-                        "contain at most six short organizational facets explicitly "
-                        "requested by, or strictly necessary to answer, the question, "
-                        "such as configuration, entry point, state evolution, integration, "
-                        "or output. They are coverage questions, not repository facts; "
-                        "do not claim that any facet exists or name an implementation. "
-                        "Do not promote tests, documentation, cleanup, output, or other "
-                        "retrieval avenues into required aspects unless the user asks "
-                        "about them. For a location plus flow request, prefer the "
-                        "minimum stages needed to connect the responsible definition "
-                        "to its caller or integration point. "
+                        "contain at most six objects with keys aspect and question_span. "
+                        "Each aspect is a mandatory answer facet explicitly requested by "
+                        "the user; question_span must be an exact, non-empty quote from "
+                        "the question that justifies making it mandatory. Search avenues "
+                        "that are merely useful or inferred belong in queries or "
+                        "identifiers, never in aspects. Do not promote tests, "
+                        "documentation, cleanup, output, state evolution, boundary "
+                        "handling, factories, or lifecycle stages into aspects unless an "
+                        "exact question_span requests them. A request for an explanation, "
+                        "flow, comparison, or code excerpts is itself a mandatory aspect "
+                        "and must be anchored to the corresponding words. Aspects are "
+                        "coverage questions, not repository facts; do not name an "
+                        "implementation in them. The expected shape is "
+                        "{\"aspects\":[{\"aspect\":\"configuration\","
+                        "\"question_span\":\"configuração\"}]}. "
                         "Keep repository "
                         "and branch names only when the user supplied them. Never emit "
                         "commands, SQL, glob patterns, paths claimed as facts, or prose."
@@ -646,6 +651,60 @@ class OpenAICompatibleGenerator:
                         f"Question:\n{question}\n\nCandidate answer:\n{answer}\n\n"
                         f"Claims to audit as JSON:\n{claim_values}\n\n"
                         f"Authorized evidence as JSON:\n{evidence}"
+                    ),
+                },
+            ],
+            "temperature": 0.0,
+            "max_tokens": self.config.verification_max_tokens,
+            "stream": False,
+            "response_format": {"type": "json_object"},
+        }
+        return str(self._complete(payload)["answer"])
+
+    def assess_coverage(
+        self,
+        *,
+        question: str,
+        answer: str,
+        aspects: list[str],
+        supported_claims: list[dict[str, object]],
+    ) -> str:
+        """Check whether already-audited claims answer each requested facet."""
+
+        aspect_values = json.dumps(aspects, ensure_ascii=False, separators=(",", ":"))
+        claim_values = json.dumps(
+            supported_claims,
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        payload: dict[str, object] = {
+            "model": self.config.model,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": (
+                        "You audit answer completeness; you do not add facts or rewrite "
+                        "the answer. The supplied claims have already passed direct "
+                        "claim-to-source verification. Use only those supported claims "
+                        "and the visible answer to decide whether every exact requested "
+                        "aspect is covered, partial, or gap. covered means at least one "
+                        "supported claim actually answers the aspect; for a requested "
+                        "code excerpt, comparison, or flow, the answer must visibly "
+                        "contain that requested form, not merely mention the subject. "
+                        "partial means useful support exists but the requested facet is "
+                        "not fully answered. gap means no supported claim answers it. "
+                        "Return JSON only with key coverage. Return exactly one item for "
+                        "each supplied aspect, preserving its exact text. Each item must "
+                        "contain aspect, status, and claim_ids. claim_ids may reference "
+                        "only supplied supported claims. Never reveal reasoning."
+                    ),
+                },
+                {
+                    "role": "user",
+                    "content": (
+                        f"Question:\n{question}\n\nAnswer:\n{answer}\n\n"
+                        f"Required aspects as JSON:\n{aspect_values}\n\n"
+                        f"Audited supported claims as JSON:\n{claim_values}"
                     ),
                 },
             ],

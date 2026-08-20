@@ -5,7 +5,7 @@ import re
 import unicodedata
 from pathlib import PurePosixPath
 
-QUERY_PLAN_ALGORITHM = "bounded_query_plan_v3"
+QUERY_PLAN_ALGORITHM = "bounded_query_plan_v4"
 MAX_PLANNED_QUERIES = 6
 MAX_NAVIGATION_IDENTIFIERS = 12
 MAX_PLANNED_ASPECTS = 6
@@ -195,17 +195,56 @@ def normalize_query_plan(
         maximum=MAX_NAVIGATION_IDENTIFIERS,
         length=120,
     )
-    aspects = safe_strings(
-        value.get("aspects"),
-        maximum=MAX_PLANNED_ASPECTS,
-        length=120,
-    )
+    # Coverage is a contract with the user, not a list of useful retrieval
+    # hypotheses. Require every mandatory aspect to point back to an exact span
+    # in the question. This prevents a planner from turning adjacent concepts
+    # (tests, boundary handling, output, and so on) into completion blockers.
+    aspect_anchors: list[dict[str, str]] = []
+    seen_aspects: set[str] = set()
+    raw_aspects = value.get("aspects")
+    if isinstance(raw_aspects, list):
+        normalized_query = _normalized(original)
+        for raw_aspect in raw_aspects:
+            if isinstance(raw_aspect, dict):
+                aspect_value = raw_aspect.get("aspect")
+                span_value = raw_aspect.get("question_span")
+            elif isinstance(raw_aspect, str):
+                # Backwards-compatible input remains safe only when the aspect
+                # itself is visibly present in the original question.
+                aspect_value = raw_aspect
+                span_value = raw_aspect
+            else:
+                continue
+            if not isinstance(aspect_value, str) or not isinstance(span_value, str):
+                continue
+            aspect = " ".join(aspect_value.split()).strip()
+            question_span = " ".join(span_value.split()).strip()
+            normalized_span = _normalized(question_span)
+            key = aspect.casefold()
+            if (
+                not aspect
+                or len(aspect) > 120
+                or not question_span
+                or len(question_span) > 200
+                or not normalized_span
+                or normalized_span not in normalized_query
+                or key in seen_aspects
+            ):
+                continue
+            seen_aspects.add(key)
+            aspect_anchors.append(
+                {"aspect": aspect, "question_span": question_span}
+            )
+            if len(aspect_anchors) >= MAX_PLANNED_ASPECTS:
+                break
+    aspects = [item["aspect"] for item in aspect_anchors]
     return {
         "algorithm": QUERY_PLAN_ALGORITHM,
         "generated": bool(proposed_queries or identifiers or aspects),
         "queries": queries,
         "identifiers": identifiers,
         "aspects": aspects,
+        "aspect_anchors": aspect_anchors,
     }
 
 

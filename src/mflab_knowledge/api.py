@@ -55,6 +55,7 @@ from mflab_knowledge.generation import (
 from mflab_knowledge.grounding import citation_coverage, citation_ids
 from mflab_knowledge.investigator import (
     AGENT_INVESTIGATION_ALGORITHM,
+    ANSWER_COVERAGE_ALGORITHM,
     MAX_ACTIONS_PER_ITERATION,
     MAX_AGENT_ITERATIONS,
     bounded_action_batch,
@@ -64,6 +65,7 @@ from mflab_knowledge.investigator import (
     coverage_summary,
     fallback_investigation_actions,
     merge_required_coverage,
+    normalize_answer_coverage,
     normalize_investigation_decision,
     pending_graph_continuations,
     prioritize_kept_chunk_ids,
@@ -1119,6 +1121,14 @@ class RagApiService:
                     for value in query_plan.get("aspects", [])
                     if isinstance(value, str)
                 ],
+                "aspect_anchors": [
+                    {
+                        "aspect": str(item.get("aspect", "")),
+                        "question_span": str(item.get("question_span", "")),
+                    }
+                    for item in query_plan.get("aspect_anchors", [])
+                    if isinstance(item, dict)
+                ],
             }
         planned_queries = exploration["queries"]
         assert isinstance(planned_queries, list)
@@ -1344,6 +1354,7 @@ class RagApiService:
             planned_aspects,
             [],
             [],
+            required_only=True,
         )
         agent_actions: list[dict[str, str]] = []
         kept_chunk_ids: list[str] = []
@@ -1419,6 +1430,7 @@ class RagApiService:
                     planned_aspects,
                     agent_coverage,
                     decision["coverage"],
+                    required_only=True,
                 )
                 decision["coverage"] = agent_coverage
                 decision["stop"] = bool(decision["stop"]) and all(
@@ -1965,6 +1977,7 @@ class RagApiService:
                         planned_aspects,
                         agent_coverage,
                         reconciliation["coverage"],
+                        required_only=True,
                     )
                     for chunk_id in reconciliation["keep_chunk_ids"]:
                         if chunk_id not in kept_chunk_ids:
@@ -2943,18 +2956,100 @@ class RagApiService:
         verification_failed = bool(
             verification_expected and verification.get("passed") is not True
         )
+        raw_exploration = context.get("exploration")
+        raw_query_plan = (
+            raw_exploration.get("query_plan")
+            if isinstance(raw_exploration, dict)
+            else None
+        )
+        required_answer_aspects = [
+            str(value)
+            for value in (
+                raw_query_plan.get("aspects", [])
+                if isinstance(raw_query_plan, dict)
+                else []
+            )
+            if isinstance(value, str)
+        ]
+        answer_coverage: dict[str, object] = {
+            "algorithm": ANSWER_COVERAGE_ALGORITHM,
+            "performed": False,
+            "complete": False,
+            "coverage": [],
+            "summary": {},
+        }
+        coverage_auditor = getattr(self.generator, "assess_coverage", None)
+        raw_verified_claims = verification.get("claims")
+        supported_claims = [
+            claim
+            for claim in (
+                raw_verified_claims if isinstance(raw_verified_claims, list) else []
+            )
+            if isinstance(claim, dict) and claim.get("verdict") == "supported"
+        ]
+        if (
+            not verification_failed
+            and required_answer_aspects
+            and supported_claims
+            and callable(coverage_auditor)
+        ):
+            record(
+                "verification",
+                "Cobertura da pergunta em conferência",
+                "As afirmações já sustentadas serão comparadas aos aspectos pedidos pelo usuário.",
+                {"aspects": len(required_answer_aspects)},
+            )
+            try:
+                raw_answer_coverage = coverage_auditor(
+                    question=str(context["query"]),
+                    answer=answer,
+                    aspects=required_answer_aspects,
+                    supported_claims=supported_claims,
+                )
+                answer_coverage = normalize_answer_coverage(
+                    raw_answer_coverage,
+                    required_aspects=required_answer_aspects,
+                    valid_claim_ids={
+                        str(claim.get("claim_id", ""))
+                        for claim in supported_claims
+                        if claim.get("claim_id")
+                    },
+                )
+                record(
+                    "verification",
+                    "Cobertura da pergunta conferida",
+                    "A completude foi avaliada sem transformar planejamento em evidência.",
+                    {
+                        "complete": bool(answer_coverage.get("complete")),
+                        "coverage": answer_coverage.get("summary", {}),
+                    },
+                )
+            except (GenerationUnavailableError, ValueError, TypeError) as exc:
+                self.log(
+                    f"Auditoria de cobertura indisponível: {exc}",
+                    "warning",
+                )
         raw_agent = context.get("agent_investigation")
         raw_coverage = (
             raw_agent.get("coverage", [])
             if isinstance(raw_agent, dict)
             else []
         )
-        coverage_limited = bool(raw_coverage) and any(
-            isinstance(item, dict) and item.get("status") != "covered"
-            for item in raw_coverage
-        )
+        if answer_coverage.get("performed") is True:
+            coverage_limited = answer_coverage.get("complete") is not True
+        else:
+            coverage_limited = bool(raw_coverage) and any(
+                isinstance(item, dict) and item.get("status") != "covered"
+                for item in raw_coverage
+            )
         if verification_failed:
             answer_completeness = "not_delivered"
+        elif answer_coverage.get("complete") is True:
+            # A deterministic salvage may delete overclaims yet still retain a
+            # complete answer. Completion is granted only after every remaining
+            # claim and every user-anchored aspect pass their separate audits.
+            answer_completeness = "complete"
+            supported_subset_only = False
         elif supported_subset_only:
             answer_completeness = "supported_subset"
         elif coverage_limited:
@@ -3042,6 +3137,7 @@ class RagApiService:
             "abstained": verification_failed,
             "reason": "evidence_not_supported" if verification_failed else None,
             "answer_completeness": answer_completeness,
+            "answer_coverage": answer_coverage,
             "model": generated["model"],
             "finish_reason": generated["finish_reason"],
             "usage": generated["usage"],

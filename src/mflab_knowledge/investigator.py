@@ -7,7 +7,8 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v16"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v17"
+ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v1"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -78,7 +79,9 @@ def _json_object(raw: str | dict[str, object]) -> dict[str, object]:
                 possible, _end = decoder.raw_decode(candidate, match.start())
             except json.JSONDecodeError:
                 continue
-            if isinstance(possible, dict) and "actions" in possible:
+            if isinstance(possible, dict) and (
+                "actions" in possible or "coverage" in possible
+            ):
                 value = possible
                 break
     if not isinstance(value, dict):
@@ -184,6 +187,77 @@ def normalize_investigation_decision(
             and bool(coverage)
             and all(item["status"] == "covered" for item in coverage)
         ),
+    }
+
+
+def normalize_answer_coverage(
+    raw: str | dict[str, object],
+    *,
+    required_aspects: Iterable[str],
+    valid_claim_ids: set[str],
+) -> dict[str, object]:
+    """Validate a completeness judgment over claims already audited as supported."""
+
+    required: list[str] = []
+    required_keys: set[str] = set()
+    for raw_aspect in required_aspects:
+        aspect = _bounded_text(raw_aspect, maximum=120)
+        if aspect is None or aspect.casefold() in required_keys:
+            continue
+        required.append(aspect)
+        required_keys.add(aspect.casefold())
+        if len(required) >= 6:
+            break
+    value = _json_object(raw)
+    by_aspect: dict[str, dict[str, object]] = {}
+    raw_coverage = value.get("coverage")
+    if isinstance(raw_coverage, list):
+        for raw_item in raw_coverage:
+            if not isinstance(raw_item, dict):
+                continue
+            aspect = _bounded_text(raw_item.get("aspect"), maximum=120)
+            status = str(raw_item.get("status", ""))
+            if (
+                aspect is None
+                or aspect.casefold() not in required_keys
+                or status not in ALLOWED_COVERAGE
+            ):
+                continue
+            raw_ids = raw_item.get("claim_ids")
+            claim_ids = (
+                list(
+                    dict.fromkeys(
+                        str(claim_id)
+                        for claim_id in raw_ids
+                        if str(claim_id) in valid_claim_ids
+                    )
+                )[:12]
+                if isinstance(raw_ids, list)
+                else []
+            )
+            if status == "covered" and not claim_ids:
+                status = "partial"
+            by_aspect[aspect.casefold()] = {
+                "aspect": next(
+                    value for value in required if value.casefold() == aspect.casefold()
+                ),
+                "status": status,
+                "claim_ids": claim_ids,
+            }
+    coverage = [
+        by_aspect.get(
+            aspect.casefold(),
+            {"aspect": aspect, "status": "gap", "claim_ids": []},
+        )
+        for aspect in required
+    ]
+    return {
+        "algorithm": ANSWER_COVERAGE_ALGORITHM,
+        "performed": bool(required),
+        "complete": bool(coverage)
+        and all(item["status"] == "covered" for item in coverage),
+        "coverage": coverage,
+        "summary": coverage_summary(coverage),
     }
 
 
@@ -733,6 +807,8 @@ def merge_required_coverage(
     required_aspects: Iterable[str],
     previous: list[dict[str, object]],
     current: list[dict[str, object]],
+    *,
+    required_only: bool = False,
 ) -> list[dict[str, object]]:
     """Preserve the question's bounded coverage contract across model cycles."""
 
@@ -773,6 +849,8 @@ def merge_required_coverage(
             )
             if status == "covered" and not chunk_ids:
                 status = "partial"
+            if key not in by_aspect and required_only:
+                continue
             if key not in by_aspect:
                 order.append(key)
             by_aspect[key] = {

@@ -79,9 +79,13 @@ LOG="$PROJECT_DIR/logs/${SUITE_NAME}-$TIMESTAMP.log"
 REPORT="$PROJECT_DIR/data/${SUITE_NAME}-$TIMESTAMP.generated.json"
 
 mkdir -p "$PROJECT_DIR/logs" "$PROJECT_DIR/data"
+USE_COLOR=0
+if [[ -t 1 ]]; then
+  USE_COLOR=1
+fi
 exec > >(tee -a "$LOG") 2>&1
 
-if [[ -t 1 ]]; then
+if [[ "$USE_COLOR" -eq 1 ]]; then
   GREEN=$'\033[1;32m'
   YELLOW=$'\033[1;33m'
   RED=$'\033[1;31m'

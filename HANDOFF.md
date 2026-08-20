@@ -733,6 +733,20 @@ planejador também deixa de transformar testes, documentação, saída ou limpez
 em aspectos obrigatórios quando a pergunta não os solicita. Nenhuma dessas
 regras contém nomes de projeto, branch, arquivo, símbolo ou mecanismo.
 
+A validação real da 0.42.2 mostrou avanço material: a explicação detalhada
+preservou configuração, inicialização, avanço e integração com quatro
+afirmações sustentadas, mas foi reprovada porque o planejador havia promovido
+`state evolution` e `boundary handling` a obrigações não pedidas e classificou
+evidências diretas como parciais. A 0.42.3 separa hipótese de busca de contrato
+de resposta. Cada aspecto obrigatório precisa apontar para um trecho literal da
+pergunta; aspectos inventados ou apenas adjacentes são descartados pelo
+servidor. Depois da auditoria factual, uma segunda auditoria de cobertura usa
+somente afirmações já sustentadas para decidir se cada aspecto pedido foi
+atendido. Uma poda de sobreafirmações pode, portanto, terminar como resposta
+completa quando o conteúdo restante ainda satisfaz toda a pergunta. A resposta
+e o resumo de laboratório expõem essa cobertura final. A implementação é
+genérica e não contém nomes de projeto, branch, arquivos ou mecanismos.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

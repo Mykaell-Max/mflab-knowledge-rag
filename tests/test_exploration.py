@@ -106,7 +106,9 @@ class ExplorationTests(unittest.TestCase):
             {"queries":["mesh creation call flow","adaptive mesh configuration",
             "mesh creation call flow","caller tests"],
             "identifiers":["MeshFactory","initialize","generate"],
-            "aspects":["construction","configuration","runtime integration"]}
+            "aspects":[
+              {"aspect":"initialization","question_span":"inicializada"},
+              {"aspect":"runtime integration","question_span":"runtime"}]}
             ```""",
             original_query="Onde a malha é inicializada?",
             fallback_queries=["Onde a malha é inicializada? definition caller"],
@@ -117,7 +119,11 @@ class ExplorationTests(unittest.TestCase):
         self.assertEqual(plan["identifiers"], ["MeshFactory", "initialize", "generate"])
         self.assertEqual(
             plan["aspects"],
-            ["construction", "configuration", "runtime integration"],
+            ["initialization"],
+        )
+        self.assertEqual(
+            plan["aspect_anchors"],
+            [{"aspect": "initialization", "question_span": "inicializada"}],
         )
         self.assertTrue(plan["generated"])
 

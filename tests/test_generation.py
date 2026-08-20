@@ -307,9 +307,10 @@ class GenerationTests(unittest.TestCase):
         self.assertIn("acronyms", payload["messages"][0]["content"])
         self.assertIn("factory selection", payload["messages"][0]["content"])
         self.assertIn("later configuration", payload["messages"][0]["content"])
-        self.assertIn("organizational facets", payload["messages"][0]["content"])
+        self.assertIn("mandatory answer facet", payload["messages"][0]["content"])
+        self.assertIn("question_span", payload["messages"][0]["content"])
         self.assertIn(
-            "unless the user asks about them",
+            "unless an exact question_span requests them",
             payload["messages"][0]["content"],
         )
         self.assertIn("MeshFactory", result)
@@ -368,6 +369,53 @@ class GenerationTests(unittest.TestCase):
             payload["messages"][1]["content"],
         )
         self.assertIn("factory create initialize", result)
+
+    def test_answer_coverage_auditor_uses_only_supported_claims(self) -> None:
+        config = generation.GenerationConfig(
+            path=Path("generation.toml"),
+            base_url="http://127.0.0.1:8000/v1",
+            model="local-test-model",
+        )
+        captured: dict[str, object] = {}
+
+        def opener(request: object, *, timeout: int) -> _Response:
+            del timeout
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return _Response(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": '{"coverage":[{"aspect":"runtime flow",'
+                                '"status":"covered","claim_ids":["C1"]}]}'
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ]
+                }
+            )
+
+        generator = generation.OpenAICompatibleGenerator(config, opener=opener)
+        result = generator.assess_coverage(
+            question="Explain the runtime flow",
+            answer="The runtime advances [S1].",
+            aspects=["runtime flow"],
+            supported_claims=[
+                {
+                    "claim_id": "C1",
+                    "claim": "The runtime advances [S1].",
+                    "verdict": "supported",
+                    "source_ids": ["S1"],
+                }
+            ],
+        )
+
+        payload = captured["payload"]
+        self.assertEqual(payload["temperature"], 0.0)
+        self.assertEqual(payload["response_format"], {"type": "json_object"})
+        self.assertIn("already passed", payload["messages"][0]["content"])
+        self.assertIn("runtime flow", payload["messages"][1]["content"])
+        self.assertIn("covered", result)
 
 
 if __name__ == "__main__":

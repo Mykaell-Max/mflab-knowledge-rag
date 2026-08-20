@@ -44,7 +44,8 @@ class _PlanningGenerator(_Generator):
         return (
             '{"queries":["mesh creation initialization call flow"],'
             '"identifiers":["MeshFactory","initialize"],'
-            '"aspects":["construction","runtime integration"]}'
+            '"aspects":['
+            '{"aspect":"initialization","question_span":"inicializada"}]}'
         )
 
 
@@ -182,6 +183,22 @@ class _SupportDiscoveringGenerator(_VerifyingGenerator):
     def discover_support(self, **kwargs: object) -> str:
         self.discovery_calls.append(kwargs)
         return next(self.discoveries)
+
+
+class _CoverageVerifyingGenerator(_VerifyingGenerator):
+    def __init__(
+        self,
+        answers: list[str],
+        audits: list[str],
+        coverage_audits: list[str],
+    ) -> None:
+        super().__init__(answers, audits)
+        self.coverage_audits = iter(coverage_audits)
+        self.coverage_calls: list[dict[str, object]] = []
+
+    def assess_coverage(self, **kwargs: object) -> str:
+        self.coverage_calls.append(kwargs)
+        return next(self.coverage_audits)
 
 
 class ApiServiceTests(unittest.TestCase):
@@ -1398,7 +1415,11 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("MeshFactory", query_plan["identifiers"])
         self.assertEqual(
             query_plan["aspects"],
-            ["construction", "runtime integration"],
+            ["initialization"],
+        )
+        self.assertEqual(
+            query_plan["aspect_anchors"],
+            [{"aspect": "initialization", "question_span": "inicializada"}],
         )
 
     def test_structural_anchor_marks_an_existing_search_result(self) -> None:
@@ -2027,6 +2048,92 @@ class ApiServiceTests(unittest.TestCase):
         )
         self.assertIn(
             "Investigação concluída com limitações",
+            [step["title"] for step in progress],
+        )
+
+    def test_audited_answer_coverage_can_confirm_a_complete_salvaged_answer(
+        self,
+    ) -> None:
+        generator = _CoverageVerifyingGenerator(
+            answers=[
+                "The runtime advances state [S1].\n\n"
+                "This proves an unrelated feature [S1]."
+            ],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported","source_ids":["S1"]},'
+                '{"claim_id":"C2","verdict":"unsupported","source_ids":["S1"]}]}',
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported","source_ids":["S1"]}]}',
+            ],
+            coverage_audits=[
+                '{"coverage":[{"aspect":"runtime flow","status":"covered",'
+                '"claim_ids":["C1"]}]}'
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        progress: list[dict[str, object]] = []
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the runtime flow",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 40,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                        "path": "src/runtime.cpp",
+                        "text": "The runtime advances state.",
+                    }
+                ],
+                "exploration": {
+                    "intent": "mechanism",
+                    "query_plan": {"aspects": ["runtime flow"]},
+                },
+                "agent_investigation": {
+                    "coverage": [
+                        {
+                            "aspect": "runtime flow",
+                            "status": "partial",
+                            "chunk_ids": ["runtime"],
+                        }
+                    ]
+                },
+                "investigation": {"steps": []},
+            },
+        ):
+            result = service.ask(
+                query="Explain the runtime flow",
+                response_depth="detailed",
+                progress_callback=progress.append,
+            )
+
+        self.assertFalse(result["abstained"])
+        self.assertEqual(result["answer_completeness"], "complete")
+        self.assertTrue(result["answer_coverage"]["complete"])
+        self.assertEqual(result["answer"], "The runtime advances state [S1].")
+        self.assertEqual(len(generator.coverage_calls), 1)
+        self.assertIn(
+            "Cobertura da pergunta conferida",
             [step["title"] for step in progress],
         )
 

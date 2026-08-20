@@ -281,12 +281,16 @@ gerador não recebe autorização para reconstruir código ausente das fontes.
 }
 ```
 
-A resposta inclui `answer`, `answer_completeness`, `citations_used`,
+A resposta inclui `answer`, `answer_completeness`, `answer_coverage`, `citations_used`,
 `invalid_citations`, `sources`, `scopes`, `citation_coverage`,
 `scope_citation_coverage`, `verification` e `investigation`.
-`answer_completeness` vale `complete` somente quando a resposta não perdeu
-afirmações na auditoria e o caderno não conservou aspectos pendentes. O valor
-`coverage_limited` indica aspectos parciais ou ausentes; `supported_subset`
+`answer_completeness` vale `complete` somente quando todas as afirmações finais
+passaram na auditoria e cada aspecto obrigatório ancorado no texto da pergunta
+foi atendido por essas afirmações. Uma poda de sobreafirmações não impede
+`complete` quando o subconjunto restante ainda satisfaz integralmente a
+solicitação. O campo `answer_coverage` registra essa segunda auditoria sem
+transformar o planejamento em evidência. O valor `coverage_limited` indica
+aspectos parciais ou ausentes; `supported_subset`
 indica que a auditoria preservou somente afirmações isoladas de uma síntese
 maior; e `not_delivered` acompanha uma resposta bloqueada. A interface apresenta
 essas limitações em linguagem simples, sem anunciar uma explicação completa.

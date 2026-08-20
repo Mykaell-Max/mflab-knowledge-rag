@@ -20,6 +20,8 @@ def show_response(label: str, response: dict[str, object]) -> None:
     agent = agent if isinstance(agent, dict) else {}
     verification = response.get("verification")
     verification = verification if isinstance(verification, dict) else {}
+    answer_coverage = response.get("answer_coverage")
+    answer_coverage = answer_coverage if isinstance(answer_coverage, dict) else {}
     actions = agent.get("actions")
     actions = actions if isinstance(actions, list) else []
     coverage = agent.get("coverage")
@@ -81,6 +83,23 @@ def show_response(label: str, response: dict[str, object]) -> None:
         f" | incertas={counts.get('uncertain', 0)}"
         f" | não sustentadas={counts.get('unsupported', 0)}"
     )
+    audited_aspects = answer_coverage.get("coverage")
+    audited_aspects = audited_aspects if isinstance(audited_aspects, list) else []
+    if audited_aspects:
+        print(
+            "  cobertura final da resposta:"
+            f" completa={answer_coverage.get('complete')}"
+        )
+        for raw_aspect in audited_aspects:
+            if not isinstance(raw_aspect, dict):
+                continue
+            claim_ids = raw_aspect.get("claim_ids")
+            claim_count = len(claim_ids) if isinstance(claim_ids, list) else 0
+            print(
+                f"    - {raw_aspect.get('aspect')}:"
+                f" {raw_aspect.get('status')}"
+                f" ({claim_count} afirmação(ões) sustentada(s))"
+            )
     print(
         f"  resposta: abstida={response.get('abstained')}"
         f" | grounding={response.get('grounding_status')}"

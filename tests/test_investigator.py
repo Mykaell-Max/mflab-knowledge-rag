@@ -9,6 +9,7 @@ from mflab_knowledge.investigator import (
     coverage_needs_structural_connection,
     fallback_investigation_actions,
     merge_required_coverage,
+    normalize_answer_coverage,
     normalize_investigation_decision,
     pending_graph_continuations,
     prioritize_kept_chunk_ids,
@@ -19,6 +20,71 @@ from mflab_knowledge.investigator import (
 
 
 class InvestigatorTests(unittest.TestCase):
+    def test_answer_coverage_accepts_only_required_aspects_and_supported_claims(
+        self,
+    ) -> None:
+        result = normalize_answer_coverage(
+            {
+                "coverage": [
+                    {
+                        "aspect": "configuration",
+                        "status": "covered",
+                        "claim_ids": ["C1", "invented"],
+                    },
+                    {
+                        "aspect": "boundary handling",
+                        "status": "covered",
+                        "claim_ids": ["C1"],
+                    },
+                ]
+            },
+            required_aspects=["configuration", "runtime flow"],
+            valid_claim_ids={"C1"},
+        )
+
+        self.assertFalse(result["complete"])
+        self.assertEqual(
+            result["coverage"],
+            [
+                {
+                    "aspect": "configuration",
+                    "status": "covered",
+                    "claim_ids": ["C1"],
+                },
+                {"aspect": "runtime flow", "status": "gap", "claim_ids": []},
+            ],
+        )
+
+    def test_required_only_coverage_discards_planner_adjacent_facets(self) -> None:
+        merged = merge_required_coverage(
+            ["initialization"],
+            [],
+            [
+                {
+                    "aspect": "initialization",
+                    "status": "covered",
+                    "chunk_ids": ["init"],
+                },
+                {
+                    "aspect": "boundary handling",
+                    "status": "gap",
+                    "chunk_ids": [],
+                },
+            ],
+            required_only=True,
+        )
+
+        self.assertEqual(
+            merged,
+            [
+                {
+                    "aspect": "initialization",
+                    "status": "covered",
+                    "chunk_ids": ["init"],
+                }
+            ],
+        )
+
     def test_required_coverage_survives_an_empty_or_incomplete_model_ledger(self) -> None:
         seeded = merge_required_coverage(
             ["configuration", "runtime integration"],

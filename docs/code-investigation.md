@@ -230,6 +230,15 @@ arquivo. Essa diversidade é de
 evidência, não de verdade: não promove um arquivo a mecanismo correto, e toda
 afirmação produzida continua vinculada às fontes e submetida à auditoria.
 
+Desde a 0.42.3, aspectos obrigatórios precisam carregar uma citação literal da
+pergunta (`question_span`). Conceitos apenas úteis para procurar código podem
+continuar em consultas e identificadores, mas não bloqueiam a completude. Após
+a auditoria de cada afirmação, uma checagem separada compara somente as
+afirmações sustentadas com esses aspectos ancorados. Dessa forma, remover uma
+sobreafirmação não transforma automaticamente uma explicação suficiente em
+resposta parcial, enquanto pedidos explícitos de fluxo, comparação ou trechos
+de código continuam exigindo que essa forma apareça na resposta final.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos
