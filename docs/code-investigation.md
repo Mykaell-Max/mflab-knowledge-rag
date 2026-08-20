@@ -119,3 +119,13 @@ O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos
 de símbolos mais precisos, busca bidirecional entre chamadores e definições e
 mais ferramentas estruturais. Essas extensões devem continuar genéricas,
 versionadas e avaliadas separadamente por corpus.
+
+O subgrafo realmente percorrido também deverá ser devolvido como dado público
+da resposta e exibido, depois das citações, em um painel recolhível. A
+visualização deve ser pequena e orientada à consulta, com nós para arquivos e
+símbolos e arestas somente para relações persistidas no índice. Cada elemento
+deve preservar projeto, branch, commit, linhas, ACL e vínculo com a fonte. Ela
+não representa pensamento privado do modelo: representa apenas a trilha
+estrutural verificável que ajudou a selecionar as evidências. Relações incertas
+ou não resolvidas devem aparecer separadas das conexões confirmadas, nunca como
+uma aresta factual comum.

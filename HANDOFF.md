@@ -459,6 +459,18 @@ modelo e continua exigindo uma auditoria final. A próxima execução real deve
 confirmar se a navegação recupera os pontos de integração esperados e se o caso
 de fluxo deixa de abster sem relaxar a sustentação.
 
+Foi registrado como requisito de interface visualizar o grafo usado na
+investigação. Depois da resposta e das citações, a interface deverá poder exibir
+um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:
+arquivos, símbolos e relações como chamadas, dependências, companheiros e
+chamadores. A visualização não deve despejar o grafo inteiro do repositório nem
+expor raciocínio interno do modelo. Cada nó e aresta deve vir de dados
+estruturais persistidos, respeitar projeto, branch, commit e ACL, e permitir
+abrir a fonte correspondente. Relações propostas pelo modelo não podem aparecer
+como fatos; conexões não resolvidas devem ser identificadas como tais. O objetivo
+é ajudar o usuário a compreender o fluxo técnico e também tornar auditável o
+caminho de evidências utilizado na resposta.
+
 O modo padrão permanece em `127.0.0.1`. A exposição à rede local é opt-in e a
 porta deve ser limitada à sub-rede confiável. Busca e pergunta da interface usam
 rotas web somente leitura; administração usa senha separada. Um segredo
@@ -470,10 +482,11 @@ Depois da interface demonstrável, a ordem recomendada é:
 1. autenticação individual e política de acesso multiusuário;
 2. ampliar avaliações multi-repositório e multi-branch;
 3. substituir âncoras heurísticas por parsing estrutural genérico para C, C++,
-   Fortran, CMake e casos configurados;
-4. adicionar conectores autorizados para issues, merge requests, documentos e
+   Fortran, CMake e casos configurados, incluindo chamadas e usos de símbolos;
+4. visualizar na interface o subgrafo comprovado e percorrido em cada resposta;
+5. adicionar conectores autorizados para issues, merge requests, documentos e
    demais fontes do laboratório;
-5. avaliar MCP e ferramentas controladas somente após consolidar a camada de
+6. avaliar MCP e ferramentas controladas somente após consolidar a camada de
    leitura.
 
 ## 12. Forma de colaboração adotada
