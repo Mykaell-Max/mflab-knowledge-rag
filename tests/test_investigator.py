@@ -13,7 +13,9 @@ from mflab_knowledge.investigator import (
     normalize_investigation_decision,
     pending_graph_continuations,
     prioritize_kept_chunk_ids,
+    reconcile_answer_coverage_with_provenance,
     repeated_complete_coverage,
+    reserve_chunk_ids_by_aspect,
     select_graph_frontier_results,
     successful_graph_traversal,
 )
@@ -665,6 +667,53 @@ class InvestigatorTests(unittest.TestCase):
         self.assertEqual(
             selected,
             ["entry-a", "runtime", "integration", "entry-b"],
+        )
+
+    def test_reservation_returns_one_distinct_chunk_per_aspect(self) -> None:
+        self.assertEqual(
+            reserve_chunk_ids_by_aspect(
+                [
+                    {"aspect": "entry", "chunk_ids": ["shared", "entry"]},
+                    {"aspect": "runtime", "chunk_ids": ["shared", "runtime"]},
+                    {"aspect": "gap", "chunk_ids": []},
+                ]
+            ),
+            ["shared", "runtime"],
+        )
+
+    def test_answer_coverage_uses_audited_provenance_only_as_partial_floor(
+        self,
+    ) -> None:
+        result = reconcile_answer_coverage_with_provenance(
+            {
+                "algorithm": "test",
+                "performed": True,
+                "complete": False,
+                "coverage": [
+                    {"aspect": "entry", "status": "gap", "claim_ids": []},
+                    {"aspect": "flow", "status": "gap", "claim_ids": []},
+                ],
+            },
+            investigation_coverage=[
+                {"aspect": "entry", "chunk_ids": ["entry"]},
+                {"aspect": "flow", "chunk_ids": ["flow"]},
+            ],
+            sources=[
+                {"source_id": "S1", "chunk_id": "entry"},
+                {"source_id": "S2", "chunk_id": "flow"},
+            ],
+            supported_claims=[
+                {"claim_id": "C1", "source_ids": ["S1"]},
+            ],
+        )
+
+        self.assertFalse(result["complete"])
+        self.assertEqual(
+            result["coverage"],
+            [
+                {"aspect": "entry", "status": "partial", "claim_ids": ["C1"]},
+                {"aspect": "flow", "status": "gap", "claim_ids": []},
+            ],
         )
 
     def test_complete_coverage_must_repeat_with_the_same_evidence(self) -> None:

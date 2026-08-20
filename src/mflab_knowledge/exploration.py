@@ -201,6 +201,7 @@ def normalize_query_plan(
     # (tests, boundary handling, output, and so on) into completion blockers.
     aspect_anchors: list[dict[str, str]] = []
     seen_aspects: set[str] = set()
+    seen_spans: set[str] = set()
     raw_aspects = value.get("aspects")
     if isinstance(raw_aspects, list):
         normalized_query = _normalized(original)
@@ -229,9 +230,11 @@ def normalize_query_plan(
                 or not normalized_span
                 or normalized_span not in normalized_query
                 or key in seen_aspects
+                or normalized_span in seen_spans
             ):
                 continue
             seen_aspects.add(key)
+            seen_spans.add(normalized_span)
             aspect_anchors.append(
                 {"aspect": aspect, "question_span": question_span}
             )

@@ -151,6 +151,21 @@ class ExplorationTests(unittest.TestCase):
             any("factory creation" in query for query in plan["queries"])
         )
 
+    def test_query_plan_deduplicates_aspects_anchored_to_the_same_words(self) -> None:
+        plan = normalize_query_plan(
+            {
+                "aspects": [
+                    {"aspect": "initialization", "question_span": "initializes"},
+                    {"aspect": "setup", "question_span": "initializes"},
+                    {"aspect": "flow", "question_span": "flow"},
+                ]
+            },
+            original_query="Explain how it initializes and show the flow",
+            fallback_queries=[],
+        )
+
+        self.assertEqual(plan["aspects"], ["initialization", "flow"])
+
     def test_query_plan_rejects_malformed_output(self) -> None:
         with self.assertRaisesRegex(ValueError, "JSON"):
             normalize_query_plan(

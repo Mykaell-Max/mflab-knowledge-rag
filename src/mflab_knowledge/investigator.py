@@ -7,8 +7,8 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v17"
-ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v1"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v18"
+ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v2"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -507,6 +507,96 @@ def prioritize_kept_chunk_ids(
     return prioritized
 
 
+def reserve_chunk_ids_by_aspect(
+    coverage: Iterable[dict[str, object]],
+) -> list[str]:
+    """Reserve one distinct observed chunk for every evidenced answer facet."""
+
+    reserved: list[str] = []
+    for item in coverage:
+        raw_ids = item.get("chunk_ids")
+        if not isinstance(raw_ids, list):
+            continue
+        for chunk_id in raw_ids:
+            value = str(chunk_id)
+            if value and value not in reserved:
+                reserved.append(value)
+                break
+    return reserved
+
+
+def reconcile_answer_coverage_with_provenance(
+    answer_coverage: dict[str, object],
+    *,
+    investigation_coverage: Iterable[dict[str, object]],
+    sources: Iterable[dict[str, object]],
+    supported_claims: Iterable[dict[str, object]],
+) -> dict[str, object]:
+    """Use audited claim provenance as a conservative floor for facet coverage.
+
+    The semantic auditor remains the only component allowed to declare an
+    aspect covered. This join can only turn an implausible gap into partial
+    when a supported claim cites the exact chunk retained for that aspect.
+    """
+
+    raw_items = answer_coverage.get("coverage")
+    if not isinstance(raw_items, list):
+        return answer_coverage
+    source_ids_by_chunk: dict[str, set[str]] = {}
+    for source in sources:
+        chunk_id = str(source.get("chunk_id", ""))
+        source_id = str(source.get("source_id", ""))
+        if chunk_id and source_id:
+            source_ids_by_chunk.setdefault(chunk_id, set()).add(source_id)
+    claim_ids_by_source: dict[str, list[str]] = {}
+    for claim in supported_claims:
+        claim_id = str(claim.get("claim_id", ""))
+        raw_source_ids = claim.get("source_ids")
+        if not claim_id or not isinstance(raw_source_ids, list):
+            continue
+        for source_id in raw_source_ids:
+            value = str(source_id)
+            if value:
+                claim_ids_by_source.setdefault(value, []).append(claim_id)
+    investigation_by_aspect = {
+        str(item.get("aspect", "")).casefold(): item
+        for item in investigation_coverage
+        if str(item.get("aspect", "")).strip()
+    }
+    reconciled: list[dict[str, object]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        item = dict(raw_item)
+        if item.get("status") == "gap":
+            investigation_item = investigation_by_aspect.get(
+                str(item.get("aspect", "")).casefold()
+            )
+            raw_chunk_ids = (
+                investigation_item.get("chunk_ids")
+                if isinstance(investigation_item, dict)
+                else None
+            )
+            supporting_claim_ids: list[str] = []
+            if isinstance(raw_chunk_ids, list):
+                for chunk_id in raw_chunk_ids:
+                    for source_id in source_ids_by_chunk.get(str(chunk_id), set()):
+                        for claim_id in claim_ids_by_source.get(source_id, []):
+                            if claim_id not in supporting_claim_ids:
+                                supporting_claim_ids.append(claim_id)
+            if supporting_claim_ids:
+                item["status"] = "partial"
+                item["claim_ids"] = supporting_claim_ids[:12]
+        reconciled.append(item)
+    result = dict(answer_coverage)
+    result["coverage"] = reconciled
+    result["complete"] = bool(reconciled) and all(
+        item.get("status") == "covered" for item in reconciled
+    )
+    result["summary"] = coverage_summary(reconciled)
+    return result
+
+
 def repeated_complete_coverage(
     previous: Iterable[dict[str, object]],
     current: Iterable[dict[str, object]],
@@ -911,8 +1001,10 @@ def synthesis_guidance(
     return (
         " The read-only investigation produced this organizational coverage ledger: "
         + "; ".join(items)
-        + ". The ledger is planning metadata, not evidence. Use it to organize a "
-        "coherent explanation, but support every factual statement with the actual "
-        "sources. Explain covered aspects, qualify partial aspects, and explicitly "
-        "leave gaps unresolved instead of filling them with outside knowledge."
+        + ". The ledger is provisional planning metadata, not evidence and not a "
+        "verdict about the final source package. Use it to organize a coherent "
+        "explanation, but inspect the supplied sources themselves and support every "
+        "factual statement with them. A prior gap may be answered when a final source "
+        "directly supports it; otherwise leave it unresolved instead of filling it "
+        "with outside knowledge."
     )

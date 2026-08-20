@@ -69,7 +69,9 @@ from mflab_knowledge.investigator import (
     normalize_investigation_decision,
     pending_graph_continuations,
     prioritize_kept_chunk_ids,
+    reconcile_answer_coverage_with_provenance,
     repeated_complete_coverage,
+    reserve_chunk_ids_by_aspect,
     select_graph_frontier_results,
     successful_graph_traversal,
     synthesis_guidance,
@@ -170,6 +172,7 @@ def _pack_context_results(
     results: list[dict[str, object]],
     *,
     max_context_characters: int,
+    reserved_chunk_ids: list[str] | None = None,
 ) -> tuple[list[dict[str, object]], int, bool]:
     """Share a character budget across several ordered evidence sources."""
 
@@ -183,12 +186,43 @@ def _pack_context_results(
     # Reserve several scoped paths before repeated chunks from the same file.
     # The quota remains below the source cap because a coordinator may need
     # more than one method to explain its own lifecycle.
-    diverse: list[dict[str, object]] = []
-    diverse_ids: set[int] = set()
-    seen_paths: set[tuple[str, str, str]] = set()
-    for result in results:
-        if len(diverse) >= min(CONTEXT_PATH_DIVERSITY_TARGET, target):
+    reserved_results: list[dict[str, object]] = []
+    reserved_ids: set[int] = set()
+    by_chunk_id = {
+        str(result.get("chunk_id", "")): result
+        for result in results
+        if result.get("chunk_id")
+    }
+    for chunk_id in reserved_chunk_ids or []:
+        result = by_chunk_id.get(str(chunk_id))
+        if result is None or id(result) in reserved_ids:
+            continue
+        reserved_results.append(result)
+        reserved_ids.add(id(result))
+        if len(reserved_results) >= target:
             break
+    diverse: list[dict[str, object]] = []
+    diverse_ids: set[int] = set(reserved_ids)
+    seen_paths: set[tuple[str, str, str]] = set()
+    for result in reserved_results:
+        occurrence = result.get("selected_occurrence")
+        occurrence = occurrence if isinstance(occurrence, dict) else {}
+        path = str(result.get("path", ""))
+        if path:
+            seen_paths.add(
+                (
+                    str(result.get("project", "")),
+                    str(occurrence.get("branch", "")),
+                    path,
+                )
+            )
+    for result in results:
+        if len(reserved_results) + len(diverse) >= target:
+            break
+        if len(seen_paths) >= min(CONTEXT_PATH_DIVERSITY_TARGET, target):
+            break
+        if id(result) in diverse_ids:
+            continue
         path = str(result.get("path", ""))
         occurrence = result.get("selected_occurrence")
         occurrence = occurrence if isinstance(occurrence, dict) else {}
@@ -203,6 +237,7 @@ def _pack_context_results(
         diverse.append(result)
         diverse_ids.add(id(result))
     ordered_results = [
+        *reserved_results,
         *diverse,
         *(result for result in results if id(result) not in diverse_ids),
     ]
@@ -218,9 +253,10 @@ def _pack_context_results(
         if remaining <= 0:
             truncated = True
             break
-        slots_to_reserve = max(target - len(packed) - 1, 0)
-        reserved = slots_to_reserve * minimum
-        allowed = max(1, remaining - reserved)
+        slots_left = max(target - len(packed), 1)
+        # Share the budget fairly. A large first coordinator must not consume
+        # the text needed for later entry points and state transitions.
+        allowed = max(minimum, (remaining + slots_left - 1) // slots_left)
         original_text = str(result.get("text", ""))
         text = original_text[:allowed]
         value = dict(result)
@@ -2035,6 +2071,9 @@ class RagApiService:
                 kept_chunk_ids,
                 agent_coverage,
             )
+            reserved_context_chunk_ids = reserve_chunk_ids_by_aspect(
+                agent_coverage
+            )
             baseline_candidates: list[dict[str, object]] = []
             baseline_seen: set[str] = set()
             for retrieval_item in retrievals:
@@ -2070,12 +2109,14 @@ class RagApiService:
             # Evidence explicitly retained for distinct coverage aspects owns
             # the first positions. Baseline retrieval and graph frontiers fill
             # the remainder, instead of displacing later requested stages.
-            selected_chunk_ids: list[str] = list(
-                dict.fromkeys(prioritized_kept_chunk_ids)
-            )
+            selected_chunk_ids: list[str] = list(reserved_context_chunk_ids)
+            deferred_kept_chunk_ids = [
+                chunk_id
+                for chunk_id in prioritized_kept_chunk_ids
+                if chunk_id not in selected_chunk_ids
+            ]
             for position in range(
                 max(
-                    len(prioritized_kept_chunk_ids),
                     len(graph_frontier_chunk_ids),
                     len(baseline_chunk_ids),
                 )
@@ -2083,13 +2124,16 @@ class RagApiService:
                 candidates: list[str] = []
                 if position < len(baseline_chunk_ids):
                     candidates.append(baseline_chunk_ids[position])
-                frontier_offset = position * 2
-                candidates.extend(
-                    graph_frontier_chunk_ids[frontier_offset : frontier_offset + 2]
-                )
+                if position < len(graph_frontier_chunk_ids):
+                    candidates.append(graph_frontier_chunk_ids[position])
                 for chunk_id in candidates:
                     if chunk_id not in selected_chunk_ids:
                         selected_chunk_ids.append(chunk_id)
+            selected_chunk_ids.extend(
+                chunk_id
+                for chunk_id in deferred_kept_chunk_ids
+                if chunk_id not in selected_chunk_ids
+            )
             if selected_chunk_ids:
                 selected_results: list[dict[str, object]] = []
                 selected_by_chunk: dict[str, dict[str, object]] = {}
@@ -2222,6 +2266,11 @@ class RagApiService:
         packed_results, used_characters, truncated = _pack_context_results(
             raw_results,
             max_context_characters=max_context_characters,
+            reserved_chunk_ids=(
+                reserve_chunk_ids_by_aspect(agent_coverage)
+                if agent_coverage
+                else None
+            ),
         )
         sources: list[dict[str, object]] = []
         for result in packed_results:
@@ -3172,7 +3221,19 @@ class RagApiService:
                     required_aspects=required_answer_aspects,
                     valid_claim_ids=valid_supported_claim_ids,
                 )
-                answer_coverage = normalized_items
+                raw_agent_for_reconciliation = context.get(
+                    "agent_investigation"
+                )
+                answer_coverage = reconcile_answer_coverage_with_provenance(
+                    normalized_items,
+                    investigation_coverage=(
+                        raw_agent_for_reconciliation.get("coverage", [])
+                        if isinstance(raw_agent_for_reconciliation, dict)
+                        else []
+                    ),
+                    sources=raw_sources,
+                    supported_claims=supported_claims,
+                )
                 record(
                     "verification",
                     "Cobertura da pergunta conferida",

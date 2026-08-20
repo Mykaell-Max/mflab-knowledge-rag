@@ -289,6 +289,32 @@ somem apenas porque ciclos posteriores produziram muitos vizinhos do mesmo
 coordenador. A seleção continua baseada na pergunta, nas hipóteses configuradas
 e nos resultados observados, sem vocabulário científico incorporado ao motor.
 
+O teste integrado da 0.42.6 confirmou que a identidade das facetas e os
+veredictos ficaram estáveis: todas as citações entregues passaram pela auditoria
+e afirmações idênticas reutilizaram o mesmo resultado. Ele também isolou a perda
+seguinte: o agente havia observado coordenadores, chamadores e operações de
+avanço corretos, mas o pacote de seis fontes podia substituí-los por evidência
+incidental ou deixar quase todo o orçamento textual na primeira fonte.
+
+Na 0.42.7, um chunk distinto associado a cada faceta recebe reserva explícita
+antes da diversidade por caminho. A recuperação inicial e a fronteira de
+chamadas são intercaladas antes dos demais chunks mantidos, para que uma delas
+não monopolize o pacote. O orçamento textual é dividido de forma equilibrada
+entre as fontes escolhidas, com reaproveitamento natural quando uma fonte é
+curta. Essas regras operam apenas sobre IDs, ordem, proveniência e facetas
+produzidas para a pergunta atual; não contêm projetos, branches, caminhos,
+símbolos ou conceitos científicos conhecidos antecipadamente.
+
+O caderno de cobertura exploratório passa a ser explicitamente provisório na
+síntese. Uma lacuna registrada antes da composição não pode impedir o modelo de
+usar uma fonte final que sustente diretamente aquela parte da pergunta. Depois
+da resposta, a auditoria semântica ainda é a única capaz de declarar uma faceta
+completa. Uma junção determinística entre chunk, fonte citada e afirmação já
+aprovada pode apenas corrigir uma lacuna contraditória para parcial; nunca a
+promove para completa. Aspectos diferentes ancorados nas mesmas palavras da
+pergunta também são deduplicados, evitando contratos redundantes criados por
+paráfrases do planejador.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

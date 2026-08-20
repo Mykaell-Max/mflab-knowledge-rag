@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.42.0**. Antes de
+> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.42.7**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -784,6 +784,19 @@ semente fixa no provedor local. Uma amostra ranqueada das observações iniciais
 também permanece candidata à composição, evitando que descobertas de consultas
 distintas sejam deslocadas por vizinhos tardios. Nada disso contém nomes de
 projeto, branch, arquivo, símbolo ou conceito científico.
+
+O teste real dessa versão chegou a 100% de cobertura de citações e mostrou
+reutilização dos veredictos, mas as duas respostas permaneceram parciais. A
+exploração já havia encontrado os trechos esperados; eles foram perdidos ou
+receberam pouco espaço na passagem para o pacote final. Na 0.42.7, uma evidência
+por faceta é reservada antes da diversidade por caminho, a recuperação base é
+intercalada com a fronteira do grafo e o orçamento de caracteres é dividido de
+forma equilibrada. O caderno exploratório é tratado como provisório: uma lacuna
+anterior não bloqueia uma fonte final diretamente probatória. A reconciliação
+por proveniência pode elevar `gap` somente a `partial`, mantendo a declaração de
+cobertura completa exclusivamente na auditoria semântica. Âncoras distintas
+ligadas ao mesmo trecho literal da pergunta são deduplicadas. Toda essa lógica é
+genérica e usa apenas estrutura, facetas e proveniência da consulta atual.
 
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir

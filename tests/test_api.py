@@ -237,6 +237,41 @@ class ApiServiceTests(unittest.TestCase):
             ["manager-1", "state", "manager-2"],
         )
 
+    def test_context_packing_reserves_aspect_evidence_before_path_diversity(
+        self,
+    ) -> None:
+        packed, _used, _truncated = api._pack_context_results(
+            [
+                {"chunk_id": "entry", "path": "src/manager.cpp", "text": "a"},
+                {"chunk_id": "runtime", "path": "src/manager.cpp", "text": "b"},
+                {"chunk_id": "state", "path": "src/state.cpp", "text": "c"},
+                {"chunk_id": "helper", "path": "src/helper.cpp", "text": "d"},
+            ],
+            max_context_characters=4000,
+            reserved_chunk_ids=["runtime", "entry"],
+        )
+
+        self.assertEqual(
+            [result["chunk_id"] for result in packed[:2]],
+            ["runtime", "entry"],
+        )
+
+    def test_context_packing_shares_large_source_budget_fairly(self) -> None:
+        packed, used, _truncated = api._pack_context_results(
+            [
+                {"chunk_id": str(position), "text": "x" * 4000}
+                for position in range(6)
+            ],
+            max_context_characters=8000,
+        )
+
+        self.assertEqual(used, 8000)
+        self.assertLessEqual(
+            max(len(result["text"]) for result in packed)
+            - min(len(result["text"]) for result in packed),
+            1,
+        )
+
     def test_context_packing_keeps_room_for_repeated_lifecycle_methods(self) -> None:
         packed, _used, _truncated = api._pack_context_results(
             [
