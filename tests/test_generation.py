@@ -204,6 +204,10 @@ class GenerationTests(unittest.TestCase):
         payload = captured["payload"]
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertEqual(payload["temperature"], 0.0)
+        self.assertIn(
+            "operation actually requested",
+            payload["messages"][0]["content"],
+        )
         self.assertIn("unsupported", result)
 
     def test_retrieval_planner_requests_only_bounded_structured_vocabulary(self) -> None:

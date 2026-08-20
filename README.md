@@ -416,8 +416,9 @@ arquivos, podem não possuir chunk próprio. O agente de `/ask` usa esse mapa po
 ferramentas somente leitura: pode abrir relações gerais e, a partir de um chunk
 já observado, localizar chamadores ou definições chamadas. O PostgreSQL reaplica
 projeto, branch e ACL antes de devolver os chunks primários. Fronteiras novas
-do grafo recebem uma oportunidade limitada de expansão e algumas evidências são
-preservadas no contexto final; isso evita que o agente volte repetidamente ao
+do grafo recebem uma oportunidade limitada de expansão; uma amostra guiada pela
+pergunta e pela posição no fluxo é preservada no contexto final. Isso evita que
+conexões laterais dominem a investigação ou que o agente volte repetidamente ao
 mesmo coordenador e descarte todos os passos a montante ou a jusante.
 
 O parser piloto respeita seções Markdown e reconhece âncoras básicas de

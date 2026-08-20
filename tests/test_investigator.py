@@ -3,9 +3,11 @@ from __future__ import annotations
 import unittest
 
 from mflab_knowledge.investigator import (
+    bounded_action_batch,
     build_observations,
     fallback_investigation_actions,
     normalize_investigation_decision,
+    select_graph_frontier_results,
 )
 
 
@@ -226,7 +228,7 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertEqual(actions[0]["chunk_id"], "second")
 
-    def test_fallback_expands_a_new_call_frontier_before_old_matches(self) -> None:
+    def test_fallback_expands_a_relevant_new_call_frontier(self) -> None:
         observations = [
             {
                 "chunk_id": "coordinator",
@@ -245,8 +247,8 @@ class InvestigatorTests(unittest.TestCase):
         ]
 
         actions = fallback_investigation_actions(
-            question="Explain how the coordinator advances",
-            search_hints=["coordinator advance flow"],
+            question="Explain how the worker applies the downstream step",
+            search_hints=["worker apply flow"],
             observations=observations,
             previous_actions=[],
         )
@@ -282,6 +284,93 @@ class InvestigatorTests(unittest.TestCase):
             actions[0],
             {"tool": "find_callees", "chunk_id": "upstream"},
         )
+
+    def test_irrelevant_call_frontier_does_not_overpower_query_match(self) -> None:
+        actions = fallback_investigation_actions(
+            question="Explain adaptive grid initialization",
+            search_hints=[],
+            observations=[
+                {
+                    "chunk_id": "grid",
+                    "path": "src/grid/manager.cpp",
+                    "title": "GridManager::initialize",
+                    "preview": "Initialize the adaptive grid.",
+                },
+                {
+                    "chunk_id": "logging",
+                    "path": "src/logging/timer.cpp",
+                    "title": "Timer::begin",
+                    "preview": "Record elapsed time.",
+                    "source_kind": "agent_callees_evidence",
+                },
+            ],
+            previous_actions=[],
+        )
+
+        self.assertEqual(actions[0]["chunk_id"], "grid")
+
+    def test_selects_question_relevant_call_frontier(self) -> None:
+        selected = select_graph_frontier_results(
+            question="How is the adaptive grid initialized?",
+            search_hints=["grid setup flow"],
+            results=[
+                {
+                    "chunk_id": "timer",
+                    "path": "src/runtime/timer.cpp",
+                    "title": "Timer::begin",
+                    "text": "Record elapsed time.",
+                },
+                {
+                    "chunk_id": "grid",
+                    "path": "src/grid/manager.cpp",
+                    "title": "GridManager::initialize",
+                    "text": "Initialize cells.",
+                },
+                {
+                    "chunk_id": "output",
+                    "path": "src/output/writer.cpp",
+                    "title": "Writer::flush",
+                    "text": "Write output.",
+                },
+            ],
+            limit=2,
+        )
+
+        self.assertEqual(selected[0]["chunk_id"], "grid")
+
+    def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:
+        results = [
+            {"chunk_id": str(position), "path": "", "title": "", "text": ""}
+            for position in range(7)
+        ]
+        selected = select_graph_frontier_results(
+            question="unmatched vocabulary",
+            search_hints=[],
+            results=results,
+            limit=3,
+        )
+
+        self.assertEqual(
+            [item["chunk_id"] for item in selected],
+            ["0", "3", "6"],
+        )
+
+    def test_reserves_supplemental_action_before_truncation(self) -> None:
+        executed = {("find_callers", "already")}
+        supplemental = {"tool": "find_callees", "chunk_id": "frontier"}
+        actions = bounded_action_batch(
+            model_actions=[
+                {"tool": "find_callers", "chunk_id": "already"},
+                {"tool": "open_related", "chunk_id": "primary"},
+                {"tool": "open_neighborhood", "chunk_id": "primary"},
+            ],
+            supplemental_action=supplemental,
+            executed_actions=executed,
+            limit=3,
+        )
+
+        self.assertIn(supplemental, actions)
+        self.assertEqual(len(actions), 3)
 
 
 if __name__ == "__main__":

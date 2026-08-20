@@ -142,6 +142,14 @@ uma fila limitada e intercaladas com as escolhas do modelo no contexto final.
 O SQL passa a ordenar arestas pela linha da chamada, em vez do hash do chunk, e
 a síntese é instruída a omitir operações adjacentes que não respondam à pergunta.
 
+O teste real mostrou que preservar toda nova aresta com prioridade absoluta
+pode amplificar uma hipótese inicial ruim. A 0.41.2 passa a escolher uma amostra
+pequena da fronteira conforme o vocabulário da pergunta e a posição estrutural,
+reserva de fato uma ação por ciclo para uma hipótese independente e audita não
+apenas se a afirmação é verdadeira nas fontes, mas se ela corresponde à
+operação solicitada. Essa política permanece independente de nomes de projetos,
+branches, arquivos ou métodos científicos.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

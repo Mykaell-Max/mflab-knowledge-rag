@@ -7,12 +7,13 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v7"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v8"
 MAX_AGENT_ITERATIONS = 4
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
 MAX_OBSERVATION_PREVIEW = 500
-CALL_FRONTIER_BONUS = 1000.0
+CALL_FRONTIER_MINIMUM_BONUS = 0.5
+CALL_FRONTIER_MAXIMUM_BONUS = 2.0
 
 ALLOWED_ACTIONS = {
     "find_callees",
@@ -263,6 +264,80 @@ def _humanize_identifier(value: str) -> str:
     return " ".join(re.sub(r"[^A-Za-z0-9]+", " ", text).split())
 
 
+def select_graph_frontier_results(
+    *,
+    question: str,
+    search_hints: Iterable[str],
+    results: list[dict[str, object]],
+    limit: int = 3,
+) -> list[dict[str, object]]:
+    """Select a small question-relevant sample from an ordered call frontier.
+
+    Call order remains the deterministic tie-breaker, but paths and symbol
+    titles receive more weight than incidental mentions inside function bodies.
+    If no candidate overlaps the query vocabulary, the ordered frontier is
+    sampled at evenly spaced positions instead of assuming that its first calls
+    are representative of the complete flow.
+    """
+
+    if limit < 1 or not results:
+        return []
+    query_terms = _search_terms(
+        " ".join([question, *(str(hint) for hint in search_hints)])
+    )
+    ranked: list[tuple[float, int, dict[str, object]]] = []
+    for position, result in enumerate(results):
+        path_title_terms = _search_terms(
+            f"{result.get('path', '')} {result.get('title', '')}"
+        )
+        text_terms = _search_terms(result.get("text", ""))
+        score = 4.0 * len(query_terms & path_title_terms)
+        score += float(len(query_terms & text_terms))
+        ranked.append((score, -position, result))
+    if any(score > 0 for score, _position, _result in ranked):
+        ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        return [item[2] for item in ranked[:limit]]
+
+    selected_positions = {
+        round(position * (len(results) - 1) / max(limit - 1, 1))
+        for position in range(min(limit, len(results)))
+    }
+    return [
+        result
+        for position, result in enumerate(results)
+        if position in selected_positions
+    ][:limit]
+
+
+def bounded_action_batch(
+    *,
+    model_actions: list[dict[str, str]],
+    supplemental_action: dict[str, str] | None,
+    executed_actions: set[tuple[str, str]],
+    limit: int = MAX_ACTIONS_PER_ITERATION,
+) -> list[dict[str, str]]:
+    """Reserve a bounded slot for an independent lead before deduplication."""
+
+    candidates = list(model_actions)
+    if supplemental_action is not None and limit > 0:
+        candidates = [
+            *candidates[: max(limit - 1, 0)],
+            supplemental_action,
+            *candidates[max(limit - 1, 0) :],
+        ]
+    selected: list[dict[str, str]] = []
+    for action in candidates:
+        value = str(action.get("query") or action.get("chunk_id") or "")
+        identity = (str(action.get("tool", "")), value.casefold())
+        if identity in executed_actions:
+            continue
+        executed_actions.add(identity)
+        selected.append(action)
+        if len(selected) >= limit:
+            break
+    return selected
+
+
 def fallback_investigation_actions(
     *,
     question: str,
@@ -316,9 +391,12 @@ def fallback_investigation_actions(
             "agent_callers_evidence",
             "agent_callees_evidence",
         }:
-            # A resolved graph edge is a new, bounded frontier. Prefer observing
-            # it once instead of repeatedly reopening the original coordinator.
-            score += CALL_FRONTIER_BONUS
+            # A resolved edge is worth exploring, but it must not overwhelm a
+            # substantially better match from the user's actual question.
+            score += min(
+                max(score * 0.25, CALL_FRONTIER_MINIMUM_BONUS),
+                CALL_FRONTIER_MAXIMUM_BONUS,
+            )
         # Stable retrieval order remains the final tie-breaker.
         ranked.append((score, -position, observation))
     ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)

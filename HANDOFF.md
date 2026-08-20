@@ -502,6 +502,27 @@ chamada e a instrução de síntese passa a rejeitar detalhes adjacentes que nã
 respondam à operação pedida. Essa versão não exige reconstruir o mapa nem os
 embeddings: somente atualizar o pacote, reiniciar a API e repetir a avaliação.
 
+A validação real da 0.41.1 confirmou que a fronteira deixou de ser descartada:
+seis chunks estruturais foram preservados no caso de localização e três no caso
+de fluxo. As duas respostas terminaram normalmente, tiveram cobertura de
+citações de 100% e liberaram somente afirmações sustentadas. A suíte permaneceu
+em 0/2 porque a exploração aprofundou conexões laterais pouco relevantes: a
+consulta de malha seguiu a inicialização de fronteira imersa, enquanto o fluxo
+de partículas priorizou monitoramento e rastreamento antes das operações sobre
+partículas. O log também revelou que a hipótese determinística suplementar era
+anunciada, mas podia ser truncada antes da deduplicação das ações do modelo.
+
+A 0.41.2 corrige esses dois mecanismos genericamente. A fronteira de chamadas é
+amostrada e ordenada pelo vocabulário da pergunta, dando mais peso a caminho e
+símbolo que a menções incidentais no corpo; quando não há sobreposição, são
+preservados pontos espaçados do fluxo em vez de somente as primeiras chamadas.
+Uma conexão estrutural recebe bônus limitado, incapaz de vencer por si só uma
+evidência muito mais relevante. Uma das três ações por ciclo é efetivamente
+reservada para a hipótese independente antes da deduplicação. Por fim, a
+auditoria de afirmações passa a rejeitar uma alegação verdadeira sobre código
+adjacente quando ela é apresentada como se respondesse à operação solicitada.
+Mapa, corpus e embeddings existentes continuam reutilizáveis.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

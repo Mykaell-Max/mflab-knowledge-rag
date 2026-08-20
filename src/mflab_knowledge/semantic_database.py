@@ -265,7 +265,7 @@ LIMIT %(limit)s
 """
 
 
-CALLER_CHUNKS_SQL = """
+CALLER_CHUNKS_SQL = r"""
 WITH origin AS (
     SELECT
         chunk.document_id,
@@ -319,7 +319,7 @@ LIMIT %(limit)s
 """
 
 
-CALLEE_CHUNKS_SQL = """
+CALLEE_CHUNKS_SQL = r"""
 WITH origin AS (
     SELECT chunk.document_id, chunk.chunk_id
     FROM mflab_knowledge.chunks AS chunk

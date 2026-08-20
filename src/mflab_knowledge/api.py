@@ -57,10 +57,12 @@ from mflab_knowledge.investigator import (
     AGENT_INVESTIGATION_ALGORITHM,
     MAX_ACTIONS_PER_ITERATION,
     MAX_AGENT_ITERATIONS,
+    bounded_action_batch,
     build_observations,
     coverage_summary,
     fallback_investigation_actions,
     normalize_investigation_decision,
+    select_graph_frontier_results,
     synthesis_guidance,
 )
 from mflab_knowledge.retrieval import RetrievalPolicy, load_retrieval_policy
@@ -1294,6 +1296,7 @@ class RagApiService:
 
                 raw_actions = decision["actions"]
                 assert isinstance(raw_actions, list)
+                supplemental_action: dict[str, str] | None = None
                 if not raw_actions and not decision["stop"]:
                     inconclusive_decisions += 1
                     should_fallback = (
@@ -1378,27 +1381,26 @@ class RagApiService:
                         )
                         if identity in current_identities:
                             continue
-                        raw_actions.append(supplemental_action)
-                        record(
-                            "agent",
-                            "Hipótese estrutural independente preservada",
-                            "Uma leitura limitada foi acrescentada para evitar dependência de uma única trilha.",
-                            {
-                                "iteration": iteration,
-                                "action": supplemental_action,
-                            },
-                        )
                         break
-                    raw_actions = raw_actions[:MAX_ACTIONS_PER_ITERATION]
+                    else:
+                        supplemental_action = None
                 actions: list[dict[str, str]] = []
-                for action in raw_actions:
-                    assert isinstance(action, dict)
-                    value = str(action.get("query") or action.get("chunk_id") or "")
-                    identity = (str(action.get("tool", "")), value.casefold())
-                    if identity in executed_actions:
-                        continue
-                    executed_actions.add(identity)
-                    actions.append(action)
+                actions = bounded_action_batch(
+                    model_actions=raw_actions,
+                    supplemental_action=supplemental_action,
+                    executed_actions=executed_actions,
+                    limit=MAX_ACTIONS_PER_ITERATION,
+                )
+                if supplemental_action is not None and supplemental_action in actions:
+                    record(
+                        "agent",
+                        "Hipótese estrutural independente preservada",
+                        "Uma leitura limitada foi reservada e executada ao lado da hipótese do modelo.",
+                        {
+                            "iteration": iteration,
+                            "action": supplemental_action,
+                        },
+                    )
                 if decision["stop"]:
                     agent_status = "sufficient"
                     agent_iterations = iteration
@@ -1564,7 +1566,7 @@ class RagApiService:
                                     self.settings.database_url,
                                     chunk_id=action["chunk_id"],
                                     direction=direction,
-                                    limit=6,
+                                    limit=12,
                                     project=str(observation.get("project", ""))
                                     or None,
                                     branch=str(observation.get("branch", ""))
@@ -1576,7 +1578,7 @@ class RagApiService:
                                 fetched = fetch_chunks_by_id(
                                     self.settings.database_url,
                                     chunk_ids=call_ids,
-                                    limit=6,
+                                    limit=12,
                                     project=str(observation.get("project", ""))
                                     or None,
                                     branch=str(observation.get("branch", ""))
@@ -1589,7 +1591,19 @@ class RagApiService:
                                     result["source_kind"] = (
                                         f"agent_{direction}_evidence"
                                     )
-                                for result in fetched[:2]:
+                                raw_hints = exploration.get("queries")
+                                frontier_hints = (
+                                    [str(value) for value in raw_hints]
+                                    if isinstance(raw_hints, list)
+                                    else []
+                                )
+                                frontier_results = select_graph_frontier_results(
+                                    question=query,
+                                    search_hints=frontier_hints,
+                                    results=fetched,
+                                    limit=3,
+                                )
+                                for result in frontier_results:
                                     frontier_id = str(result.get("chunk_id", ""))
                                     if (
                                         frontier_id
