@@ -104,6 +104,7 @@ def normalize_investigation_decision(
     raw: str | dict[str, object],
     *,
     observable_chunk_ids: set[str],
+    aspect_ids: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Validate a model decision before any read-only tool is executed."""
 
@@ -141,6 +142,9 @@ def normalize_investigation_decision(
             if not isinstance(raw_item, dict):
                 continue
             aspect = _bounded_text(raw_item.get("aspect"), maximum=120)
+            aspect_id = _bounded_text(raw_item.get("aspect_id"), maximum=20)
+            if aspect_ids is not None and aspect_id in aspect_ids:
+                aspect = aspect_ids[aspect_id]
             status = str(raw_item.get("status", ""))
             if aspect is None or status not in ALLOWED_COVERAGE:
                 continue

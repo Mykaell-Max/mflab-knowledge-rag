@@ -507,6 +507,7 @@ class OpenAICompatibleGenerator:
         observations: list[dict[str, object]],
         previous_actions: list[dict[str, str]],
         previous_coverage: list[dict[str, object]],
+        aspects: list[dict[str, object]] | None = None,
         decision_feedback: str = "",
     ) -> str:
         """Choose the next bounded read-only tools after observing real results."""
@@ -516,6 +517,7 @@ class OpenAICompatibleGenerator:
                 "observations": observations,
                 "previous_actions": previous_actions,
                 "previous_coverage": previous_coverage,
+                "required_aspects": aspects or [],
             },
             ensure_ascii=False,
             separators=(",", ":"),
@@ -570,13 +572,13 @@ class OpenAICompatibleGenerator:
                         "an upstream or downstream step. These are coverage roles, not fixed "
                         "repository concepts; leave a role as a gap when the "
                         "observations do not expose it. "
-                        "Keep every aspect already present in previous_coverage in the "
-                        "returned coverage array, using its exact aspect text. Update its "
+                        "Keep every aspect_id already present in required_aspects in the "
+                        "returned coverage array, preserving that ID exactly. Update its "
                         "status only from direct observations; never silently drop an "
                         "unresolved aspect. "
                         "open_neighborhood, open_related, find_callers and find_callees "
                         "may use only a chunk_id present in observations. Return JSON "
-                        "only with coverage (items: aspect, status, chunk_ids), actions, "
+                        "only with coverage (items: aspect_id, status, chunk_ids), actions, "
                         "keep_chunk_ids, and stop. stop may be true only when no action "
                         "is needed and the requested explanation has enough primary "
                         "implementation evidence. Do not emit reasoning, commands, SQL, "
@@ -693,6 +695,10 @@ class OpenAICompatibleGenerator:
                         "contain that requested form, not merely mention the subject. "
                         "partial means useful support exists but the requested facet is "
                         "not fully answered. gap means no supported claim answers it. "
+                        "When any supplied supported claim directly answers part of the "
+                        "single requested aspect, return partial or covered with that "
+                        "claim_id; reserve gap for an aspect that none of the supplied "
+                        "supported claims addresses. "
                         "Return JSON only with key coverage. Return exactly one item for "
                         "each supplied aspect_id, preserving that ID exactly. Each item "
                         "must contain aspect_id, status, and claim_ids. claim_ids may reference "

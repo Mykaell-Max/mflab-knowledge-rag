@@ -346,6 +346,7 @@ class GenerationTests(unittest.TestCase):
             observations=[{"chunk_id": "c1", "preview": "initialize();"}],
             previous_actions=[],
             previous_coverage=[],
+            aspects=[{"aspect_id": "A1", "aspect": "initialization"}],
             decision_feedback="The prior decision was inconclusive.",
         )
 
@@ -353,6 +354,8 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(payload["temperature"], 0.0)
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertIn("open_neighborhood", payload["messages"][0]["content"])
+        self.assertIn("aspect_id", payload["messages"][0]["content"])
+        self.assertIn('"aspect_id":"A1"', payload["messages"][1]["content"])
         self.assertIn("general scientific", payload["messages"][0]["content"])
         self.assertIn("Lexical overlap alone", payload["messages"][0]["content"])
         self.assertIn(

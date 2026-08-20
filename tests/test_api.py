@@ -253,7 +253,7 @@ class ApiServiceTests(unittest.TestCase):
 
         self.assertEqual(
             [result["chunk_id"] for result in packed],
-            ["manager-init", "domain", "state", "factory", "manager-run", "config"],
+            ["manager-init", "domain", "state", "factory", "config", "manager-run"],
         )
 
     def test_unit_settings_do_not_implicitly_load_working_directory_catalog(
@@ -2145,6 +2145,88 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn(
             "Cobertura da pergunta conferida",
             [step["title"] for step in progress],
+        )
+
+    def test_answer_coverage_audits_each_requested_aspect_independently(
+        self,
+    ) -> None:
+        generator = _CoverageVerifyingGenerator(
+            answers=["The runtime configures [S1].\n\nIt advances [S1]."],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported","source_ids":["S1"]},'
+                '{"claim_id":"C2","verdict":"supported","source_ids":["S1"]}]}'
+            ],
+            coverage_audits=[
+                '{"coverage":[{"aspect_id":"A1","status":"covered",'
+                '"claim_ids":["C1"]}]}',
+                '{"coverage":[{"aspect_id":"A2","status":"covered",'
+                '"claim_ids":["C2"]}]}',
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain configuration and advancement",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 40,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                        "path": "src/runtime.cpp",
+                        "text": "The runtime configures and advances.",
+                    }
+                ],
+                "exploration": {
+                    "intent": "mechanism",
+                    "query_plan": {
+                        "aspects": ["configuration", "advancement"],
+                        "aspect_anchors": [
+                            {
+                                "aspect": "configuration",
+                                "question_span": "configuration",
+                            },
+                            {
+                                "aspect": "advancement",
+                                "question_span": "advancement",
+                            },
+                        ],
+                    },
+                },
+                "investigation": {"steps": []},
+            },
+        ):
+            result = service.ask(
+                query="Explain configuration and advancement",
+                response_depth="detailed",
+            )
+
+        self.assertEqual(result["answer_completeness"], "complete")
+        self.assertTrue(result["answer_coverage"]["complete"])
+        self.assertEqual(len(generator.coverage_calls), 2)
+        self.assertEqual(
+            [call["aspects"][0]["aspect_id"] for call in generator.coverage_calls],
+            ["A1", "A2"],
         )
 
     def test_deterministic_salvage_converges_when_audit_verdicts_fluctuate(self) -> None:

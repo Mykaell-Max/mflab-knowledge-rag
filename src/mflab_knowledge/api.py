@@ -162,7 +162,7 @@ def _response_depth_instructions(response_depth: str) -> str:
         ) from exc
 
 CONTEXT_DIVERSITY_TARGET = 6
-CONTEXT_PATH_DIVERSITY_TARGET = 4
+CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 
 
@@ -1350,6 +1350,14 @@ class RagApiService:
         planned_aspects = [
             str(value) for value in raw_planned_aspects if isinstance(value, str)
         ]
+        planned_aspect_requests = [
+            {"aspect_id": f"A{index}", "aspect": aspect}
+            for index, aspect in enumerate(planned_aspects[:6], start=1)
+        ]
+        planned_aspect_ids = {
+            str(item["aspect_id"]): str(item["aspect"])
+            for item in planned_aspect_requests
+        }
         agent_coverage: list[dict[str, object]] = merge_required_coverage(
             planned_aspects,
             [],
@@ -1406,11 +1414,13 @@ class RagApiService:
                         observations=observations,
                         previous_actions=agent_actions,
                         previous_coverage=agent_coverage,
+                        aspects=planned_aspect_requests,
                         decision_feedback=decision_feedback,
                     )
                     decision = normalize_investigation_decision(
                         raw_decision,
                         observable_chunk_ids=observable_ids,
+                        aspect_ids=planned_aspect_ids,
                     )
                 except Exception:
                     decision_invalid = True
@@ -1959,6 +1969,7 @@ class RagApiService:
                         observations=final_observations,
                         previous_actions=agent_actions,
                         previous_coverage=agent_coverage,
+                        aspects=planned_aspect_requests,
                         decision_feedback=(
                             "The read-only tool budget is exhausted. Do not request "
                             "another action. Reconcile every existing coverage aspect "
@@ -1972,6 +1983,7 @@ class RagApiService:
                             str(item.get("chunk_id", ""))
                             for item in final_observations
                         },
+                        aspect_ids=planned_aspect_ids,
                     )
                     agent_coverage = merge_required_coverage(
                         planned_aspects,
@@ -3025,25 +3037,59 @@ class RagApiService:
             record(
                 "verification",
                 "Cobertura da pergunta em conferência",
-                "As afirmações já sustentadas serão comparadas aos aspectos pedidos pelo usuário.",
+                "Cada aspecto pedido será comparado separadamente às afirmações já sustentadas.",
                 {"aspects": len(required_answer_aspects)},
             )
-            try:
-                raw_answer_coverage = coverage_auditor(
-                    question=str(context["query"]),
-                    answer=answer,
-                    aspects=required_answer_aspects,
-                    supported_claims=supported_claims,
-                )
-                answer_coverage = normalize_answer_coverage(
-                    raw_answer_coverage,
+            valid_supported_claim_ids = {
+                str(claim.get("claim_id", ""))
+                for claim in supported_claims
+                if claim.get("claim_id")
+            }
+            audited_aspect_coverage: list[dict[str, object]] = []
+            coverage_audits_completed = 0
+            for aspect_position, aspect_request in enumerate(
+                required_answer_aspects,
+                start=1,
+            ):
+                try:
+                    raw_aspect_coverage = coverage_auditor(
+                        question=str(context["query"]),
+                        answer=answer,
+                        aspects=[aspect_request],
+                        supported_claims=supported_claims,
+                    )
+                    normalized_aspect = normalize_answer_coverage(
+                        raw_aspect_coverage,
+                        required_aspects=[aspect_request],
+                        valid_claim_ids=valid_supported_claim_ids,
+                    )
+                    raw_items = normalized_aspect.get("coverage")
+                    if isinstance(raw_items, list) and raw_items:
+                        audited_aspect_coverage.append(raw_items[0])
+                        coverage_audits_completed += 1
+                        record(
+                            "verification",
+                            "Aspecto da pergunta conferido",
+                            "Uma faceta explícita foi avaliada isoladamente.",
+                            {
+                                "position": aspect_position,
+                                "total": len(required_answer_aspects),
+                                "aspect_id": aspect_request.get("aspect_id"),
+                            },
+                        )
+                except (GenerationUnavailableError, ValueError, TypeError) as exc:
+                    self.log(
+                        "Auditoria de um aspecto da resposta indisponível: "
+                        f"{exc}",
+                        "warning",
+                    )
+            if coverage_audits_completed:
+                normalized_items = normalize_answer_coverage(
+                    {"coverage": audited_aspect_coverage},
                     required_aspects=required_answer_aspects,
-                    valid_claim_ids={
-                        str(claim.get("claim_id", ""))
-                        for claim in supported_claims
-                        if claim.get("claim_id")
-                    },
+                    valid_claim_ids=valid_supported_claim_ids,
                 )
+                answer_coverage = normalized_items
                 record(
                     "verification",
                     "Cobertura da pergunta conferida",
@@ -3052,11 +3098,6 @@ class RagApiService:
                         "complete": bool(answer_coverage.get("complete")),
                         "coverage": answer_coverage.get("summary", {}),
                     },
-                )
-            except (GenerationUnavailableError, ValueError, TypeError) as exc:
-                self.log(
-                    f"Auditoria de cobertura indisponível: {exc}",
-                    "warning",
                 )
         raw_agent = context.get("agent_investigation")
         raw_coverage = (

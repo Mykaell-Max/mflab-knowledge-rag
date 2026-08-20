@@ -211,6 +211,28 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertFalse(decision["stop"])
 
+    def test_decision_uses_stable_aspect_id_when_model_rephrases_label(self) -> None:
+        decision = normalize_investigation_decision(
+            {
+                "coverage": [
+                    {
+                        "aspect_id": "A1",
+                        "aspect": "translated label",
+                        "status": "covered",
+                        "chunk_ids": ["c1"],
+                    }
+                ],
+                "actions": [],
+                "keep_chunk_ids": ["c1"],
+                "stop": True,
+            },
+            observable_chunk_ids={"c1"},
+            aspect_ids={"A1": "initialization flow"},
+        )
+
+        self.assertEqual(decision["coverage"][0]["aspect"], "initialization flow")
+        self.assertTrue(decision["stop"])
+
     def test_observations_are_deduplicated_and_preserve_scope(self) -> None:
         result = {
             "chunk_id": "chunk-1",

@@ -758,6 +758,17 @@ por uma afirmação aprovada; código modificado, inventado ou sem esse vínculo
 descartado. A correção não contém nomes de projeto, branch, caminho, símbolo ou
 conceito científico.
 
+O teste real da 0.42.4 confirmou a preservação de blocos C++ exatos e citados,
+mas o modelo ainda classificou todos os aspectos como lacuna em uma única
+decisão, além de não associar ao caderno evidências que já apareciam nas
+observações. Na 0.42.5, os IDs estáveis passam a valer também durante todos os
+ciclos do agente e na reconciliação final. A cobertura da resposta é auditada
+uma faceta por vez, para que reformulação ou falha de um item não invalide os
+demais, e o progresso dessas conferências é emitido separadamente. A janela
+final reserva cinco caminhos distintos e uma posição repetida, preservando
+diversidade sem eliminar métodos complementares. Todas as regras continuam
+independentes de repositório, branch, arquivo, símbolo e domínio científico.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

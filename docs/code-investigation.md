@@ -254,6 +254,22 @@ proveniente de outra fonte ou sem vínculo com uma afirmação sustentada é
 descartado. Essa regra é genérica e não depende de projeto, linguagem, caminho,
 branch ou símbolo conhecido antecipadamente.
 
+O teste real da 0.42.4 confirmou que os blocos exatos sobreviveram à redução,
+mas expôs o mesmo problema de identidade também dentro do ciclo exploratório:
+o modelo encontrava evidências úteis e ainda devolvia um caderno vazio ou com
+rótulos reformulados. Na 0.42.5, os IDs estáveis acompanham os aspectos desde a
+primeira decisão de ferramenta até a reconciliação final. O rótulo aceito pelo
+servidor sempre substitui qualquer reformulação feita pelo modelo antes de um
+chunk ser associado à cobertura.
+
+A checagem final deixa de pedir uma decisão conjunta sobre até seis aspectos.
+Cada faceta é julgada em uma chamada curta e independente, usando somente as
+afirmações já aprovadas; uma saída inválida ou excessivamente conservadora não
+apaga os resultados das demais. O empacotamento também reserva cinco dos seis
+lugares para caminhos distintos e ainda mantém um lugar para outro método do
+mesmo arquivo. Isso reduz a perda de implementações já observadas sem assumir
+qual arquivo ou subsistema deveria ser escolhido.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos
