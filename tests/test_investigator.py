@@ -8,6 +8,7 @@ from mflab_knowledge.investigator import (
     coverage_integration_probes,
     coverage_needs_structural_connection,
     fallback_investigation_actions,
+    merge_required_coverage,
     normalize_investigation_decision,
     pending_graph_continuations,
     prioritize_kept_chunk_ids,
@@ -18,6 +19,40 @@ from mflab_knowledge.investigator import (
 
 
 class InvestigatorTests(unittest.TestCase):
+    def test_required_coverage_survives_an_empty_or_incomplete_model_ledger(self) -> None:
+        seeded = merge_required_coverage(
+            ["configuration", "runtime integration"],
+            [],
+            [],
+        )
+        merged = merge_required_coverage(
+            ["configuration", "runtime integration"],
+            seeded,
+            [
+                {
+                    "aspect": "configuration",
+                    "status": "covered",
+                    "chunk_ids": ["c1"],
+                }
+            ],
+        )
+
+        self.assertEqual(
+            merged,
+            [
+                {
+                    "aspect": "configuration",
+                    "status": "covered",
+                    "chunk_ids": ["c1"],
+                },
+                {
+                    "aspect": "runtime integration",
+                    "status": "gap",
+                    "chunk_ids": [],
+                },
+            ],
+        )
+
     def test_decision_accepts_only_bounded_read_tools_and_observed_chunks(self) -> None:
         decision = normalize_investigation_decision(
             {

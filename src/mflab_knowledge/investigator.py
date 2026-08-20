@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v14"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v15"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -717,6 +717,62 @@ def coverage_summary(coverage: list[dict[str, object]]) -> dict[str, int]:
         status: sum(item.get("status") == status for item in coverage)
         for status in sorted(ALLOWED_COVERAGE)
     }
+
+
+def merge_required_coverage(
+    required_aspects: Iterable[str],
+    previous: list[dict[str, object]],
+    current: list[dict[str, object]],
+) -> list[dict[str, object]]:
+    """Preserve the question's bounded coverage contract across model cycles."""
+
+    required: list[str] = []
+    required_keys: set[str] = set()
+    for raw_aspect in required_aspects:
+        aspect = _bounded_text(raw_aspect, maximum=120)
+        if aspect is None or aspect.casefold() in required_keys:
+            continue
+        required.append(aspect)
+        required_keys.add(aspect.casefold())
+        if len(required) >= 6:
+            break
+
+    by_aspect: dict[str, dict[str, object]] = {
+        aspect.casefold(): {
+            "aspect": aspect,
+            "status": "gap",
+            "chunk_ids": [],
+        }
+        for aspect in required
+    }
+    order = [aspect.casefold() for aspect in required]
+    for collection in (previous, current):
+        for raw_item in collection:
+            if not isinstance(raw_item, dict):
+                continue
+            aspect = _bounded_text(raw_item.get("aspect"), maximum=120)
+            status = str(raw_item.get("status", ""))
+            if aspect is None or status not in ALLOWED_COVERAGE:
+                continue
+            key = aspect.casefold()
+            raw_ids = raw_item.get("chunk_ids")
+            chunk_ids = (
+                list(dict.fromkeys(str(value) for value in raw_ids if value))[:8]
+                if isinstance(raw_ids, list)
+                else []
+            )
+            if status == "covered" and not chunk_ids:
+                status = "partial"
+            if key not in by_aspect:
+                order.append(key)
+            by_aspect[key] = {
+                "aspect": by_aspect.get(key, {}).get("aspect", aspect),
+                "status": status,
+                "chunk_ids": chunk_ids,
+            }
+            if len(order) >= 10:
+                break
+    return [by_aspect[key] for key in order[:10] if key in by_aspect]
 
 
 def synthesis_guidance(

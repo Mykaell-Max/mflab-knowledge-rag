@@ -692,6 +692,25 @@ explicação. O modelo não pode reconstruir código ausente, alterar identifica
 ou apresentar linhas não contíguas como um único trecho. Markdown e citações
 continuam passando pelo mesmo renderizador seguro e pela auditoria semântica.
 
+A primeira execução detalhada da 0.42.0 sobre o fluxo de um subsistema expôs
+uma resposta apenas aparentemente truncada. O provedor terminou normalmente,
+mas a auditoria aprovou duas de doze unidades; a recuperação determinística
+removeu as demais e apresentou os dois fragmentos restantes como se formassem
+uma explicação completa. Ao mesmo tempo, todos os ciclos da exploração
+registraram zero aspectos cobertos, parciais ou ausentes, mostrando que o
+caderno de cobertura não havia sobrevivido ao planejamento.
+
+A 0.42.1 corrige os dois problemas de forma genérica. O planejador local passa a
+decompor a solicitação em até seis aspectos organizacionais, sem afirmar que
+qualquer mecanismo exista no repositório. Esses aspectos entram como lacunas no
+primeiro ciclo, permanecem no caderno mesmo quando uma decisão do modelo os
+omite e só mudam de estado mediante chunks observados. O encerramento exige que
+todo o contrato de cobertura esteja sustentado. Se a auditoria ainda precisar
+preservar apenas um subconjunto de afirmações no modo detalhado, a API e a
+interface identificam o resultado como pontos sustentados com limitações, em
+vez de anunciar uma resposta completa. Isso não relaxa a auditoria nem cria
+prosa científica nova durante a recuperação de segurança.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

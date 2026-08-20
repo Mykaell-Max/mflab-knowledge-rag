@@ -105,7 +105,8 @@ class ExplorationTests(unittest.TestCase):
             """```json
             {"queries":["mesh creation call flow","adaptive mesh configuration",
             "mesh creation call flow","caller tests"],
-            "identifiers":["MeshFactory","initialize","generate"]}
+            "identifiers":["MeshFactory","initialize","generate"],
+            "aspects":["construction","configuration","runtime integration"]}
             ```""",
             original_query="Onde a malha é inicializada?",
             fallback_queries=["Onde a malha é inicializada? definition caller"],
@@ -114,6 +115,10 @@ class ExplorationTests(unittest.TestCase):
         self.assertEqual(plan["queries"][0], "Onde a malha é inicializada?")
         self.assertLessEqual(len(plan["queries"]), 6)
         self.assertEqual(plan["identifiers"], ["MeshFactory", "initialize", "generate"])
+        self.assertEqual(
+            plan["aspects"],
+            ["construction", "configuration", "runtime integration"],
+        )
         self.assertTrue(plan["generated"])
 
     def test_location_plan_reserves_a_construction_hypothesis(self) -> None:

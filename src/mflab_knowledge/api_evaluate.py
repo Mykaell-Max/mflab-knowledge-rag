@@ -34,10 +34,12 @@ CASE_FIELDS = {
     "max_context_characters",
     "max_output_tokens",
     "temperature",
+    "response_depth",
     "expectations",
 }
 EXPECTATION_FIELDS = {
     "abstained",
+    "answer_completeness",
     "grounding_status",
     "allowed_grounding_statuses",
     "min_valid_citations",
@@ -287,6 +289,21 @@ def _evaluate_expectations(
         expected = expectations["grounding_status"]
         actual = response.get("grounding_status")
         _check(checks, "grounding_status", expected, actual, actual == expected)
+
+    if "answer_completeness" in expectations:
+        expected = expectations["answer_completeness"]
+        if expected not in {"complete", "supported_subset"}:
+            raise ValueError(
+                "answer_completeness deve ser complete ou supported_subset"
+            )
+        actual = response.get("answer_completeness")
+        _check(
+            checks,
+            "answer_completeness",
+            expected,
+            actual,
+            actual == expected,
+        )
 
     if "allowed_grounding_statuses" in expectations:
         if "grounding_status" in expectations:

@@ -70,6 +70,7 @@ def show_response(label: str, response: dict[str, object]) -> None:
     print(
         f"  resposta: abstida={response.get('abstained')}"
         f" | grounding={response.get('grounding_status')}"
+        f" | completude={response.get('answer_completeness', 'legacy')}"
         f" | fontes={len(sources)}"
     )
     print(

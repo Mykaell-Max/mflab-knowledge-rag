@@ -37,10 +37,12 @@ class ApiEvaluateTests(unittest.TestCase):
                         "id": "supported",
                         "query": "How does it work?",
                         "mode": "hybrid",
+                        "response_depth": "detailed",
                         "project": "Generic Solver",
                         "branch": "trunk",
                         "expectations": {
                             "abstained": False,
+                            "answer_completeness": "complete",
                             "grounding_status": "cited",
                             "min_valid_citations": 1,
                             "max_invalid_citations": 0,
@@ -69,6 +71,7 @@ class ApiEvaluateTests(unittest.TestCase):
                     {
                         "answer": "Supported fact [S1].",
                         "abstained": False,
+                        "answer_completeness": "complete",
                         "finish_reason": "stop",
                         "duration_seconds": 0.2,
                         "grounding_status": "cited",
@@ -141,6 +144,7 @@ class ApiEvaluateTests(unittest.TestCase):
             self.assertEqual(report["summary"]["cases_failed"], 0)
             self.assertEqual(report["summary"]["peak_gpu_memory_used_mib"], 100.0)
             self.assertNotIn("expectations", payloads[0])
+            self.assertEqual(payloads[0]["response_depth"], "detailed")
             self.assertTrue(output.exists())
 
     def test_fails_when_sources_escape_request_filters(self) -> None:

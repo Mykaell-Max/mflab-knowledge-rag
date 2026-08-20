@@ -5,9 +5,10 @@ import re
 import unicodedata
 from pathlib import PurePosixPath
 
-QUERY_PLAN_ALGORITHM = "bounded_query_plan_v2"
+QUERY_PLAN_ALGORITHM = "bounded_query_plan_v3"
 MAX_PLANNED_QUERIES = 6
 MAX_NAVIGATION_IDENTIFIERS = 12
+MAX_PLANNED_ASPECTS = 6
 
 OVERVIEW_PATTERNS = (
     r"^o que (?:e|sao)\b",
@@ -147,7 +148,9 @@ def normalize_query_plan(
                 except json.JSONDecodeError:
                     continue
                 if isinstance(possible, dict) and (
-                    "queries" in possible or "identifiers" in possible
+                    "queries" in possible
+                    or "identifiers" in possible
+                    or "aspects" in possible
                 ):
                     value = possible
                     break
@@ -192,11 +195,17 @@ def normalize_query_plan(
         maximum=MAX_NAVIGATION_IDENTIFIERS,
         length=120,
     )
+    aspects = safe_strings(
+        value.get("aspects"),
+        maximum=MAX_PLANNED_ASPECTS,
+        length=120,
+    )
     return {
         "algorithm": QUERY_PLAN_ALGORITHM,
-        "generated": bool(proposed_queries or identifiers),
+        "generated": bool(proposed_queries or identifiers or aspects),
         "queries": queries,
         "identifiers": identifiers,
+        "aspects": aspects,
     }
 
 

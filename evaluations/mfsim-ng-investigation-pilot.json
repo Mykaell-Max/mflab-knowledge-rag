@@ -14,6 +14,7 @@
       "temperature": 0,
       "expectations": {
         "abstained": false,
+        "answer_completeness": "complete",
         "grounding_status": "cited",
         "min_valid_citations": 2,
         "max_invalid_citations": 0,
@@ -32,8 +33,9 @@
     },
     {
       "id": "answer-pt-current-subsystem-flow",
-      "query": "Como funciona o DPM atualmente? Explique o fluxo no código.",
+      "query": "Explique detalhadamente como o DPM funciona atualmente no MFSim-NG, desde a configuração e inicialização até o avanço das partículas e sua integração com o domínio. Mostre pequenos trechos de código relevantes em cada etapa e explique como eles se conectam.",
       "mode": "hybrid",
+      "response_depth": "detailed",
       "project": "MFSim-NG",
       "branch": "base",
       "limit": 14,
@@ -42,6 +44,7 @@
       "temperature": 0,
       "expectations": {
         "abstained": false,
+        "answer_completeness": "complete",
         "grounding_status": "cited",
         "min_valid_citations": 3,
         "max_invalid_citations": 0,

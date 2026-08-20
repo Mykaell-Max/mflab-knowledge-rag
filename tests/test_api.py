@@ -43,16 +43,19 @@ class _PlanningGenerator(_Generator):
         self.plan_calls.append(kwargs)
         return (
             '{"queries":["mesh creation initialization call flow"],'
-            '"identifiers":["MeshFactory","initialize"]}'
+            '"identifiers":["MeshFactory","initialize"],'
+            '"aspects":["construction","runtime integration"]}'
         )
 
 
 class _InvestigatingGenerator:
     def __init__(self) -> None:
         self.calls = 0
+        self.history: list[dict[str, object]] = []
 
-    def investigate(self, **_kwargs: object) -> str:
+    def investigate(self, **kwargs: object) -> str:
         self.calls += 1
+        self.history.append(kwargs)
         if self.calls == 1:
             return (
                 '{"coverage":[{"aspect":"entry point","status":"gap",'
@@ -1005,11 +1008,22 @@ class ApiServiceTests(unittest.TestCase):
                         "generated": True,
                         "queries": ["Onde o componente é inicializado?"],
                         "identifiers": [],
+                        "aspects": ["entry point"],
                     },
                     progress_callback=progress.append,
                 )
 
         self.assertEqual(investigator.calls, 3)
+        self.assertEqual(
+            investigator.history[0]["previous_coverage"],
+            [
+                {
+                    "aspect": "entry point",
+                    "status": "gap",
+                    "chunk_ids": [],
+                }
+            ],
+        )
         self.assertEqual(search_mock.call_count, 3)
         self.assertEqual(context["agent_investigation"]["status"], "sufficient")
         self.assertEqual(context["agent_investigation"]["iterations"], 3)
@@ -1378,6 +1392,10 @@ class ApiServiceTests(unittest.TestCase):
         query_plan = captured["query_plan"]
         self.assertIsInstance(query_plan, dict)
         self.assertIn("MeshFactory", query_plan["identifiers"])
+        self.assertEqual(
+            query_plan["aspects"],
+            ["construction", "runtime integration"],
+        )
 
     def test_structural_anchor_marks_an_existing_search_result(self) -> None:
         result = {
@@ -1935,6 +1953,76 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(len(generator.verify_calls), 2)
         self.assertIn(
             "Afirmações rejeitadas removidas",
+            [step["title"] for step in progress],
+        )
+
+    def test_detailed_salvage_is_not_presented_as_a_complete_answer(self) -> None:
+        generator = _VerifyingGenerator(
+            answers=[
+                "The observed operation advances state [S1].\n\n"
+                "This is the complete architecture [S1]."
+            ],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"Directly present."},'
+                '{"claim_id":"C2","verdict":"unsupported",'
+                '"source_ids":["S1"],"finding":"Too broad."}]}',
+                '{"claims":[{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"Directly present."}]}',
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        progress: list[dict[str, object]] = []
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the complete operation",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 30,
+                "truncated": False,
+                "sources": [
+                    {
+                        "source_id": "S1",
+                        "project": "Solver",
+                        "selected_occurrence": {
+                            "branch": "main",
+                            "commit_sha": "a" * 40,
+                        },
+                        "path": "src/model.cpp",
+                        "text": "The operation advances state.",
+                    }
+                ],
+            },
+        ):
+            result = service.ask(
+                query="Explain the complete operation",
+                response_depth="detailed",
+                progress_callback=progress.append,
+            )
+
+        self.assertFalse(result["abstained"])
+        self.assertEqual(result["answer_completeness"], "supported_subset")
+        self.assertTrue(
+            str(result["answer"]).startswith(
+                "### Pontos sustentados pela investigação"
+            )
+        )
+        self.assertIn(
+            "Investigação concluída com limitações",
             [step["title"] for step in progress],
         )
 

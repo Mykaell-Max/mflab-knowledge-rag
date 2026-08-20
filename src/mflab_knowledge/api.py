@@ -63,6 +63,7 @@ from mflab_knowledge.investigator import (
     coverage_needs_structural_connection,
     coverage_summary,
     fallback_investigation_actions,
+    merge_required_coverage,
     normalize_investigation_decision,
     pending_graph_continuations,
     prioritize_kept_chunk_ids,
@@ -1113,6 +1114,11 @@ class RagApiService:
                     for value in query_plan.get("identifiers", [])
                     if isinstance(value, str)
                 ],
+                "aspects": [
+                    str(value)
+                    for value in query_plan.get("aspects", [])
+                    if isinstance(value, str)
+                ],
             }
         planned_queries = exploration["queries"]
         assert isinstance(planned_queries, list)
@@ -1128,6 +1134,11 @@ class RagApiService:
                 "intent": str(exploration.get("intent", "direct")),
                 "query_count": len(planned_queries),
                 "queries": [str(value) for value in planned_queries],
+                "aspects": (
+                    list(exploration.get("query_plan", {}).get("aspects", []))
+                    if isinstance(exploration.get("query_plan"), dict)
+                    else []
+                ),
             },
         )
         retrievals = [
@@ -1323,7 +1334,17 @@ class RagApiService:
             )
         agent_iterations = 0
         agent_status = "not_requested"
-        agent_coverage: list[dict[str, object]] = []
+        raw_planned_aspects = (
+            query_plan.get("aspects", []) if isinstance(query_plan, dict) else []
+        )
+        planned_aspects = [
+            str(value) for value in raw_planned_aspects if isinstance(value, str)
+        ]
+        agent_coverage: list[dict[str, object]] = merge_required_coverage(
+            planned_aspects,
+            [],
+            [],
+        )
         agent_actions: list[dict[str, str]] = []
         kept_chunk_ids: list[str] = []
         baseline_chunk_ids: list[str] = []
@@ -1394,16 +1415,15 @@ class RagApiService:
                     }
 
                 previous_coverage = list(agent_coverage)
-                coverage_by_aspect = {
-                    str(item.get("aspect", "")).casefold(): item
-                    for item in agent_coverage
-                }
-                for item in decision["coverage"]:
-                    assert isinstance(item, dict)
-                    coverage_by_aspect[
-                        str(item.get("aspect", "")).casefold()
-                    ] = item
-                agent_coverage = list(coverage_by_aspect.values())
+                agent_coverage = merge_required_coverage(
+                    planned_aspects,
+                    agent_coverage,
+                    decision["coverage"],
+                )
+                decision["coverage"] = agent_coverage
+                decision["stop"] = bool(decision["stop"]) and all(
+                    item.get("status") == "covered" for item in agent_coverage
+                )
                 if decision["coverage"] and repeated_complete_coverage(
                     previous_coverage,
                     agent_coverage,
@@ -2551,6 +2571,7 @@ class RagApiService:
 
         verification = unavailable_verification("disabled")
         evidence_repair = False
+        supported_subset_only = False
         verifier = getattr(self.generator, "verify", None)
         verification_expected = bool(
             self.generation_config.verify_evidence and callable(verifier)
@@ -2752,6 +2773,7 @@ class RagApiService:
                                 },
                             )
                             answer = supported_answer
+                            supported_subset_only = True
                             assessment = _grounding_assessment(
                                 answer,
                                 raw_sources,
@@ -2820,6 +2842,7 @@ class RagApiService:
                         },
                     )
                     answer = supported_answer
+                    supported_subset_only = True
                     assessment = _grounding_assessment(
                         answer,
                         raw_sources,
@@ -2865,12 +2888,34 @@ class RagApiService:
         verification_failed = bool(
             verification_expected and verification.get("passed") is not True
         )
+        answer_completeness = (
+            "supported_subset"
+            if not verification_failed
+            and supported_subset_only
+            and response_depth == "detailed"
+            else "complete"
+        )
+        if answer_completeness == "supported_subset":
+            answer = "### Pontos sustentados pela investigação\n\n" + answer
         if verification_failed:
             assessment["grounding_status"] = "evidence_not_supported"
             record(
                 "complete",
                 "Investigação encerrada sem resposta conclusiva",
                 "A resposta candidata não permaneceu sustentada após a revisão limitada.",
+            )
+        elif answer_completeness == "supported_subset":
+            counts = verification.get("counts")
+            supported = (
+                int(counts.get("supported", 0))
+                if isinstance(counts, dict)
+                else 0
+            )
+            record(
+                "complete",
+                "Investigação concluída com limitações",
+                "A conferência preservou pontos sustentados, mas não uma explicação completa.",
+                {"claims_audited": supported},
             )
         else:
             counts = verification.get("counts")
@@ -2922,6 +2967,7 @@ class RagApiService:
             "answer": None if verification_failed else answer,
             "abstained": verification_failed,
             "reason": "evidence_not_supported" if verification_failed else None,
+            "answer_completeness": answer_completeness,
             "model": generated["model"],
             "finish_reason": generated["finish_reason"],
             "usage": generated["usage"],
