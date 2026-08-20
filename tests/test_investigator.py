@@ -55,6 +55,42 @@ class InvestigatorTests(unittest.TestCase):
             ],
         )
 
+    def test_answer_coverage_uses_stable_aspect_ids_when_label_is_rephrased(
+        self,
+    ) -> None:
+        result = normalize_answer_coverage(
+            {
+                "coverage": [
+                    {
+                        "aspect_id": "A1",
+                        "aspect": "fluxo traduzido pelo modelo",
+                        "status": "covered",
+                        "claim_ids": ["C1"],
+                    }
+                ]
+            },
+            required_aspects=[
+                {
+                    "aspect_id": "A1",
+                    "aspect": "runtime flow",
+                    "question_span": "flow",
+                }
+            ],
+            valid_claim_ids={"C1"},
+        )
+
+        self.assertTrue(result["complete"])
+        self.assertEqual(
+            result["coverage"],
+            [
+                {
+                    "aspect": "runtime flow",
+                    "status": "covered",
+                    "claim_ids": ["C1"],
+                }
+            ],
+        )
+
     def test_required_only_coverage_discards_planner_adjacent_facets(self) -> None:
         merged = merge_required_coverage(
             ["initialization"],

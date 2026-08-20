@@ -747,6 +747,17 @@ completa quando o conteúdo restante ainda satisfaz toda a pergunta. A resposta
 e o resumo de laboratório expõem essa cobertura final. A implementação é
 genérica e não contém nomes de projeto, branch, arquivos ou mecanismos.
 
+O teste real da 0.42.3 revelou duas perdas posteriores à recuperação. O modelo
+local podia traduzir os rótulos de aspectos e, apesar de reconhecer afirmações
+sustentadas, fazer a validação estrita convertê-los todos em lacunas. Além
+disso, a redução determinística mantinha a prosa aprovada, mas removia blocos de
+código por eles não serem afirmações. Na 0.42.4, a auditoria usa IDs estáveis de
+aspecto e o servidor restaura sempre o rótulo original validado. A redução
+preserva somente blocos que sejam trechos exatos de uma fonte autorizada citada
+por uma afirmação aprovada; código modificado, inventado ou sem esse vínculo é
+descartado. A correção não contém nomes de projeto, branch, caminho, símbolo ou
+conceito científico.
+
 Foi registrado como requisito de interface visualizar o grafo usado na
 investigação. Depois da resposta e das citações, a interface deverá poder exibir
 um painel recolhível com o subgrafo efetivamente percorrido naquela consulta:

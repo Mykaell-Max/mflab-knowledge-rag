@@ -172,6 +172,40 @@ class VerificationTests(unittest.TestCase):
             "The observed operation advances state [S1].",
         )
 
+    def test_supported_subset_keeps_only_verbatim_code_from_approved_sources(
+        self,
+    ) -> None:
+        verification = {
+            "claims": [
+                {
+                    "claim_id": "C1",
+                    "claim": "The operation advances state [S1].",
+                    "verdict": "supported",
+                    "source_ids": ["S1"],
+                }
+            ]
+        }
+        answer = (
+            "The operation advances state [S1].\n\n"
+            "```cpp\nstate.advance();\n```\n\n"
+            "```cpp\ninvented_call();\n```"
+        )
+        result = supported_claim_subset(
+            verification,
+            answer=answer,
+            sources=[
+                {
+                    "source_id": "S1",
+                    "text": "void step() {\n    state.advance();\n}",
+                }
+            ],
+        )
+
+        self.assertIsNotNone(result)
+        self.assertIn("```cpp\nstate.advance();\n```", str(result))
+        self.assertIn("[S1]", str(result))
+        self.assertNotIn("invented_call", str(result))
+
 
 if __name__ == "__main__":
     unittest.main()

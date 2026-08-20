@@ -399,7 +399,13 @@ class GenerationTests(unittest.TestCase):
         result = generator.assess_coverage(
             question="Explain the runtime flow",
             answer="The runtime advances [S1].",
-            aspects=["runtime flow"],
+            aspects=[
+                {
+                    "aspect_id": "A1",
+                    "aspect": "runtime flow",
+                    "question_span": "runtime flow",
+                }
+            ],
             supported_claims=[
                 {
                     "claim_id": "C1",
@@ -414,6 +420,8 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(payload["temperature"], 0.0)
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertIn("already passed", payload["messages"][0]["content"])
+        self.assertIn("aspect_id", payload["messages"][0]["content"])
+        self.assertIn('"aspect_id":"A1"', payload["messages"][1]["content"])
         self.assertIn("runtime flow", payload["messages"][1]["content"])
         self.assertIn("covered", result)
 

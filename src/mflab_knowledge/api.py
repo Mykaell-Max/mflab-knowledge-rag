@@ -2766,6 +2766,7 @@ class RagApiService:
                 and self.generation_config.max_repair_attempts == 1
             ):
                 verification_before_repair = verification
+                answer_before_repair = answer
                 evidence_repair = True
                 generation_attempts += 1
                 record(
@@ -2822,8 +2823,14 @@ class RagApiService:
                         # answer. A failed rewrite must not replace it with
                         # redundant or weaker statements.
                         supported_answer = supported_claim_subset(
-                            verification_before_repair
-                        ) or supported_claim_subset(verification)
+                            verification_before_repair,
+                            answer=answer_before_repair,
+                            sources=raw_sources,
+                        ) or supported_claim_subset(
+                            verification,
+                            answer=answer,
+                            sources=raw_sources,
+                        )
                         if (
                             supported_answer
                             and supported_answer.strip() != answer.strip()
@@ -2894,7 +2901,11 @@ class RagApiService:
                 verification.get("performed") is True
                 and verification.get("passed") is False
             ):
-                supported_answer = supported_claim_subset(verification)
+                supported_answer = supported_claim_subset(
+                    verification,
+                    answer=answer,
+                    sources=raw_sources,
+                )
                 if not supported_answer or supported_answer.strip() == answer.strip():
                     break
                 record(
@@ -2962,14 +2973,32 @@ class RagApiService:
             if isinstance(raw_exploration, dict)
             else None
         )
+        raw_aspect_anchors = (
+            raw_query_plan.get("aspect_anchors", [])
+            if isinstance(raw_query_plan, dict)
+            else []
+        )
+        anchored_aspects = [
+            {
+                "aspect": str(value.get("aspect", "")),
+                "question_span": str(value.get("question_span", "")),
+            }
+            for value in raw_aspect_anchors
+            if isinstance(value, dict) and str(value.get("aspect", "")).strip()
+        ]
+        if not anchored_aspects:
+            anchored_aspects = [
+                {"aspect": str(value), "question_span": str(value)}
+                for value in (
+                    raw_query_plan.get("aspects", [])
+                    if isinstance(raw_query_plan, dict)
+                    else []
+                )
+                if isinstance(value, str)
+            ]
         required_answer_aspects = [
-            str(value)
-            for value in (
-                raw_query_plan.get("aspects", [])
-                if isinstance(raw_query_plan, dict)
-                else []
-            )
-            if isinstance(value, str)
+            {**value, "aspect_id": f"A{index}"}
+            for index, value in enumerate(anchored_aspects[:6], start=1)
         ]
         answer_coverage: dict[str, object] = {
             "algorithm": ANSWER_COVERAGE_ALGORITHM,

@@ -270,13 +270,64 @@ def unavailable_verification(reason: str) -> dict[str, object]:
     }
 
 
-def supported_claim_subset(verification: dict[str, object]) -> str | None:
-    """Return only claim text already approved by the bounded evidence audit."""
+_FENCED_CODE_BLOCK = re.compile(
+    r"```(?P<language>[^\n`]*)\n(?P<code>.*?)```",
+    re.DOTALL,
+)
+
+
+def _exact_supported_code_blocks(
+    answer: str,
+    sources: list[dict[str, object]],
+    *,
+    allowed_source_ids: set[str],
+) -> list[str]:
+    """Keep generated code only when it is verbatim authorized evidence."""
+
+    source_text = {
+        str(source.get("source_id", "")): str(source.get("text", "")).replace(
+            "\r\n", "\n"
+        )
+        for source in sources
+        if str(source.get("source_id", "")) in allowed_source_ids
+    }
+    selected: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    for match in _FENCED_CODE_BLOCK.finditer(answer):
+        code = match.group("code").replace("\r\n", "\n").strip("\n")
+        if not code or len(code) > 8_000:
+            continue
+        source_id = next(
+            (
+                candidate
+                for candidate, text in source_text.items()
+                if code in text
+            ),
+            None,
+        )
+        if source_id is None or (source_id, code) in seen:
+            continue
+        seen.add((source_id, code))
+        language = re.sub(r"[^A-Za-z0-9_+.#-]", "", match.group("language"))[:30]
+        selected.append(f"```{language}\n{code}\n```\n\n[{source_id}]")
+        if len(selected) >= 6:
+            break
+    return selected
+
+
+def supported_claim_subset(
+    verification: dict[str, object],
+    *,
+    answer: str | None = None,
+    sources: list[dict[str, object]] | None = None,
+) -> str | None:
+    """Return only prose and verbatim code approved by the bounded audit."""
 
     raw_claims = verification.get("claims")
     if not isinstance(raw_claims, list):
         return None
     selected: list[str] = []
+    allowed_source_ids: set[str] = set()
     for raw_claim in raw_claims:
         if not isinstance(raw_claim, dict):
             continue
@@ -286,6 +337,20 @@ def supported_claim_subset(verification: dict[str, object]) -> str | None:
         source_ids = raw_claim.get("source_ids")
         if not claim or not isinstance(source_ids, list) or not source_ids:
             continue
+        allowed_source_ids.update(str(value) for value in source_ids)
         if claim not in selected:
             selected.append(claim)
-    return "\n\n".join(selected) if selected else None
+    if not selected:
+        return None
+    result = "\n\n".join(selected)
+    if answer is not None and sources:
+        code_blocks = _exact_supported_code_blocks(
+            answer,
+            sources,
+            allowed_source_ids=allowed_source_ids,
+        )
+        if code_blocks:
+            result += "\n\n### Trechos de código citados\n\n" + "\n\n".join(
+                code_blocks
+            )
+    return result

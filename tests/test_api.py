@@ -2132,6 +2132,16 @@ class ApiServiceTests(unittest.TestCase):
         self.assertTrue(result["answer_coverage"]["complete"])
         self.assertEqual(result["answer"], "The runtime advances state [S1].")
         self.assertEqual(len(generator.coverage_calls), 1)
+        self.assertEqual(
+            generator.coverage_calls[0]["aspects"],
+            [
+                {
+                    "aspect": "runtime flow",
+                    "question_span": "runtime flow",
+                    "aspect_id": "A1",
+                }
+            ],
+        )
         self.assertIn(
             "Cobertura da pergunta conferida",
             [step["title"] for step in progress],

@@ -193,19 +193,26 @@ def normalize_investigation_decision(
 def normalize_answer_coverage(
     raw: str | dict[str, object],
     *,
-    required_aspects: Iterable[str],
+    required_aspects: Iterable[str | dict[str, object]],
     valid_claim_ids: set[str],
 ) -> dict[str, object]:
     """Validate a completeness judgment over claims already audited as supported."""
 
     required: list[str] = []
+    aspect_ids: dict[str, str] = {}
     required_keys: set[str] = set()
-    for raw_aspect in required_aspects:
-        aspect = _bounded_text(raw_aspect, maximum=120)
+    for index, raw_aspect in enumerate(required_aspects, start=1):
+        if isinstance(raw_aspect, dict):
+            aspect = _bounded_text(raw_aspect.get("aspect"), maximum=120)
+            aspect_id = _bounded_text(raw_aspect.get("aspect_id"), maximum=20)
+        else:
+            aspect = _bounded_text(raw_aspect, maximum=120)
+            aspect_id = None
         if aspect is None or aspect.casefold() in required_keys:
             continue
         required.append(aspect)
         required_keys.add(aspect.casefold())
+        aspect_ids[aspect_id or f"A{index}"] = aspect
         if len(required) >= 6:
             break
     value = _json_object(raw)
@@ -216,6 +223,11 @@ def normalize_answer_coverage(
             if not isinstance(raw_item, dict):
                 continue
             aspect = _bounded_text(raw_item.get("aspect"), maximum=120)
+            aspect_id = _bounded_text(raw_item.get("aspect_id"), maximum=20)
+            if aspect_id in aspect_ids:
+                # Stable IDs prevent a local model from accidentally invalidating
+                # the whole judgment by translating or paraphrasing an aspect.
+                aspect = aspect_ids[aspect_id]
             status = str(raw_item.get("status", ""))
             if (
                 aspect is None

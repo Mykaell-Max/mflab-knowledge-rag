@@ -239,6 +239,21 @@ sobreafirmação não transforma automaticamente uma explicação suficiente em
 resposta parcial, enquanto pedidos explícitos de fluxo, comparação ou trechos
 de código continuam exigindo que essa forma apareça na resposta final.
 
+Na 0.42.4, cada aspecto ancorado recebe um identificador estável e opaco na
+auditoria final (`A1`, `A2` e assim por diante). O modelo julga a cobertura por
+esse identificador, de modo que traduzir ou parafrasear acidentalmente o rótulo
+do aspecto não transforme todos os resultados válidos em lacunas. O servidor
+continua publicando o rótulo original validado, e IDs de afirmações que não
+tenham passado pela auditoria factual continuam rejeitados.
+
+A remoção determinística de sobreafirmações também deixa de apagar um exemplo
+de código válido apenas porque blocos cercados não são unidades de prosa. Um
+bloco só é preservado quando seu conteúdo é uma substring exata de uma fonte
+autorizada citada por uma afirmação já aprovada. Código reconstruído, alterado,
+proveniente de outra fonte ou sem vínculo com uma afirmação sustentada é
+descartado. Essa regra é genérica e não depende de projeto, linguagem, caminho,
+branch ou símbolo conhecido antecipadamente.
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

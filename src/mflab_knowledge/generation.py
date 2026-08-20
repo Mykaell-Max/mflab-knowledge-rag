@@ -666,7 +666,7 @@ class OpenAICompatibleGenerator:
         *,
         question: str,
         answer: str,
-        aspects: list[str],
+        aspects: list[dict[str, object]],
         supported_claims: list[dict[str, object]],
     ) -> str:
         """Check whether already-audited claims answer each requested facet."""
@@ -694,8 +694,8 @@ class OpenAICompatibleGenerator:
                         "partial means useful support exists but the requested facet is "
                         "not fully answered. gap means no supported claim answers it. "
                         "Return JSON only with key coverage. Return exactly one item for "
-                        "each supplied aspect, preserving its exact text. Each item must "
-                        "contain aspect, status, and claim_ids. claim_ids may reference "
+                        "each supplied aspect_id, preserving that ID exactly. Each item "
+                        "must contain aspect_id, status, and claim_ids. claim_ids may reference "
                         "only supplied supported claims. Never reveal reasoning."
                     ),
                 },
