@@ -428,6 +428,10 @@ class GenerationTests(unittest.TestCase):
         self.assertEqual(payload["temperature"], 0.0)
         self.assertEqual(payload["response_format"], {"type": "json_object"})
         self.assertIn("already passed", payload["messages"][0]["content"])
+        self.assertIn(
+            "Judge each aspect independently",
+            payload["messages"][0]["content"],
+        )
         self.assertIn("aspect_id", payload["messages"][0]["content"])
         self.assertIn('"aspect_id":"A1"', payload["messages"][1]["content"])
         self.assertIn("runtime flow", payload["messages"][1]["content"])

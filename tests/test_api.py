@@ -268,7 +268,7 @@ class ApiServiceTests(unittest.TestCase):
                     "aspect_id": "A3",
                     "aspect": "combined local behavior",
                     "status": "covered",
-                    "chunk_ids": ["entry"],
+                    "chunk_ids": ["entry", "advance"],
                 },
                 {
                     "aspect_id": "A4",
@@ -286,6 +286,7 @@ class ApiServiceTests(unittest.TestCase):
                     "source_kind": "call_graph_caller",
                 },
             ],
+            max_sections=2,
         )
 
         self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v1")
@@ -293,7 +294,8 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
         sections = notebook["sections"]
-        self.assertEqual(len(sections[0]["aspects"]), 2)
+        self.assertEqual(len(sections[0]["aspects"]), 3)
+        self.assertEqual(len(sections[1]["aspects"]), 3)
         self.assertIn(
             "S3",
             sections[0]["source_ids"] + sections[1]["source_ids"],
@@ -329,6 +331,62 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(sections[0]["source_ids"], ["S1", "S3"])
         self.assertEqual(sections[1]["source_ids"], ["S2"])
         self.assertEqual(sections[1]["status"], "supporting_context")
+
+    def test_evidence_notebook_assigns_gap_to_matching_authorized_context(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "configuration",
+                    "status": "partial",
+                    "chunk_ids": ["configuration"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "domain integration",
+                    "status": "gap",
+                    "chunk_ids": [],
+                },
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "configuration",
+                    "path": "src/configuration.cpp",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "integration",
+                    "path": "src/domain/integration.cpp",
+                },
+            ],
+        )
+
+        self.assertEqual(notebook["ready_sections"], 2)
+        self.assertEqual(notebook["candidate_gap_aspects"], 1)
+        self.assertEqual(notebook["gap_aspects"], 1)
+        self.assertEqual(notebook["sections"][1]["source_ids"], ["S2"])
+        self.assertEqual(
+            notebook["sections"][1]["status"],
+            "candidate_context",
+        )
+
+    def test_section_prompt_forbids_code_from_truncated_sources(self) -> None:
+        instructions = api._section_synthesis_instructions(
+            api.CONTEXT_INSTRUCTIONS,
+            {
+                "section_id": "E1",
+                "aspects": [{"aspect_id": "A1", "aspect": "flow"}],
+            },
+            position=1,
+            total=1,
+            sources=[{"source_id": "S2", "text_truncated": True}],
+        )
+
+        self.assertIn("Text-truncated source IDs: S2", instructions)
+        self.assertIn("never quote a fenced code block", instructions)
 
     def test_context_packing_preserves_distinct_paths_before_repeated_chunks(self) -> None:
         packed, _used, _truncated = api._pack_context_results(

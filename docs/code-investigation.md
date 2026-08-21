@@ -358,6 +358,21 @@ coordenador mas outras fontes já tiverem sido autorizadas no pacote final, uma
 segunda seção de contexto é criada e as fontes restantes são distribuídas entre
 as janelas limitadas. Nenhuma relação é inferida nessa distribuição.
 
+A 0.43.2 evita uma seção redundante quando uma faceta transversal reutiliza
+fontes que já foram repartidas entre estágios: a faceta é anexada às seções
+sobrepostas. Uma lacuna pode receber uma fonte suplementar somente quando os
+termos do seu próprio rótulo aparecem nos metadados autorizados da fonte. Essa
+atribuição abre uma janela de leitura, mas não altera o estado da lacuna nem
+comprova uma relação. Lacunas integrativas sem candidato são apresentadas como
+orientação local às seções existentes, sem uma nova síntese repetitiva.
+
+O contrato de seção recebe ainda os IDs das fontes cujo texto foi truncado pelo
+empacotamento. Elas continuam válidas para afirmações locais que estejam
+visíveis, porém não podem ser usadas para cercas de código, pois o corte pode
+ocorrer no meio de uma instrução. A auditoria de completude julga cada faceta
+isoladamente: `covered` não exige todos os detalhes possíveis, enquanto
+`partial` exige uma parte ausente identificável naquela mesma faceta.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

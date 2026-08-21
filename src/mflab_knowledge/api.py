@@ -177,6 +177,14 @@ MAX_EVIDENCE_SECTIONS = 4
 MAX_SECTION_SOURCES = 4
 
 
+def _notebook_terms(value: object) -> set[str]:
+    normalized = "".join(
+        character.casefold() if character.isalnum() else " "
+        for character in str(value).replace("_", " ")
+    )
+    return {term for term in normalized.split() if len(term) >= 3}
+
+
 def _build_evidence_notebook(
     coverage: object,
     sources: list[dict[str, object]],
@@ -206,6 +214,7 @@ def _build_evidence_notebook(
     sections: list[dict[str, object]] = []
     gaps: list[dict[str, object]] = []
     assigned_source_ids: set[str] = set()
+    evidenced_aspect_ids: set[str] = set()
     for position, item in enumerate(raw_coverage, start=1):
         if not isinstance(item, dict):
             continue
@@ -235,6 +244,7 @@ def _build_evidence_notebook(
                 }
             )
             continue
+        evidenced_aspect_ids.add(str(aspect_record["aspect_id"]))
 
         source_set = set(source_ids)
         best_section: dict[str, object] | None = None
@@ -257,6 +267,23 @@ def _build_evidence_notebook(
             raw_aspects = best_section.get("aspects")
             assert isinstance(raw_aspects, list)
             raw_aspects.append(aspect_record)
+            continue
+
+        # A cross-cutting facet can cite evidence already divided among two or
+        # more sections (for example, a request for excerpts from two stages).
+        # Attach it to every overlapping section rather than generating a third
+        # response that repeats both stages.
+        if source_set and source_set.issubset(assigned_source_ids):
+            for section in sections:
+                existing_ids = {
+                    str(value) for value in section.get("source_ids", [])
+                }
+                if not (existing_ids & source_set):
+                    continue
+                raw_aspects = section.get("aspects")
+                assert isinstance(raw_aspects, list)
+                if aspect_record not in raw_aspects:
+                    raw_aspects.append(aspect_record)
             continue
 
         if len(sections) < max_sections:
@@ -302,6 +329,66 @@ def _build_evidence_notebook(
         for source_id in source_by_id
         if source_id not in assigned_source_ids
     ]
+
+    # A gap may already have a strong candidate in the authorized final package
+    # even though the iterative ledger did not attach its chunk.  Metadata
+    # overlap is used only to assign a bounded reading window; the prompt and
+    # final auditor still forbid treating it as proof by association.
+    candidate_gap_ids: set[str] = set()
+    for gap in gaps:
+        if len(sections) >= max_sections or not supplemental_source_ids:
+            break
+        gap_terms = _notebook_terms(gap.get("aspect", ""))
+        ranked: list[tuple[int, int, str]] = []
+        for position, source_id in enumerate(supplemental_source_ids):
+            source = source_by_id[source_id]
+            source_terms = _notebook_terms(
+                " ".join(
+                    str(source.get(field, ""))
+                    for field in ("path", "title", "source_kind")
+                )
+            )
+            ranked.append((len(gap_terms & source_terms), -position, source_id))
+        score, _position, source_id = max(ranked)
+        if score < 1:
+            continue
+        supplemental_source_ids.remove(source_id)
+        sections.append(
+            {
+                "section_id": f"E{len(sections) + 1}",
+                "status": "candidate_context",
+                "aspects": [
+                    {
+                        "aspect_id": str(gap.get("aspect_id", "")),
+                        "aspect": str(gap.get("aspect", "")),
+                    }
+                ],
+                "source_ids": [source_id],
+            }
+        )
+        assigned_source_ids.add(source_id)
+        candidate_gap_ids.add(str(gap.get("aspect_id", "")))
+
+    # A remaining cross-cutting gap is added as a planning hint to every
+    # existing stage. Each section can then explain its own local contribution
+    # to that facet without a fourth generation call that merely repeats the
+    # same sources. The gap remains a gap until the final semantic audit.
+    remaining_gaps = [
+        gap
+        for gap in gaps
+        if str(gap.get("aspect_id", "")) not in candidate_gap_ids
+    ]
+    if len(sections) >= 2 and remaining_gaps:
+        for section in sections:
+            raw_aspects = section.get("aspects")
+            assert isinstance(raw_aspects, list)
+            for gap in remaining_gaps:
+                aspect_record = {
+                    "aspect_id": str(gap.get("aspect_id", "")),
+                    "aspect": str(gap.get("aspect", "")),
+                }
+                if aspect_record not in raw_aspects:
+                    raw_aspects.append(aspect_record)
     if (
         len(sections) == 1
         and supplemental_source_ids
@@ -345,10 +432,9 @@ def _build_evidence_notebook(
         "sections": sections,
         "gaps": gaps,
         "ready_sections": len(sections),
-        "covered_aspects": sum(
-            len(section.get("aspects", [])) for section in sections
-        ),
+        "covered_aspects": len(evidenced_aspect_ids),
         "gap_aspects": len(gaps),
+        "candidate_gap_aspects": len(candidate_gap_ids),
     }
 
 
@@ -358,6 +444,7 @@ def _section_synthesis_instructions(
     *,
     position: int,
     total: int,
+    sources: list[dict[str, object]] | None = None,
 ) -> str:
     aspects = [
         {
@@ -367,6 +454,18 @@ def _section_synthesis_instructions(
         for item in section.get("aspects", [])
         if isinstance(item, dict)
     ]
+    truncated_ids = [
+        str(source.get("source_id", ""))
+        for source in sources or []
+        if source.get("text_truncated") is True
+    ]
+    truncation_contract = (
+        " Sources marked as text-truncated may support local prose, but never "
+        "quote a fenced code block from them because their excerpt may end inside "
+        f"a statement. Text-truncated source IDs: {', '.join(truncated_ids)}."
+        if truncated_ids
+        else ""
+    )
     return (
         instructions
         + "\n\nSECTIONAL SYNTHESIS CONTRACT: Write only one self-contained "
@@ -381,6 +480,7 @@ def _section_synthesis_instructions(
         "definitions. If a transition is not shown, state the local boundary "
         "briefly instead of completing it from memory. Keep every factual prose "
         "paragraph or bullet cited with the supplied global source IDs."
+        + truncation_contract
     )
 
 
@@ -2955,6 +3055,7 @@ class RagApiService:
                             section,
                             position=position,
                             total=len(notebook_sections),
+                            sources=section_sources,
                         ),
                         sources=section_sources,
                         max_output_tokens=section_output_limit,
@@ -2976,6 +3077,7 @@ class RagApiService:
                                         section,
                                         position=position,
                                         total=len(notebook_sections),
+                                        sources=section_sources,
                                     ),
                                     str(generated_section.get("answer", "")),
                                 ),

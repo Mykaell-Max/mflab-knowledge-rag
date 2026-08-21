@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.43.1**. Antes de
+> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.43.2**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,24 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação real da 0.43.1 ativou o caminho novo: a pergunta de malha usou duas
+seções e cresceu de 1.616 para 3.199 caracteres; a de DPM usou três seções e
+cresceu de 3.303 para 6.785 caracteres. Ambas terminaram naturalmente, tiveram
+100% de cobertura de citações e todas as 33 afirmações finais foram aprovadas.
+O resultado ainda expôs três problemas: uma faceta transversal criou uma seção
+redundante, a lacuna de integração com o domínio não recebeu a fonte `Domain`
+já autorizada e um chunk truncado foi reproduzido como código incompleto.
+
+A 0.43.2 incorpora facetas transversais às seções que já possuem suas fontes,
+eliminando a geração repetida. Lacunas podem receber uma janela candidata quando
+os termos da própria faceta coincidem com caminho, título ou papel estrutural de
+uma fonte final ainda não atribuída. Lacunas integrativas remanescentes viram
+apenas uma orientação local em cada seção existente, sem nova chamada e sem
+serem promovidas a fato. Fontes marcadas como textualmente truncadas ficam
+proibidas de originar blocos de código. A auditoria de completude também passa a
+julgar cada faceta de forma independente, evitando `partial` apenas porque outra
+parte da pergunta continua incompleta.
 
 A primeira validação real da 0.43.0 não executou a síntese incremental. O agente
 forneceu chunks observados com cobertura conservadora `partial`, mas o caderno
