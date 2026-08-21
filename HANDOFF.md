@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.43.0**. Antes de
+> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.43.1**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,17 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A primeira validação real da 0.43.0 não executou a síntese incremental. O agente
+forneceu chunks observados com cobertura conservadora `partial`, mas o caderno
+aceitava somente o estado literal `covered`; por isso os dois casos registraram
+zero seções e usaram novamente a passagem única. A 0.43.1 aceita evidência
+parcial com proveniência para redação limitada, sem promovê-la a cobertura
+completa. A auditoria posterior continua sendo a única autoridade sobre a
+resposta final. Quando várias facetas reutilizam o mesmo coordenador e ainda há
+fontes autorizadas, o caderno abre uma segunda janela de contexto e distribui
+as fontes restantes de forma limitada. Isso permite investigar o entorno sem
+afirmar previamente que existe uma relação entre os trechos.
 
 A versão 0.43.0 troca a passagem única de geração por uma primeira síntese
 incremental para perguntas complexas. O backend cria um caderno de evidências a

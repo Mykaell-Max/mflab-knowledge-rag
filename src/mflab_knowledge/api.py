@@ -221,7 +221,12 @@ def _build_evidence_notebook(
             "aspect_id": aspect_id or f"A{position}",
             "aspect": aspect,
         }
-        if item.get("status") != "covered" or not source_ids:
+        # Investigation coverage is deliberately conservative: ``partial``
+        # means that a real observed chunk exists but the agent has not proved
+        # the entire facet.  It is still valid evidence for bounded synthesis;
+        # only the post-generation auditor may decide whether the final answer
+        # covers the facet completely.
+        if item.get("status") not in {"covered", "partial"} or not source_ids:
             gaps.append(
                 {
                     **aspect_record,
@@ -287,17 +292,42 @@ def _build_evidence_notebook(
                 }
             )
 
-    # Structural frontier nodes can establish transitions between otherwise
-    # local sections.  They are distributed without interpreting any project,
-    # branch, path, symbol, or scientific vocabulary.
-    structural_source_ids = [
+    # When several facets point at one coordinator, keep a second evidence
+    # window for its surrounding context instead of falling back to one large
+    # generation call.  Final sources have already passed retrieval, ACL, and
+    # scope selection; this split does not claim that the extra source proves a
+    # relationship.  Its section prompt still requires local, cited statements.
+    supplemental_source_ids = [
         source_id
-        for source_id, source in source_by_id.items()
+        for source_id in source_by_id
         if source_id not in assigned_source_ids
-        and bool(str(source.get("source_kind", "")).strip())
     ]
+    if (
+        len(sections) == 1
+        and supplemental_source_ids
+        and len(sections) < max_sections
+    ):
+        source_id = supplemental_source_ids.pop(0)
+        sections.append(
+            {
+                "section_id": "E2",
+                "status": "supporting_context",
+                "aspects": [
+                    {
+                        "aspect_id": "context-E2",
+                        "aspect": "supporting context selected for the question",
+                    }
+                ],
+                "source_ids": [source_id],
+            }
+        )
+        assigned_source_ids.add(source_id)
+
+    # Distribute every remaining authorized source across the bounded sections.
+    # This gives distinct stages a fair chance to be described while preserving
+    # the final semantic audit as the only authority over factual support.
     section_cursor = 0
-    for source_id in structural_source_ids:
+    for source_id in supplemental_source_ids:
         if not sections:
             break
         for _ in range(len(sections)):

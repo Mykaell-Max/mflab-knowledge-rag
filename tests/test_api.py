@@ -261,7 +261,7 @@ class ApiServiceTests(unittest.TestCase):
                 {
                     "aspect_id": "A2",
                     "aspect": "advance",
-                    "status": "covered",
+                    "status": "partial",
                     "chunk_ids": ["advance"],
                 },
                 {
@@ -298,6 +298,37 @@ class ApiServiceTests(unittest.TestCase):
             "S3",
             sections[0]["source_ids"] + sections[1]["source_ids"],
         )
+
+    def test_evidence_notebook_splits_shared_facets_from_supporting_context(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "first facet",
+                    "status": "partial",
+                    "chunk_ids": ["coordinator"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "second facet",
+                    "status": "partial",
+                    "chunk_ids": ["coordinator"],
+                },
+            ],
+            [
+                {"source_id": "S1", "chunk_id": "coordinator"},
+                {"source_id": "S2", "chunk_id": "upstream"},
+                {"source_id": "S3", "chunk_id": "downstream"},
+            ],
+        )
+
+        sections = notebook["sections"]
+        self.assertEqual(notebook["ready_sections"], 2)
+        self.assertEqual(sections[0]["source_ids"], ["S1", "S3"])
+        self.assertEqual(sections[1]["source_ids"], ["S2"])
+        self.assertEqual(sections[1]["status"], "supporting_context")
 
     def test_context_packing_preserves_distinct_paths_before_repeated_chunks(self) -> None:
         packed, _used, _truncated = api._pack_context_results(

@@ -350,6 +350,14 @@ reusam exatamente a mesma evidência local são agrupadas, enquanto conjuntos de
 fontes independentes formam seções separadas. Lacunas ficam explícitas no
 caderno, mas não são enviadas ao modelo como fatos a completar.
 
+Na 0.43.1, cobertura exploratória `partial` com `chunk_id` observado também pode
+alimentar uma seção. Isso não altera seu estado nem declara a faceta completa:
+significa apenas que existe evidência primária suficiente para uma redação
+local, que ainda será auditada. Se todas as facetas apontarem para um único
+coordenador mas outras fontes já tiverem sido autorizadas no pacote final, uma
+segunda seção de contexto é criada e as fontes restantes são distribuídas entre
+as janelas limitadas. Nenhuma relação é inferida nessa distribuição.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a
