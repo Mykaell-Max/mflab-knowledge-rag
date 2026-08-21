@@ -201,6 +201,14 @@ def main() -> int:
         suite = load_report(args.suite_report)
         summary = suite.get("summary")
         summary = summary if isinstance(summary, dict) else {}
+        if suite.get("complete") is False:
+            print(
+                "\n[AVISO] Relatório parcial:"
+                f" {summary.get('cases', 0)}/"
+                f"{summary.get('cases_expected', '?')} casos concluídos."
+            )
+            if suite.get("operational_error"):
+                print(f"  falha operacional: {suite['operational_error']}")
         print(
             "\nSuíte:"
             f" {summary.get('cases_passed', 0)}/{summary.get('cases', 0)} casos"

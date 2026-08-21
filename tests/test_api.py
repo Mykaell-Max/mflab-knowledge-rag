@@ -1534,6 +1534,15 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["verification"]["batches"], 3)
         self.assertEqual(result["verification"]["counts"]["supported"], 7)
         self.assertEqual(len(generator.verify_calls), 3)
+        self.assertEqual(
+            [
+                call["answer"].count("Claim ")
+                for call in generator.verify_calls
+            ],
+            [3, 3, 1],
+        )
+        self.assertNotIn("Claim 4", generator.verify_calls[0]["answer"])
+        self.assertNotIn("Claim 1", generator.verify_calls[1]["answer"])
 
     def test_ask_applies_detailed_response_depth_to_generation(self) -> None:
         generator = _Generator("The flow is established [S1].")

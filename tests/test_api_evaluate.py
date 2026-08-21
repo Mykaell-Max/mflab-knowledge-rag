@@ -252,6 +252,61 @@ class ApiEvaluateTests(unittest.TestCase):
             4,
         )
 
+    def test_checkpoints_completed_cases_before_an_operational_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            suite = self._suite(
+                root,
+                [
+                    {
+                        "id": "first",
+                        "query": "First question",
+                        "expectations": {"abstained": True},
+                    },
+                    {
+                        "id": "second",
+                        "query": "Second question",
+                        "expectations": {"abstained": True},
+                    },
+                ],
+            )
+            calls = 0
+
+            def request(
+                _payload: dict[str, object], _timeout: int
+            ) -> dict[str, object]:
+                nonlocal calls
+                calls += 1
+                if calls == 2:
+                    raise RuntimeError("bounded request timed out")
+                return {
+                    "answer": None,
+                    "abstained": True,
+                    "grounding_status": "no_sources",
+                    "citations_used": [],
+                    "invalid_citations": [],
+                    "sources": [],
+                }
+
+            output = root / "checkpoint.json"
+            with self.assertRaisesRegex(RuntimeError, "timed out"):
+                evaluate_answer_suite(
+                    suite_path=suite,
+                    output=output,
+                    request=request,
+                    metric_sampler=None,
+                )
+
+            checkpoint = json.loads(output.read_text(encoding="utf-8"))
+
+        self.assertFalse(checkpoint["complete"])
+        self.assertEqual(checkpoint["summary"]["cases"], 1)
+        self.assertEqual(checkpoint["summary"]["cases_expected"], 2)
+        self.assertEqual(checkpoint["cases"][0]["id"], "first")
+        self.assertEqual(
+            checkpoint["operational_error"], "bounded request timed out"
+        )
+
     def test_validates_overview_scope_and_source_projects(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)

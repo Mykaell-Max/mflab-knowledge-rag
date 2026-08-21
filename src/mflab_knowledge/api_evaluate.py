@@ -128,7 +128,12 @@ def _http_requester(base_url: str) -> RequestCallback:
                 raw = response.read(MAX_API_RESPONSE_BYTES + 1)
         except urllib.error.HTTPError as exc:
             raise RuntimeError(f"API RAG respondeu HTTP {exc.code}") from exc
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        except TimeoutError as exc:
+            raise RuntimeError(
+                "API RAG excedeu o tempo limite de "
+                f"{timeout}s; a investigação pode continuar no servidor"
+            ) from exc
+        except (urllib.error.URLError, OSError) as exc:
             raise RuntimeError("API RAG local indisponível") from exc
         if len(raw) > MAX_API_RESPONSE_BYTES:
             raise RuntimeError("resposta da API RAG excedeu 8 MiB")
@@ -517,6 +522,83 @@ def _source_value(source: object, key: str) -> object:
     return source.get(key)
 
 
+def _build_answer_report(
+    *,
+    suite: dict[str, object],
+    suite_file: Path,
+    base_url: str,
+    evaluated: list[dict[str, object]],
+    expected_cases: int,
+    complete: bool,
+    operational_error: str | None = None,
+) -> dict[str, object]:
+    cases_passed = sum(bool(case["passed"]) for case in evaluated)
+    citation_coverages = [
+        float(coverage["coverage"])
+        for case in evaluated
+        if isinstance((response := case.get("response")), dict)
+        and isinstance((coverage := response.get("citation_coverage")), dict)
+        and coverage.get("coverage") is not None
+    ]
+    gpu_cases = [
+        case["gpu"] for case in evaluated if isinstance(case.get("gpu"), dict)
+    ]
+    completed_cases = len(evaluated)
+    summary: dict[str, object] = {
+        "cases": completed_cases,
+        "cases_expected": expected_cases,
+        "cases_passed": cases_passed,
+        "cases_failed": completed_cases - cases_passed,
+        "pass_rate": (
+            cases_passed / completed_cases if completed_cases else None
+        ),
+        "mean_client_duration_seconds": (
+            sum(float(case["client_duration_seconds"]) for case in evaluated)
+            / completed_cases
+            if completed_cases
+            else None
+        ),
+        "mean_citation_coverage": (
+            sum(citation_coverages) / len(citation_coverages)
+            if citation_coverages
+            else None
+        ),
+        "peak_gpu_memory_used_mib": (
+            max(float(gpu["peak_memory_used_mib"]) for gpu in gpu_cases)
+            if gpu_cases
+            else None
+        ),
+        "peak_gpu_utilization_percent": (
+            max(float(gpu["peak_utilization_percent"]) for gpu in gpu_cases)
+            if gpu_cases
+            else None
+        ),
+    }
+    return {
+        "schema_version": ANSWER_EVALUATION_SCHEMA_VERSION,
+        "suite": suite.get("name", suite_file.stem),
+        "suite_file": str(suite_file),
+        "suite_hash": _file_hash(suite_file),
+        "api_base_url": base_url,
+        "complete": complete,
+        "operational_error": operational_error,
+        "summary": summary,
+        "cases": evaluated,
+    }
+
+
+def _write_answer_report(path: Path, report: dict[str, object]) -> None:
+    destination = path.expanduser().resolve()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary = destination.with_name(f".{destination.name}.tmp")
+    temporary.write_text(
+        json.dumps(report, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+    temporary.replace(destination)
+
+
 def _source_branch(source: object) -> object:
     occurrence = _source_value(source, "selected_occurrence")
     return occurrence.get("branch") if isinstance(occurrence, dict) else None
@@ -628,123 +710,112 @@ def evaluate_answer_suite(
     assert isinstance(raw_cases, list)
     evaluated: list[dict[str, object]] = []
 
-    for position, raw_case in enumerate(raw_cases, start=1):
-        if not isinstance(raw_case, dict):
-            raise ValueError(f"caso {position} inválido")
-        unknown = set(raw_case) - CASE_FIELDS
-        if unknown:
-            raise ValueError(
-                f"opções desconhecidas no caso {position}: "
-                + ", ".join(sorted(unknown))
-            )
-        case_id = raw_case.get("id")
-        query = raw_case.get("query")
-        expectations = raw_case.get("expectations")
-        if not isinstance(case_id, str) or not case_id.strip():
-            raise ValueError(f"caso {position} exige id")
-        if not isinstance(query, str) or not query.strip():
-            raise ValueError(f"caso {case_id} exige query")
-        if not isinstance(expectations, dict) or not expectations:
-            raise ValueError(f"caso {case_id} exige expectations")
-
-        payload = {
-            key: value
-            for key, value in raw_case.items()
-            if key not in {"id", "expectations"}
-        }
-        logger(
-            f"[{position}/{len(raw_cases)}] {case_id}: consultando /ask",
-            "info",
-        )
-        response, client_duration, gpu = _request_with_metrics(
-            lambda: requester(payload, timeout_seconds),
-            sampler=metric_sampler,
-            interval_seconds=sampling_interval_seconds,
-        )
-        checks = _evaluate_expectations(
-            response,
-            expectations,
-            client_duration=client_duration,
-        )
-        checks.extend(_evaluate_filter_contract(response, payload))
-        passed = all(bool(check["passed"]) for check in checks)
-        evaluated.append(
-            {
-                "id": case_id,
-                "query": query,
-                "mode": payload.get("mode", "hybrid"),
-                "project": payload.get("project"),
-                "branch": payload.get("branch"),
-                "passed": passed,
-                "client_duration_seconds": round(client_duration, 3),
-                "gpu": gpu,
-                "checks": checks,
-                "response": response,
-            }
-        )
-        gpu_text = (
-            f"; pico GPU {float(gpu['peak_memory_used_mib']):.0f} MiB"
-            if gpu is not None
-            else ""
-        )
-        logger(
-            f"[{position}/{len(raw_cases)}] {case_id}: "
-            f"{'PASSOU' if passed else 'FALHOU'} em {client_duration:.1f}s"
-            f"{gpu_text}",
-            "success" if passed else "error",
-        )
-
-    cases_passed = sum(bool(case["passed"]) for case in evaluated)
-    citation_coverages = [
-        float(coverage["coverage"])
-        for case in evaluated
-        if isinstance((response := case.get("response")), dict)
-        and isinstance((coverage := response.get("citation_coverage")), dict)
-        and coverage.get("coverage") is not None
-    ]
-    gpu_cases = [
-        case["gpu"] for case in evaluated if isinstance(case.get("gpu"), dict)
-    ]
-    summary: dict[str, object] = {
-        "cases": len(evaluated),
-        "cases_passed": cases_passed,
-        "cases_failed": len(evaluated) - cases_passed,
-        "pass_rate": cases_passed / len(evaluated),
-        "mean_client_duration_seconds": sum(
-            float(case["client_duration_seconds"]) for case in evaluated
-        )
-        / len(evaluated),
-        "mean_citation_coverage": (
-            sum(citation_coverages) / len(citation_coverages)
-            if citation_coverages
-            else None
-        ),
-        "peak_gpu_memory_used_mib": (
-            max(float(gpu["peak_memory_used_mib"]) for gpu in gpu_cases)
-            if gpu_cases
-            else None
-        ),
-        "peak_gpu_utilization_percent": (
-            max(float(gpu["peak_utilization_percent"]) for gpu in gpu_cases)
-            if gpu_cases
-            else None
-        ),
-    }
-    report: dict[str, object] = {
-        "schema_version": ANSWER_EVALUATION_SCHEMA_VERSION,
-        "suite": suite.get("name", suite_file.stem),
-        "suite_file": str(suite_file),
-        "suite_hash": _file_hash(suite_file),
-        "api_base_url": base_url,
-        "summary": summary,
-        "cases": evaluated,
-    }
     if output is not None:
         destination = output.expanduser().resolve()
-        destination.parent.mkdir(parents=True, exist_ok=True)
-        destination.write_text(
-            json.dumps(report, ensure_ascii=False, indent=2) + "\n",
-            encoding="utf-8",
-            newline="\n",
-        )
+        destination.unlink(missing_ok=True)
+
+    try:
+        for position, raw_case in enumerate(raw_cases, start=1):
+            if not isinstance(raw_case, dict):
+                raise ValueError(f"caso {position} inválido")
+            unknown = set(raw_case) - CASE_FIELDS
+            if unknown:
+                raise ValueError(
+                    f"opções desconhecidas no caso {position}: "
+                    + ", ".join(sorted(unknown))
+                )
+            case_id = raw_case.get("id")
+            query = raw_case.get("query")
+            expectations = raw_case.get("expectations")
+            if not isinstance(case_id, str) or not case_id.strip():
+                raise ValueError(f"caso {position} exige id")
+            if not isinstance(query, str) or not query.strip():
+                raise ValueError(f"caso {case_id} exige query")
+            if not isinstance(expectations, dict) or not expectations:
+                raise ValueError(f"caso {case_id} exige expectations")
+
+            payload = {
+                key: value
+                for key, value in raw_case.items()
+                if key not in {"id", "expectations"}
+            }
+            logger(
+                f"[{position}/{len(raw_cases)}] {case_id}: consultando /ask",
+                "info",
+            )
+            response, client_duration, gpu = _request_with_metrics(
+                lambda: requester(payload, timeout_seconds),
+                sampler=metric_sampler,
+                interval_seconds=sampling_interval_seconds,
+            )
+            checks = _evaluate_expectations(
+                response,
+                expectations,
+                client_duration=client_duration,
+            )
+            checks.extend(_evaluate_filter_contract(response, payload))
+            passed = all(bool(check["passed"]) for check in checks)
+            evaluated.append(
+                {
+                    "id": case_id,
+                    "query": query,
+                    "mode": payload.get("mode", "hybrid"),
+                    "project": payload.get("project"),
+                    "branch": payload.get("branch"),
+                    "passed": passed,
+                    "client_duration_seconds": round(client_duration, 3),
+                    "gpu": gpu,
+                    "checks": checks,
+                    "response": response,
+                }
+            )
+            gpu_text = (
+                f"; pico GPU {float(gpu['peak_memory_used_mib']):.0f} MiB"
+                if gpu is not None
+                else ""
+            )
+            logger(
+                f"[{position}/{len(raw_cases)}] {case_id}: "
+                f"{'PASSOU' if passed else 'FALHOU'} em {client_duration:.1f}s"
+                f"{gpu_text}",
+                "success" if passed else "error",
+            )
+            if output is not None:
+                _write_answer_report(
+                    output,
+                    _build_answer_report(
+                        suite=suite,
+                        suite_file=suite_file,
+                        base_url=base_url,
+                        evaluated=evaluated,
+                        expected_cases=len(raw_cases),
+                        complete=False,
+                    ),
+                )
+    except Exception as exc:
+        if output is not None:
+            _write_answer_report(
+                output,
+                _build_answer_report(
+                    suite=suite,
+                    suite_file=suite_file,
+                    base_url=base_url,
+                    evaluated=evaluated,
+                    expected_cases=len(raw_cases),
+                    complete=False,
+                    operational_error=str(exc),
+                ),
+            )
+        raise
+
+    report = _build_answer_report(
+        suite=suite,
+        suite_file=suite_file,
+        base_url=base_url,
+        evaluated=evaluated,
+        expected_cases=len(raw_cases),
+        complete=True,
+    )
+    if output is not None:
+        _write_answer_report(output, report)
     return report

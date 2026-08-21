@@ -3400,9 +3400,20 @@ class RagApiService:
                     if isinstance(source, dict)
                     and str(source.get("source_id", "")) in cited
                 ]
+                # The verifier decides only the claims in this bounded batch.
+                # Repeating the complete multi-section answer in every request
+                # wastes context and can make an otherwise small evidence batch
+                # exceed the local model window.  Keep the visible candidate
+                # limited to the exact units being audited; the structured
+                # claims retain their original text and cited source IDs.
+                batch_answer = "\n\n".join(
+                    str(claim.get("text", "")).strip()
+                    for claim in unresolved_claims
+                    if str(claim.get("text", "")).strip()
+                )
                 raw_audit = verifier(  # type: ignore[misc]
                     question=str(context["query"]),
-                    answer=candidate_answer,
+                    answer=batch_answer,
                     claims=unresolved_claims,
                     sources=evidence,
                 )

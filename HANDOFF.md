@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.43.2**. Antes de
+> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.43.3**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,23 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A primeira execução real da 0.43.2 não revelou queda da API: o serviço permaneceu
+`active`, com zero reinícios, cerca de 1,3 GiB de RAM e sem eventos de OOM ou
+falhas da GPU. O primeiro caso retornou HTTP 200 em 209,6 segundos. O segundo
+continuou sendo processado normalmente pelo vLLM quando o cliente de avaliação
+atingiu seu limite de 300 segundos, que foi relatado incorretamente como API
+indisponível. Durante essa mesma execução, a auditoria repetiu a resposta completa
+em cada lote e uma requisição excedeu a janela do gerador local.
+
+A 0.43.3 passa para cada lote de auditoria somente as afirmações daquele lote e
+as fontes citadas por elas. Isso elimina a repetição da resposta longa sem reduzir
+o texto entregue ou relaxar a validação. A suíte real passa a aceitar até 720
+segundos por caso, enquanto os limites normais da API permanecem inalterados. O
+avaliador agora distingue timeout de indisponibilidade e grava um checkpoint após
+cada caso, de modo que uma falha operacional posterior não descarte respostas e
+métricas já obtidas. A próxima ação é repetir a suíte real e examinar o relatório
+completo ou parcial produzido automaticamente.
 
 A validação real da 0.43.1 ativou o caminho novo: a pergunta de malha usou duas
 seções e cresceu de 1.616 para 3.199 caracteres; a de DPM usou três seções e

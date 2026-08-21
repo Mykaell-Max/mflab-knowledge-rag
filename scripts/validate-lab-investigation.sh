@@ -251,6 +251,7 @@ run_validation() {
   .venv/bin/python -m mflab_knowledge api-evaluate \
     --suite "$SUITE" \
     --api-base-url "$API_BASE_URL" \
+    --timeout-seconds 720 \
     --output "$REPORT" \
     --color always
   local evaluation_status=$?
