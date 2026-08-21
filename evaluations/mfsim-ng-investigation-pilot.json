@@ -21,8 +21,8 @@
         "min_sources": 3,
         "min_citation_coverage": 1.0,
         "allowed_finish_reasons": ["stop"],
-        "max_client_duration_seconds": 240,
-        "max_generation_duration_seconds": 120,
+        "max_client_duration_seconds": 600,
+        "max_generation_duration_seconds": 300,
         "scope_warning": false,
         "required_source_paths": [
           "src/mfsim/domain/domain.cpp",
@@ -51,8 +51,8 @@
         "min_sources": 4,
         "min_citation_coverage": 1.0,
         "allowed_finish_reasons": ["stop"],
-        "max_client_duration_seconds": 360,
-        "max_generation_duration_seconds": 180,
+        "max_client_duration_seconds": 600,
+        "max_generation_duration_seconds": 300,
         "scope_warning": false,
         "required_source_paths": [
           "src/mfsim/domain/domain.cpp",

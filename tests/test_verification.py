@@ -8,6 +8,7 @@ from mflab_knowledge.verification import (
     emit_progress,
     normalize_support_discovery,
     normalize_verification,
+    sanitize_fenced_code_blocks,
     supported_claim_subset,
 )
 
@@ -66,6 +67,29 @@ class VerificationTests(unittest.TestCase):
         self.assertEqual([claim["claim_id"] for claim in claims], ["C1", "C2"])
         self.assertEqual(claims[0]["cited_source_ids"], ["S1"])
         self.assertEqual(claims[1]["cited_source_ids"], ["S2", "S3"])
+
+    def test_splits_compound_paragraph_and_inherits_terminal_citation(self) -> None:
+        claims = claims_for_verification(
+            "The source measures memory. It does not establish collisions. [S2]"
+        )
+
+        self.assertEqual(len(claims), 2)
+        self.assertEqual(
+            [claim["cited_source_ids"] for claim in claims],
+            [["S2"], ["S2"]],
+        )
+        self.assertEqual(
+            claims[0]["text"], "The source measures memory. [S2]"
+        )
+
+    def test_keeps_distinct_sentence_citations_distinct(self) -> None:
+        claims = claims_for_verification(
+            "The first stage is local [S1]. The next stage is separate [S2]."
+        )
+
+        self.assertEqual(len(claims), 2)
+        self.assertEqual(claims[0]["cited_source_ids"], ["S1"])
+        self.assertEqual(claims[1]["cited_source_ids"], ["S2"])
 
     def test_rejects_missing_claims_and_unknown_source_ids(self) -> None:
         claims = claims_for_verification(
@@ -205,6 +229,63 @@ class VerificationTests(unittest.TestCase):
         self.assertIn("```cpp\nstate.advance();\n```", str(result))
         self.assertIn("[S1]", str(result))
         self.assertNotIn("invented_call", str(result))
+
+    def test_supported_subset_rejects_code_from_a_truncated_source(self) -> None:
+        result = supported_claim_subset(
+            {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "The operation advances state [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                    }
+                ]
+            },
+            answer=(
+                "The operation advances state [S1].\n\n"
+                "```cpp\nstate.advance();\n```"
+            ),
+            sources=[
+                {
+                    "source_id": "S1",
+                    "text": "state.advance();",
+                    "text_truncated": True,
+                }
+            ],
+        )
+
+        self.assertNotIn("```", str(result))
+
+    def test_sanitizes_fenced_code_against_its_cited_complete_source(self) -> None:
+        answer = (
+            "Observed implementation [S1].\n\n"
+            "```cpp\nstate.advance();\n```\n\n[S1]\n\n"
+            "```cpp\ninvented();\n```\n\n[S1]"
+        )
+        sanitized, removed = sanitize_fenced_code_blocks(
+            answer,
+            [{"source_id": "S1", "text": "state.advance();"}],
+        )
+
+        self.assertEqual(removed, 1)
+        self.assertIn("state.advance", sanitized)
+        self.assertNotIn("invented", sanitized)
+
+    def test_sanitizer_rejects_exact_code_from_truncated_context(self) -> None:
+        sanitized, removed = sanitize_fenced_code_blocks(
+            "```cpp\nstate.advance();\n```\n\n[S1]",
+            [
+                {
+                    "source_id": "S1",
+                    "text": "state.advance();",
+                    "text_truncated": True,
+                }
+            ],
+        )
+
+        self.assertEqual(removed, 1)
+        self.assertNotIn("```", sanitized)
 
 
 if __name__ == "__main__":

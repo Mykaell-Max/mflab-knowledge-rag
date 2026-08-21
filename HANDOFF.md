@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.43.3**. Antes de
+> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.44.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,29 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação real da 0.43.3 confirmou que a infraestrutura de respostas longas
+permanece estável. Os dois casos terminaram com HTTP 200, `finish_reason=stop`,
+100% de cobertura de citações e sem queda da API. A pergunta de malha produziu
+2.530 caracteres em 231,6 segundos; a explicação de DPM produziu 9.473
+caracteres, uma continuação e terminou em 353,5 segundos. A execução também
+revelou que a auditoria ainda agrupava frases independentes do mesmo parágrafo.
+Uma frase correta podia, portanto, fazer uma afirmação vizinha excessiva parecer
+sustentada. As seções também reutilizavam o texto já reduzido pelo orçamento
+global, o que escondia saídas e transições no fim de chunks longos.
+
+A 0.44.0 divide a prosa em afirmações auditáveis por sentença, preservando a
+citação final do parágrafo quando ela se aplica às frases anteriores. Cada
+seção revalida no PostgreSQL os chunks já autorizados e recebe um orçamento
+local de evidência; não há busca nova nem ampliação de ACL nessa leitura. Quando
+um chunk ainda precisa ser reduzido, o empacotador preserva sua entrada e sua
+saída com uma omissão explícita no meio. O grafo reserva espaço para mais de uma
+operação de um mesmo coordenador, evitando que a diversidade de caminhos elimine
+métodos de ciclo de vida. Blocos cercados de código só permanecem na resposta se
+forem reprodução literal de uma fonte citada e não truncada, inclusive depois de
+uma revisão automática. A próxima ação é validar a 0.44.0 na Morgoth e conferir
+se integração com o domínio e ciclo de avanço aparecem sem recuperar como fatos
+as antigas generalizações sobre colisões, forças ou precisão.
 
 A primeira execução real da 0.43.2 não revelou queda da API: o serviço permaneceu
 `active`, com zero reinícios, cerca de 1,3 GiB de RAM e sem eventos de OOM ou

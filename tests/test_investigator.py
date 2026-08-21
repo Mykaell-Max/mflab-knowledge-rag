@@ -637,6 +637,38 @@ class InvestigatorTests(unittest.TestCase):
             {"src/worker.cpp", "src/driver.cpp", "src/state.cpp"},
         )
 
+    def test_call_frontier_keeps_repeated_coordinator_lifecycle_methods(
+        self,
+    ) -> None:
+        selected = select_graph_frontier_results(
+            question="Explain the coordinator initialize advance finalize lifecycle",
+            search_hints=["coordinator runtime flow"],
+            results=[
+                {
+                    "chunk_id": name,
+                    "path": "src/coordinator.cpp",
+                    "title": f"Coordinator::{name}",
+                    "text": f"coordinator {name} lifecycle",
+                }
+                for name in ("initialize", "advance", "finalize")
+            ]
+            + [
+                {
+                    "chunk_id": f"helper-{position}",
+                    "path": f"src/helper_{position}.cpp",
+                    "title": f"Helper{position}::run",
+                    "text": "supporting operation",
+                }
+                for position in range(6)
+            ],
+            limit=8,
+        )
+
+        selected_ids = {item["chunk_id"] for item in selected}
+        self.assertTrue(
+            {"initialize", "advance", "finalize"}.issubset(selected_ids)
+        )
+
     def test_coverage_evidence_precedes_incidental_keeps(self) -> None:
         selected = prioritize_kept_chunk_ids(
             ["build-file", "entry", "runtime", "state"],

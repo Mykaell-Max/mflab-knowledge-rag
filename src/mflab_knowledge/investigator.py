@@ -450,27 +450,52 @@ def select_graph_frontier_results(
         ]
 
     # A call frontier often contains many operations from one implementation
-    # unit. Preserve one result per path before filling the remaining slots so
-    # callers, callees and state objects are not displaced by sibling methods.
+    # unit. Reserve most slots for distinct paths, but keep two positions for
+    # repeated lifecycle methods from a coordinator. Otherwise an entry point,
+    # temporal step and finalizer in the same file can never coexist when the
+    # frontier also contains many helper paths.
+    ordered_candidates: list[dict[str, object]] = []
+    ordered_identities: set[str] = set()
+    for candidates in candidate_tiers:
+        for result in candidates:
+            chunk_id = str(result.get("chunk_id", ""))
+            path = str(result.get("path", ""))
+            identity = chunk_id or f"{path}:{result.get('title', '')}"
+            if identity in ordered_identities:
+                continue
+            ordered_identities.add(identity)
+            ordered_candidates.append(result)
+
     selected: list[dict[str, object]] = []
     selected_ids: set[str] = set()
     selected_paths: set[str] = set()
-    for candidates in candidate_tiers:
-        for allow_repeated_path in (False, True):
-            for result in candidates:
-                chunk_id = str(result.get("chunk_id", ""))
-                path = str(result.get("path", ""))
-                identity = chunk_id or f"{path}:{result.get('title', '')}"
-                if identity in selected_ids:
-                    continue
-                if not allow_repeated_path and path and path in selected_paths:
-                    continue
-                selected.append(result)
-                selected_ids.add(identity)
-                if path:
-                    selected_paths.add(path)
-                if len(selected) >= limit:
-                    return selected
+    diversity_target = min(limit, max(3, limit - 2))
+    for result in ordered_candidates:
+        chunk_id = str(result.get("chunk_id", ""))
+        path = str(result.get("path", ""))
+        identity = chunk_id or f"{path}:{result.get('title', '')}"
+        if path and path in selected_paths:
+            continue
+        selected.append(result)
+        selected_ids.add(identity)
+        if path:
+            selected_paths.add(path)
+        if len(selected) >= diversity_target:
+            break
+    if len(selected) >= limit:
+        return selected
+    for result in ordered_candidates:
+        chunk_id = str(result.get("chunk_id", ""))
+        path = str(result.get("path", ""))
+        identity = chunk_id or f"{path}:{result.get('title', '')}"
+        if identity in selected_ids:
+            continue
+        selected.append(result)
+        selected_ids.add(identity)
+        if path:
+            selected_paths.add(path)
+        if len(selected) >= limit:
+            return selected
     return selected
 
 

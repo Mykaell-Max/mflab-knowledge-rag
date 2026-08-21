@@ -438,6 +438,52 @@ class ApiServiceTests(unittest.TestCase):
             1,
         )
 
+    def test_context_packing_preserves_source_entry_and_exit(self) -> None:
+        text = "entry point\n" + ("middle line\n" * 200) + "terminal call\n"
+        packed, _used, truncated = api._pack_context_results(
+            [{"chunk_id": "flow", "text": text}],
+            max_context_characters=240,
+        )
+
+        excerpt = packed[0]["text"]
+        self.assertIn("entry point", excerpt)
+        self.assertIn("terminal call", excerpt)
+        self.assertIn("trecho intermediário omitido", excerpt)
+        self.assertTrue(packed[0]["text_truncated"])
+        self.assertTrue(truncated)
+
+    def test_section_evidence_revalidates_full_chunk_within_local_budget(
+        self,
+    ) -> None:
+        service = api.RagApiService(self.settings())
+        full_text = "function entry\n" + ("body\n" * 100) + "target call\n"
+        with mock.patch.object(
+            api,
+            "fetch_chunks_by_id",
+            return_value=[{"chunk_id": "chunk", "text": full_text}],
+        ) as fetch:
+            sources, used, hydrated = service._section_evidence(
+                [
+                    {
+                        "source_id": "S1",
+                        "chunk_id": "chunk",
+                        "project": "Generic Solver",
+                        "selected_occurrence": {"branch": "trunk"},
+                        "text": "function entry",
+                        "text_truncated": True,
+                    }
+                ],
+                allowed_access={"lab"},
+                max_context_characters=180,
+            )
+
+        self.assertEqual(hydrated, 1)
+        self.assertLessEqual(used, 180)
+        self.assertIn("function entry", sources[0]["text"])
+        self.assertIn("target call", sources[0]["text"])
+        self.assertEqual(fetch.call_args.kwargs["project"], "Generic Solver")
+        self.assertEqual(fetch.call_args.kwargs["branch"], "trunk")
+
     def test_agent_context_can_request_a_larger_bounded_source_window(self) -> None:
         packed, used, truncated = api._pack_context_results(
             [
@@ -1485,7 +1531,7 @@ class ApiServiceTests(unittest.TestCase):
             f"Claim {position} is supported [S1]." for position in range(1, 8)
         )
         audits = []
-        for identifiers in ((1, 2, 3), (4, 5, 6), (7,)):
+        for identifiers in ((1, 2, 3, 4, 5), (6, 7)):
             items = ",".join(
                 '{"claim_id":"C%s","verdict":"supported",'
                 '"source_ids":["S1"],"finding":"Present."}' % identifier
@@ -1531,17 +1577,17 @@ class ApiServiceTests(unittest.TestCase):
             result = service.ask(query="Explain the flow")
 
         self.assertTrue(result["verification"]["passed"])
-        self.assertEqual(result["verification"]["batches"], 3)
+        self.assertEqual(result["verification"]["batches"], 2)
         self.assertEqual(result["verification"]["counts"]["supported"], 7)
-        self.assertEqual(len(generator.verify_calls), 3)
+        self.assertEqual(len(generator.verify_calls), 2)
         self.assertEqual(
             [
                 call["answer"].count("Claim ")
                 for call in generator.verify_calls
             ],
-            [3, 3, 1],
+            [5, 2],
         )
-        self.assertNotIn("Claim 4", generator.verify_calls[0]["answer"])
+        self.assertNotIn("Claim 6", generator.verify_calls[0]["answer"])
         self.assertNotIn("Claim 1", generator.verify_calls[1]["answer"])
 
     def test_ask_applies_detailed_response_depth_to_generation(self) -> None:

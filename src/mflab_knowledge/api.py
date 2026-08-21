@@ -99,6 +99,7 @@ from mflab_knowledge.verification import (
     emit_progress,
     normalize_support_discovery,
     normalize_verification,
+    sanitize_fenced_code_blocks,
     supported_claim_subset,
     unavailable_verification,
 )
@@ -538,6 +539,30 @@ def _section_continuation_instructions(
     )
 
 
+_SOURCE_OMISSION_MARKER = "\n... [trecho intermediário omitido] ...\n"
+
+
+def _bounded_source_text(text: str, allowed: int) -> str:
+    """Keep both entry and exit context when a source must be shortened."""
+
+    if len(text) <= allowed:
+        return text
+    if allowed <= len(_SOURCE_OMISSION_MARKER) + 2:
+        return text[:allowed]
+    available = allowed - len(_SOURCE_OMISSION_MARKER)
+    head_size = max(1, available * 3 // 5)
+    tail_size = max(1, available - head_size)
+    head = text[:head_size]
+    tail = text[-tail_size:]
+    head_break = head.rfind("\n")
+    if head_break >= head_size // 2:
+        head = head[:head_break]
+    tail_break = tail.find("\n")
+    if 0 <= tail_break <= tail_size // 2:
+        tail = tail[tail_break + 1 :]
+    return (head + _SOURCE_OMISSION_MARKER + tail)[:allowed]
+
+
 def _pack_context_results(
     results: list[dict[str, object]],
     *,
@@ -633,7 +658,7 @@ def _pack_context_results(
         # the text needed for later entry points and state transitions.
         allowed = max(minimum, (remaining + slots_left - 1) // slots_left)
         original_text = str(result.get("text", ""))
-        text = original_text[:allowed]
+        text = _bounded_source_text(original_text, allowed)
         value = dict(result)
         value["text"] = text
         value["text_truncated"] = bool(result.get("text_truncated")) or len(
@@ -1178,6 +1203,65 @@ class RagApiService:
                 f"classe de acesso não liberada por este serviço: {denied}"
             )
         return selected
+
+    def _section_evidence(
+        self,
+        sources: list[dict[str, object]],
+        *,
+        allowed_access: set[str] | None,
+        max_context_characters: int,
+    ) -> tuple[list[dict[str, object]], int, int]:
+        """Revalidate and repack full chunks for one synthesis section.
+
+        The public context remains globally bounded. Detailed synthesis may,
+        however, use several independent model calls. Re-reading each already
+        authorized chunk lets every section spend its own evidence budget
+        without trusting or executing repository content.
+        """
+
+        expanded: list[dict[str, object]] = []
+        hydrated = 0
+        selected_access = self._allowed_access(allowed_access)
+        for source in sources:
+            chunk_id = str(source.get("chunk_id", ""))
+            occurrence = source.get("selected_occurrence")
+            occurrence = occurrence if isinstance(occurrence, dict) else {}
+            project = str(source.get("project", "")) or None
+            branch = str(occurrence.get("branch", "")) or None
+            candidate = dict(source)
+            if chunk_id and project and branch:
+                try:
+                    fetched = fetch_chunks_by_id(
+                        self.settings.database_url,
+                        chunk_ids=[chunk_id],
+                        limit=1,
+                        project=project,
+                        branch=branch,
+                        allowed_access=selected_access,
+                    )
+                except Exception:
+                    fetched = []
+                exact = next(
+                    (
+                        value
+                        for value in fetched
+                        if str(value.get("chunk_id", "")) == chunk_id
+                    ),
+                    None,
+                )
+                if isinstance(exact, dict) and str(exact.get("text", "")):
+                    candidate["text"] = str(exact["text"])
+                    candidate["text_truncated"] = bool(
+                        exact.get("text_truncated", False)
+                    )
+                    hydrated += 1
+            expanded.append(candidate)
+        packed, used, _truncated = _pack_context_results(
+            expanded,
+            max_context_characters=max_context_characters,
+            source_limit=len(expanded),
+        )
+        return packed, used, hydrated
 
     def health(self) -> dict[str, object]:
         try:
@@ -3035,12 +3119,29 @@ class RagApiService:
                     ]
                     if not section_sources:
                         continue
+                    expanded_sources, section_evidence_characters, hydrated = (
+                        self._section_evidence(
+                            section_sources,
+                            allowed_access=allowed_access,
+                            max_context_characters=effective_context_limit,
+                        )
+                    )
+                    section_sources = []
+                    for expanded_source in expanded_sources:
+                        source_id = str(expanded_source.get("source_id", ""))
+                        original_source = source_by_id.get(source_id)
+                        if original_source is None:
+                            continue
+                        original_source.update(expanded_source)
+                        section_sources.append(original_source)
                     record(
                         "generation",
                         f"Elaborando seção {position}/{len(notebook_sections)}",
                         "O modelo recebeu apenas as fontes atribuídas a esta faceta.",
                         {
                             "section_id": section.get("section_id"),
+                            "evidence_characters": section_evidence_characters,
+                            "full_chunks_revalidated": hydrated,
                             "sources": [
                                 source.get("source_id")
                                 for source in section_sources
@@ -3195,6 +3296,17 @@ class RagApiService:
         assert isinstance(raw_sources, list)
         assert generated is not None
         answer = str(generated["answer"])
+        answer, removed_code_blocks = sanitize_fenced_code_blocks(
+            answer,
+            raw_sources,
+        )
+        if removed_code_blocks:
+            record(
+                "verification",
+                "Trechos de código conferidos",
+                "Blocos não reproduzidos literalmente por uma fonte completa foram removidos.",
+                {"removed": removed_code_blocks},
+            )
         require_scope_coverage = bool(
             isinstance(exploration, dict)
             and exploration.get("require_scope_coverage")
@@ -3245,6 +3357,11 @@ class RagApiService:
                 )
             else:
                 answer = str(generated["answer"])
+                answer, retry_removed_code_blocks = sanitize_fenced_code_blocks(
+                    answer,
+                    raw_sources,
+                )
+                removed_code_blocks += retry_removed_code_blocks
                 assessment = _grounding_assessment(
                     answer,
                     raw_sources,
@@ -3360,9 +3477,10 @@ class RagApiService:
                 for source in raw_sources
                 if isinstance(source, dict)
             }
-            # Small batches keep the local model's constrained JSON short and
-            # deterministic while still auditing every factual unit.
-            batch_size = 3
+            # Sentence-sized claims are more precise but more numerous. Five
+            # items still fit comfortably in the constrained JSON response and
+            # avoid turning one detailed answer into excessive round trips.
+            batch_size = 5
             findings: list[dict[str, object]] = []
             batches = 0
             cache_hits = 0
@@ -3556,6 +3674,11 @@ class RagApiService:
                         temperature=temperature,
                     )
                     answer = str(generated["answer"])
+                    answer, repair_removed_code_blocks = sanitize_fenced_code_blocks(
+                        answer,
+                        raw_sources,
+                    )
+                    removed_code_blocks += repair_removed_code_blocks
                     assessment = _grounding_assessment(
                         answer,
                         raw_sources,
@@ -4013,6 +4136,7 @@ class RagApiService:
                 "quality_retry": quality_retry,
                 "evidence_repair": evidence_repair,
                 "citation_discovery": citation_discovery,
+                "code_blocks_removed": removed_code_blocks,
             },
         }
 

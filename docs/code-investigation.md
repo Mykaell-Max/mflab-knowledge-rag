@@ -373,6 +373,21 @@ ocorrer no meio de uma instrução. A auditoria de completude julga cada faceta
 isoladamente: `covered` não exige todos os detalhes possíveis, enquanto
 `partial` exige uma parte ausente identificável naquela mesma faceta.
 
+Na 0.44.0, cada seção volta ao banco para revalidar os chunks que já lhe foram
+atribuídos e os reempacota com um orçamento local. Essa operação não descobre
+novas fontes nem altera projeto, branch ou ACL; ela impede apenas que o teto
+global da resposta esconda a metade final de todas as fontes. Cortes residuais
+preservam cabeçalho e cauda com um marcador explícito de omissão. Operações
+distintas do mesmo arquivo coordenador também podem ocupar mais de uma posição
+na fronteira estrutural quando representam estágios diferentes do ciclo de vida.
+
+A verificação semântica deixa de aceitar um parágrafo composto como uma única
+afirmação: frases factuais são auditadas separadamente, ainda que compartilhem a
+citação colocada ao final do parágrafo. Cercas de código recebem uma checagem
+determinística adicional e só são publicadas quando o texto aparece literalmente
+em uma fonte citada cujo conteúdo esteja completo. Essa checagem se repete após
+qualquer revisão do modelo.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

@@ -12,6 +12,49 @@ INVESTIGATION_ALGORITHM = "bounded_investigation_v18"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
+_SENTENCE_BOUNDARY = re.compile(
+    r"(?<=[.!?])(?:\s+(?P<citation>\[\s*S\d+\s*"
+    r"(?:(?:,|;)\s*S\d+\s*)*\]))?"
+    r"(?:\s+(?=(?:[`*_>(\[]*[A-ZÀ-ÖØ-Þ0-9]))|(?=$))"
+)
+
+
+def _atomic_factual_units(unit: str) -> list[str]:
+    """Split prose into independently auditable sentence-sized claims.
+
+    A citation at the end of a generated paragraph applies to that complete
+    paragraph under the answer contract.  Preserve that intent by attaching
+    the final citation group to preceding uncited sentences, but do not merge
+    distinct citations that the model placed on different sentences.
+    """
+
+    def boundary(match: re.Match[str]) -> str:
+        citation = match.group("citation")
+        return (f" {citation}" if citation else "") + "\n"
+
+    parts = [
+        value.strip()
+        for value in _SENTENCE_BOUNDARY.sub(boundary, unit).splitlines()
+        if value.strip()
+    ]
+    if len(parts) <= 1:
+        return parts or [unit.strip()]
+    cited_positions = [
+        position for position, part in enumerate(parts) if citation_ids(part)
+    ]
+    inherited_ids = (
+        sorted(citation_ids(parts[-1]))
+        if cited_positions == [len(parts) - 1]
+        else []
+    )
+    if not inherited_ids:
+        return parts
+    suffix = "[" + ", ".join(inherited_ids) + "]"
+    return [
+        part if citation_ids(part) else f"{part} {suffix}"
+        for part in parts
+    ]
+
 
 def emit_progress(
     callback: ProgressCallback | None,
@@ -39,13 +82,18 @@ def emit_progress(
 
 
 def claims_for_verification(answer: str) -> list[dict[str, object]]:
+    atomic_units = [
+        claim
+        for unit in factual_units(answer)
+        for claim in _atomic_factual_units(unit)
+    ]
     claims = [
         {
             "claim_id": f"C{position}",
             "text": unit,
             "cited_source_ids": sorted(citation_ids(unit)),
         }
-        for position, unit in enumerate(factual_units(answer), start=1)
+        for position, unit in enumerate(atomic_units, start=1)
     ]
     if not claims and answer.strip():
         claims.append(
@@ -290,6 +338,7 @@ def _exact_supported_code_blocks(
         )
         for source in sources
         if str(source.get("source_id", "")) in allowed_source_ids
+        and source.get("text_truncated") is not True
     }
     selected: list[str] = []
     seen: set[tuple[str, str]] = set()
@@ -313,6 +362,37 @@ def _exact_supported_code_blocks(
         if len(selected) >= 6:
             break
     return selected
+
+
+def sanitize_fenced_code_blocks(
+    answer: str,
+    sources: list[dict[str, object]],
+) -> tuple[str, int]:
+    """Remove code that is not verbatim in a cited, complete source excerpt."""
+
+    source_text = {
+        str(source.get("source_id", "")): str(source.get("text", "")).replace(
+            "\r\n", "\n"
+        )
+        for source in sources
+        if source.get("source_id") and source.get("text_truncated") is not True
+    }
+    removed = 0
+
+    def replace(match: re.Match[str]) -> str:
+        nonlocal removed
+        code = match.group("code").replace("\r\n", "\n").strip("\n")
+        nearby = answer[max(0, match.start() - 240) : match.end() + 120]
+        cited = citation_ids(nearby)
+        if code and any(
+            source_id in cited and code in text
+            for source_id, text in source_text.items()
+        ):
+            return match.group(0)
+        removed += 1
+        return ""
+
+    return _FENCED_CODE_BLOCK.sub(replace, answer), removed
 
 
 def supported_claim_subset(
