@@ -252,6 +252,18 @@ Caminhos usados durante o piloto:
 
 ## 11. Próxima ação recomendada
 
+A versão 0.42.9 corrige uma perda de evidência observada em explicações longas.
+Quando o servidor local recusa a soma entre entrada e reserva máxima de saída, a
+API reduz primeiro a reserva de saída até o teto normal de 2.048 tokens e mantém
+o pacote de evidências; somente uma nova recusa permite reduzir o contexto. A
+redução de contexto preserva as instruções produzidas pela investigação. O
+empacotamento também reserva uma amostra limitada dos nós de chamada resolvidos
+pelo grafo, além dos trechos associados às facetas da pergunta. A auditoria de
+completude cruza cada faceta com a proveniência de suas próprias afirmações, de
+modo que uma citação de um estágio não possa declarar outro estágio como
+coberto. Essas regras são derivadas da pergunta, do grafo e dos identificadores
+de chunks; não contêm nomes de projeto, branch, arquivo, símbolo ou mecanismo.
+
 O piloto de recuperação e respostas dos dois repositórios foi validado. A
 interface web foi reorganizada para abrir diretamente em **Perguntar**, com
 **Buscar** como segunda função pública. Métricas da máquina e do pipeline foram

@@ -331,15 +331,11 @@ def _reduce_context_evidence(
             "sources": sources,
         }
     )
-    exploration = reduced.get("exploration")
-    if isinstance(exploration, dict):
-        reduced["instructions"] = (
-            CONTEXT_INSTRUCTIONS
-            + exploration_instructions(exploration, sources)
-            + _response_depth_instructions(
-                str(reduced.get("response_depth", "auto"))
-            )
-        )
+    # The caller has already assembled exploration, investigation-ledger and
+    # response-depth instructions. Rebuilding them here used to silently drop
+    # the evidence-ledger guidance exactly when a provider forced a smaller
+    # context retry.
+    reduced["instructions"] = str(context.get("instructions", ""))
     return reduced
 
 
@@ -601,7 +597,12 @@ def _evidence_repair_instructions(
         + "turn a nearby citation into support for a claim the source does not prove. "
         + "Every retained factual paragraph, bullet, introductory sentence and "
         + "concluding summary must carry its own valid citation. Avoid uncited broad "
-        + "introductions and conclusions. State each supported fact only once. Do "
+        + "introductions and conclusions. Keep independently evidenced stages in "
+        + "separate factual units with their own direct citations. A supported claim "
+        + "about one stage does not answer another organizational facet. When a broad "
+        + "claim mixes supported and rejected behavior, decompose it into smaller "
+        + "locally supported statements instead of discarding evidence from every "
+        + "other stage. State each supported fact only once. Do "
         + "not add a recap, checklist, legend, isolated label, or second summary of "
         + "the same claims. If the remaining sources do not establish "
         + "the requested answer, state the precise evidence gap. Do not discuss the "
@@ -1416,6 +1417,7 @@ class RagApiService:
         kept_chunk_ids: list[str] = []
         baseline_chunk_ids: list[str] = []
         graph_frontier_chunk_ids: list[str] = []
+        final_reserved_context_chunk_ids: list[str] = []
         graph_frontier_results: list[dict[str, object]] = []
         selected_graph_frontier: list[dict[str, object]] = []
         raw_initial_hints = exploration.get("queries")
@@ -2108,6 +2110,19 @@ class RagApiService:
             reserved_context_chunk_ids = reserve_chunk_ids_by_aspect(
                 agent_coverage
             )
+            # The semantic ledger reserves evidence for user-requested facets.
+            # Keep a separate bounded sample of resolved graph nodes as well:
+            # these often contain the caller/callee code needed to explain how
+            # individually correct stages connect. The selection is driven by
+            # the question and graph, never by repository-specific names.
+            final_reserved_context_chunk_ids = list(
+                dict.fromkeys(
+                    [
+                        *reserved_context_chunk_ids,
+                        *graph_frontier_chunk_ids[:4],
+                    ]
+                )
+            )
             baseline_candidates: list[dict[str, object]] = []
             baseline_seen: set[str] = set()
             for retrieval_item in retrievals:
@@ -2301,7 +2316,7 @@ class RagApiService:
             raw_results,
             max_context_characters=max_context_characters,
             reserved_chunk_ids=(
-                reserve_chunk_ids_by_aspect(agent_coverage)
+                final_reserved_context_chunk_ids
                 if agent_coverage
                 else None
             ),
@@ -2582,6 +2597,8 @@ class RagApiService:
         started = time.monotonic()
         generation_attempts = 0
         reduced_for_generation = False
+        reduced_output_for_generation = False
+        generation_output_limit = effective_output_limit
         record(
             "generation",
             "Síntese inicial em elaboração",
@@ -2596,14 +2613,31 @@ class RagApiService:
                     question=str(context["query"]),
                     instructions=str(context["instructions"]),
                     sources=raw_sources,
-                    max_output_tokens=effective_output_limit,
+                    max_output_tokens=generation_output_limit,
                     temperature=temperature,
                 )
                 break
             except GenerationContextTooLargeError:
+                # OpenAI-compatible servers reserve the full requested output
+                # window before generation. Preserve the evidence package first
+                # and reduce an unusually large output reservation; the model
+                # may still finish naturally well before that ceiling. Only
+                # shrink evidence after the output reservation reaches the
+                # normal detailed-answer ceiling.
+                if generation_output_limit > 2048:
+                    next_output_limit = max(2048, generation_output_limit // 2)
+                    reduced_output_for_generation = True
+                    self.log(
+                        "Gerador recusou a soma de entrada e saída; reduzindo "
+                        f"a reserva de saída de {generation_output_limit} para "
+                        f"{next_output_limit} tokens e preservando as evidências",
+                        "warning",
+                    )
+                    generation_output_limit = next_output_limit
+                    continue
                 current_size = int(context["context_characters"])
                 next_limit = max(1000, current_size // 2)
-                if generation_attempts >= 3 or next_limit >= current_size:
+                if generation_attempts >= 5 or next_limit >= current_size:
                     raise
                 reduced_for_generation = True
                 self.log(
@@ -2663,7 +2697,7 @@ class RagApiService:
                         exploration if isinstance(exploration, dict) else {},
                     ),
                     sources=raw_sources,
-                    max_output_tokens=effective_output_limit,
+                    max_output_tokens=generation_output_limit,
                     temperature=temperature,
                 )
             except GenerationContextTooLargeError:
@@ -2969,7 +3003,7 @@ class RagApiService:
                             verification_before_repair,
                         ),
                         sources=raw_sources,
-                        max_output_tokens=effective_output_limit,
+                        max_output_tokens=generation_output_limit,
                         temperature=temperature,
                     )
                     answer = str(generated["answer"])
@@ -3422,10 +3456,11 @@ class RagApiService:
                     "max_context_characters", effective_context_limit
                 ),
                 "requested_max_output_tokens": requested_output_limit,
-                "max_output_tokens": effective_output_limit,
+                "max_output_tokens": generation_output_limit,
                 "response_depth": response_depth,
                 "generation_attempts": generation_attempts,
                 "reduced_for_generation": reduced_for_generation,
+                "reduced_output_for_generation": reduced_output_for_generation,
                 "quality_retry": quality_retry,
                 "evidence_repair": evidence_repair,
                 "citation_discovery": citation_discovery,

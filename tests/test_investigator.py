@@ -716,6 +716,41 @@ class InvestigatorTests(unittest.TestCase):
             ],
         )
 
+    def test_answer_coverage_does_not_reuse_one_facets_source_for_another(
+        self,
+    ) -> None:
+        result = reconcile_answer_coverage_with_provenance(
+            {
+                "algorithm": "test",
+                "performed": True,
+                "complete": True,
+                "coverage": [
+                    {"aspect": "entry", "status": "covered", "claim_ids": ["C1"]},
+                    {"aspect": "flow", "status": "covered", "claim_ids": ["C1"]},
+                ],
+            },
+            investigation_coverage=[
+                {"aspect": "entry", "chunk_ids": ["entry"]},
+                {"aspect": "flow", "chunk_ids": ["flow"]},
+            ],
+            sources=[
+                {"source_id": "S1", "chunk_id": "entry"},
+                {"source_id": "S2", "chunk_id": "flow"},
+            ],
+            supported_claims=[
+                {"claim_id": "C1", "source_ids": ["S1"]},
+            ],
+        )
+
+        self.assertFalse(result["complete"])
+        self.assertEqual(
+            result["coverage"],
+            [
+                {"aspect": "entry", "status": "covered", "claim_ids": ["C1"]},
+                {"aspect": "flow", "status": "partial", "claim_ids": ["C1"]},
+            ],
+        )
+
     def test_complete_coverage_must_repeat_with_the_same_evidence(self) -> None:
         complete = [
             {

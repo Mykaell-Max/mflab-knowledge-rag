@@ -532,11 +532,13 @@ def reconcile_answer_coverage_with_provenance(
     sources: Iterable[dict[str, object]],
     supported_claims: Iterable[dict[str, object]],
 ) -> dict[str, object]:
-    """Use audited claim provenance as a conservative floor for facet coverage.
+    """Join semantic coverage to the exact evidence retained for each facet.
 
-    The semantic auditor remains the only component allowed to declare an
-    aspect covered. This join can only turn an implausible gap into partial
-    when a supported claim cites the exact chunk retained for that aspect.
+    A supported claim citing an exact retained chunk is a conservative partial
+    floor. Conversely, a semantic ``covered`` verdict cannot stand as complete
+    when all referenced claims cite evidence assigned only to other facets.
+    The latter is downgraded to partial rather than gap because the semantic
+    judgment may still have identified useful adjacent support.
     """
 
     raw_items = answer_coverage.get("coverage")
@@ -549,6 +551,7 @@ def reconcile_answer_coverage_with_provenance(
         if chunk_id and source_id:
             source_ids_by_chunk.setdefault(chunk_id, set()).add(source_id)
     claim_ids_by_source: dict[str, list[str]] = {}
+    source_ids_by_claim: dict[str, set[str]] = {}
     for claim in supported_claims:
         claim_id = str(claim.get("claim_id", ""))
         raw_source_ids = claim.get("source_ids")
@@ -558,6 +561,7 @@ def reconcile_answer_coverage_with_provenance(
             value = str(source_id)
             if value:
                 claim_ids_by_source.setdefault(value, []).append(claim_id)
+                source_ids_by_claim.setdefault(claim_id, set()).add(value)
     investigation_by_aspect = {
         str(item.get("aspect", "")).casefold(): item
         for item in investigation_coverage
@@ -568,25 +572,35 @@ def reconcile_answer_coverage_with_provenance(
         if not isinstance(raw_item, dict):
             continue
         item = dict(raw_item)
+        investigation_item = investigation_by_aspect.get(
+            str(item.get("aspect", "")).casefold()
+        )
+        raw_chunk_ids = (
+            investigation_item.get("chunk_ids")
+            if isinstance(investigation_item, dict)
+            else None
+        )
+        aspect_source_ids: set[str] = set()
+        supporting_claim_ids: list[str] = []
+        if isinstance(raw_chunk_ids, list):
+            for chunk_id in raw_chunk_ids:
+                for source_id in source_ids_by_chunk.get(str(chunk_id), set()):
+                    aspect_source_ids.add(source_id)
+                    for claim_id in claim_ids_by_source.get(source_id, []):
+                        if claim_id not in supporting_claim_ids:
+                            supporting_claim_ids.append(claim_id)
         if item.get("status") == "gap":
-            investigation_item = investigation_by_aspect.get(
-                str(item.get("aspect", "")).casefold()
-            )
-            raw_chunk_ids = (
-                investigation_item.get("chunk_ids")
-                if isinstance(investigation_item, dict)
-                else None
-            )
-            supporting_claim_ids: list[str] = []
-            if isinstance(raw_chunk_ids, list):
-                for chunk_id in raw_chunk_ids:
-                    for source_id in source_ids_by_chunk.get(str(chunk_id), set()):
-                        for claim_id in claim_ids_by_source.get(source_id, []):
-                            if claim_id not in supporting_claim_ids:
-                                supporting_claim_ids.append(claim_id)
             if supporting_claim_ids:
                 item["status"] = "partial"
                 item["claim_ids"] = supporting_claim_ids[:12]
+        elif item.get("status") == "covered" and aspect_source_ids:
+            cited_for_verdict = {
+                source_id
+                for claim_id in item.get("claim_ids", [])
+                for source_id in source_ids_by_claim.get(str(claim_id), set())
+            }
+            if not (cited_for_verdict & aspect_source_ids):
+                item["status"] = "partial"
         reconciled.append(item)
     result = dict(answer_coverage)
     result["coverage"] = reconciled
@@ -1008,7 +1022,9 @@ def synthesis_guidance(
         "factual statement with them. Before finishing, walk through every facet "
         "that names one or more source IDs; do not stop after explaining only the "
         "first facet. For a detailed request, give each supported stage its own "
-        "paragraph or section and connect stages only when the sources establish the "
+        "paragraph or section with the source IDs that establish that stage. Do not "
+        "compress several distinct stages into one large claim carrying only the "
+        "first stage's citation. Connect stages only when the sources establish the "
         "connection. A partial facet still permits explaining its supported portion. "
         "A prior gap may be answered when a final source directly supports it; "
         "otherwise leave it unresolved instead of filling it with outside knowledge."

@@ -2595,6 +2595,57 @@ class ApiServiceTests(unittest.TestCase):
             result["context"]["requested_max_context_characters"], 16000
         )
 
+    def test_ask_reduces_large_output_reservation_before_evidence(self) -> None:
+        generator = _RetryGenerator()
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_output_tokens=4096,
+                max_context_characters=8000,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "project": "Solver",
+                "selected_occurrence": {
+                    "branch": "trunk",
+                    "commit_sha": "a" * 40,
+                },
+                "path": "src/flow.cpp",
+                "text": "flow evidence" * 200,
+            }
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "explain the flow",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 1,
+                "source_count": 1,
+                "context_characters": 2600,
+                "max_context_characters": 8000,
+                "truncated": False,
+                "sources": sources,
+            },
+        ):
+            result = service.ask(query="explain the flow")
+
+        self.assertEqual(len(generator.calls), 2)
+        self.assertEqual(generator.calls[0]["max_output_tokens"], 4096)
+        self.assertEqual(generator.calls[1]["max_output_tokens"], 2048)
+        self.assertEqual(generator.calls[1]["sources"], sources)
+        self.assertFalse(result["context"]["reduced_for_generation"])
+        self.assertTrue(result["context"]["reduced_output_for_generation"])
+        self.assertEqual(result["context"]["context_characters"], 2600)
+        self.assertEqual(result["context"]["max_output_tokens"], 2048)
+
 
 if __name__ == "__main__":
     unittest.main()
