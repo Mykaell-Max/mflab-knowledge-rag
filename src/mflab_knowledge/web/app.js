@@ -698,11 +698,9 @@ async function submitAsk(event) {
       response.grounding_status,
     );
     const unsupported = response.reason === "evidence_not_supported";
-    const supportedSubset = response.answer_completeness === "supported_subset";
-    const coverageLimited = response.answer_completeness === "coverage_limited";
     feedback.textContent = response.abstained
       ? `${unsupported ? "As fontes recuperadas não sustentaram uma resposta conclusiva." : "Não há evidência indexada suficiente."}${scopeSummary(resolution)}`
-      : `${supportedSubset ? "A investigação confirmou pontos isolados, mas não sustentou uma explicação completa." : coverageLimited ? "A resposta usa as evidências encontradas, mas alguns aspectos solicitados permaneceram sem cobertura." : incompleteScopes ? "Resposta parcial: nem todos os escopos foram citados." : "Resposta concluída."}${scopeSummary(resolution)}`;
+      : `${incompleteScopes ? "Resposta concluída; confira os escopos citados." : "Resposta concluída."}${scopeSummary(resolution)}`;
     card.append(element("h3", "", response.abstained ? "Não foi possível concluir" : "Resposta"));
     card.append(renderMarkdown(
       response.answer || "A base indexada não sustenta uma resposta.",

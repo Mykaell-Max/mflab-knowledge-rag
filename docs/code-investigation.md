@@ -341,6 +341,50 @@ que uma etapa inicia, chama, antecede, sucede ou causa outra exige uma fonte que
 mostre essa relação. A definição isolada de uma função comprova apenas seu
 comportamento local, ainda que o nome pareça compatível com a pergunta.
 
+## Síntese incremental por evidência
+
+A 0.43.0 acrescenta um caderno intermediário entre exploração e redação. Cada
+faceta coberta é ligada aos `source_id` correspondentes por meio do `chunk_id`;
+um rótulo produzido pelo planejador nunca é tratado como evidência. Facetas que
+reusam exatamente a mesma evidência local são agrupadas, enquanto conjuntos de
+fontes independentes formam seções separadas. Lacunas ficam explícitas no
+caderno, mas não são enviadas ao modelo como fatos a completar.
+
+A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
+fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
+GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a
+escrita de longo formato intercalada com referências estudada pelo ReClaim. No
+serviço do laboratório, a implementação permanece menor e conservadora: não há
+memória factual livre, ferramenta de escrita ou busca externa; somente fontes
+autorizadas que já passaram pela recuperação e pelo controle de acesso.
+
+Até quatro seções recebem no máximo quatro fontes cada. Uma seção detalhada pode
+usar até 1.536 tokens, de modo que a resposta composta possa ser longa sem pedir
+ao vLLM uma única entrada e saída incompatível com sua janela. Cada chamada é
+instruída a produzir apenas uma seção técnica, a não repetir introdução ou
+conclusão e a não inferir ordem, chamada ou causalidade de definições isoladas.
+Os IDs das citações continuam globais. Depois da composição, a resposta inteira
+passa pelas auditorias existentes de citação, sustentação e cobertura.
+Uma seção que terminar por limite de saída recebe no máximo uma continuação de
+1.024 tokens com as mesmas fontes; a continuação deve partir da última unidade
+completa, sem repetir título ou fatos anteriores.
+
+O caderno é devolvido em `context.evidence_notebook`, junto com
+`sectional_synthesis`, `section_generation_count` e
+`section_max_output_tokens`; `section_continuation_count` registra continuações
+efetivamente usadas. O progresso da tarefa informa a criação do caderno
+e o início e término de cada seção; a interface já consegue recolher esse painel.
+Esses dados são rastros operacionais da seleção de evidência, não uma exposição
+do raciocínio privado do modelo.
+
+Referências que orientaram esta camada:
+
+- [From Local to Global: A Graph RAG Approach](https://www.microsoft.com/en-us/research/publication/from-local-to-global-a-graph-rag-approach-to-query-focused-summarization/);
+- [RepoCoder: Repository-Level Code Completion Through Iterative Retrieval and Generation](https://arxiv.org/abs/2303.12570);
+- [ReClaim: An Explore-then-Answer Framework for Long-form Question Answering](https://aclanthology.org/2025.findings-naacl.55/);
+- [Corrective Retrieval Augmented Generation](https://arxiv.org/abs/2401.15884);
+- [Adaptive-RAG](https://arxiv.org/abs/2403.14403).
+
 ## Próximas camadas
 
 O mapa ainda deverá receber parsing sintático por linguagem, chamadas e usos

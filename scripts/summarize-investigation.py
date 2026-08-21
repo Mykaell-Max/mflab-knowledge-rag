@@ -34,6 +34,12 @@ def show_response(label: str, response: dict[str, object]) -> None:
     )
     sources = response.get("sources")
     sources = sources if isinstance(sources, list) else []
+    notebook = context.get("evidence_notebook")
+    notebook = notebook if isinstance(notebook, dict) else {}
+    notebook_sections = notebook.get("sections")
+    notebook_sections = (
+        notebook_sections if isinstance(notebook_sections, list) else []
+    )
 
     print(f"\n{label}")
     print(
@@ -72,6 +78,31 @@ def show_response(label: str, response: dict[str, object]) -> None:
                 f"    - {raw_frontier.get('path')}"
                 f" :: {raw_frontier.get('title')}"
             )
+    if notebook_sections:
+        print(
+            "  caderno de evidências:"
+            f" algoritmo={notebook.get('algorithm')}"
+            f" | seções={len(notebook_sections)}"
+            f" | facetas cobertas={notebook.get('covered_aspects', 0)}"
+            f" | lacunas={notebook.get('gap_aspects', 0)}"
+        )
+        for raw_section in notebook_sections:
+            if not isinstance(raw_section, dict):
+                continue
+            aspects = raw_section.get("aspects")
+            aspects = aspects if isinstance(aspects, list) else []
+            source_ids = raw_section.get("source_ids")
+            source_ids = source_ids if isinstance(source_ids, list) else []
+            labels = [
+                str(aspect.get("aspect", ""))
+                for aspect in aspects
+                if isinstance(aspect, dict) and aspect.get("aspect")
+            ]
+            print(
+                f"    - {raw_section.get('section_id')}:"
+                f" {', '.join(labels)}"
+                f" | fontes={','.join(str(value) for value in source_ids)}"
+            )
 
     counts = verification.get("counts")
     counts = counts if isinstance(counts, dict) else {}
@@ -104,12 +135,19 @@ def show_response(label: str, response: dict[str, object]) -> None:
         f"  resposta: abstida={response.get('abstained')}"
         f" | grounding={response.get('grounding_status')}"
         f" | completude={response.get('answer_completeness', 'legacy')}"
+        f" | finish={response.get('finish_reason')}"
         f" | fontes={len(sources)}"
     )
+    answer = response.get("answer")
+    answer = answer if isinstance(answer, str) else ""
     print(
         "  orçamento:"
         f" evidências={context.get('context_characters')} caracteres"
         f" | saída={context.get('max_output_tokens')} tokens"
+        f" | resposta={len(answer)} caracteres"
+        f" | síntese seccional={context.get('sectional_synthesis', False)}"
+        f" ({context.get('section_generation_count', 0)} seções)"
+        f" | continuações={context.get('section_continuation_count', 0)}"
         f" | suporte descoberto={context.get('citation_discovery', False)}"
     )
     rejected = verification.get("claims")

@@ -293,7 +293,9 @@ transformar o planejamento em evidência. O valor `coverage_limited` indica
 aspectos parciais ou ausentes; `supported_subset`
 indica que a auditoria preservou somente afirmações isoladas de uma síntese
 maior; e `not_delivered` acompanha uma resposta bloqueada. A interface apresenta
-essas limitações em linguagem simples, sem anunciar uma explicação completa.
+somente o resultado e eventuais limites de escopo relevantes; esses estados
+permanecem disponíveis para auditoria e administração, sem virar etiquetas ou
+títulos editoriais na resposta pública.
 A cobertura continua sendo
 estrutural; `verification` é uma
 segunda avaliação automatizada e não deve ser confundida com verdade absoluta
@@ -307,6 +309,16 @@ individuais (`[S1][S2]`) ou agrupadas estritamente (`[S1, S2]` ou
 combinação projeto/branch/commit; isso não bloqueia uma comparação intencional,
 mas impede que o cliente trate versões distintas como se fossem uma só. O
 texto integral das fontes não é repetido na resposta de `/ask`.
+
+Perguntas complexas podem usar síntese incremental. Nesse caso,
+`context.evidence_notebook` descreve as facetas e fontes autorizadas agrupadas,
+`context.sectional_synthesis` fica verdadeiro e
+`context.section_generation_count` informa quantas seções foram redigidas. Cada
+seção tem orçamento próprio em `context.section_max_output_tokens`; por isso a
+resposta composta pode superar o teto de uma única chamada sem aumentar a
+janela solicitada ao provedor. Todo o texto composto continua sujeito às mesmas
+auditorias finais. `context.section_continuation_count` registra se alguma seção
+que atingiu o limite recebeu a continuação única e limitada.
 
 A interface usa `POST /ui-api/ask-jobs` e consulta
 `GET /ui-api/ask-jobs/{job_id}` enquanto a pergunta está em execução. Os IDs são

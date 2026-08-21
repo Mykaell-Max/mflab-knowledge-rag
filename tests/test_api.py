@@ -34,6 +34,31 @@ class _Generator:
         }
 
 
+class _SequencedGenerator(_Generator):
+    def __init__(
+        self,
+        answers: list[str],
+        *,
+        finish_reasons: list[str] | None = None,
+    ) -> None:
+        super().__init__()
+        self.answers = iter(answers)
+        self.finish_reasons = iter(finish_reasons or ["stop"] * len(answers))
+
+    def generate(self, **kwargs: object) -> dict[str, object]:
+        self.calls.append(kwargs)
+        return {
+            "answer": next(self.answers),
+            "model": "local-test-model",
+            "finish_reason": next(self.finish_reasons),
+            "usage": {
+                "prompt_tokens": 10,
+                "completion_tokens": 5,
+                "total_tokens": 15,
+            },
+        }
+
+
 class _PlanningGenerator(_Generator):
     def __init__(self) -> None:
         super().__init__("The call flow is established [S1].")
@@ -221,6 +246,58 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(len(packed), api.CONTEXT_DIVERSITY_TARGET)
         self.assertEqual(used, 600)
         self.assertTrue(truncated)
+
+    def test_evidence_notebook_groups_provenance_and_distributes_graph_nodes(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "entry",
+                    "status": "covered",
+                    "chunk_ids": ["entry"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "advance",
+                    "status": "covered",
+                    "chunk_ids": ["advance"],
+                },
+                {
+                    "aspect_id": "A3",
+                    "aspect": "combined local behavior",
+                    "status": "covered",
+                    "chunk_ids": ["entry"],
+                },
+                {
+                    "aspect_id": "A4",
+                    "aspect": "missing transition",
+                    "status": "gap",
+                    "chunk_ids": [],
+                },
+            ],
+            [
+                {"source_id": "S1", "chunk_id": "entry"},
+                {"source_id": "S2", "chunk_id": "advance"},
+                {
+                    "source_id": "S3",
+                    "chunk_id": "caller",
+                    "source_kind": "call_graph_caller",
+                },
+            ],
+        )
+
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v1")
+        self.assertEqual(notebook["ready_sections"], 2)
+        self.assertEqual(notebook["covered_aspects"], 3)
+        self.assertEqual(notebook["gap_aspects"], 1)
+        sections = notebook["sections"]
+        self.assertEqual(len(sections[0]["aspects"]), 2)
+        self.assertIn(
+            "S3",
+            sections[0]["source_ids"] + sections[1]["source_ids"],
+        )
 
     def test_context_packing_preserves_distinct_paths_before_repeated_chunks(self) -> None:
         packed, _used, _truncated = api._pack_context_results(
@@ -1419,6 +1496,107 @@ class ApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(result["context"]["response_depth"], "detailed")
 
+    def test_ask_synthesizes_evidenced_facets_in_separate_bounded_calls(
+        self,
+    ) -> None:
+        generator = _SequencedGenerator(
+            [
+                "## Entrada\n\nThe entry point is shown here [S1].",
+                "The local setup is then completed [S1].",
+                "## Avanço\n\nThe advancement stage is shown here [S2].",
+            ],
+            finish_reasons=["length", "stop", "stop"],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_output_tokens=4096,
+                verify_evidence=False,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "entry",
+                "project": "Solver",
+                "path": "src/entry.cpp",
+                "text": "void enter() {}",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "advance",
+                "project": "Solver",
+                "path": "src/advance.cpp",
+                "text": "void advance() {}",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the complete mechanism",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "exploration": {"intent": "mechanism"},
+                "agent_investigation": {
+                    "coverage": [
+                        {
+                            "aspect_id": "A1",
+                            "aspect": "entry point",
+                            "status": "covered",
+                            "chunk_ids": ["entry"],
+                        },
+                        {
+                            "aspect_id": "A2",
+                            "aspect": "advancement",
+                            "status": "covered",
+                            "chunk_ids": ["advance"],
+                        },
+                    ]
+                },
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 40,
+                "truncated": False,
+                "sources": sources,
+                "investigation": {"steps": []},
+            },
+        ):
+            result = service.ask(
+                query="Explain the complete mechanism",
+                response_depth="detailed",
+            )
+
+        self.assertEqual(len(generator.calls), 3)
+        self.assertEqual(generator.calls[0]["sources"], [sources[0]])
+        self.assertEqual(generator.calls[1]["sources"], [sources[0]])
+        self.assertEqual(generator.calls[2]["sources"], [sources[1]])
+        self.assertEqual(generator.calls[0]["max_output_tokens"], 1536)
+        self.assertEqual(generator.calls[1]["max_output_tokens"], 1024)
+        self.assertIn("SECTIONAL SYNTHESIS CONTRACT", generator.calls[0]["instructions"])
+        self.assertIn("SECTION CONTINUATION CONTRACT", generator.calls[1]["instructions"])
+        self.assertIn("## Entrada", result["answer"])
+        self.assertIn("local setup", result["answer"])
+        self.assertIn("## Avanço", result["answer"])
+        self.assertTrue(result["context"]["sectional_synthesis"])
+        self.assertEqual(result["context"]["section_generation_count"], 2)
+        self.assertEqual(result["context"]["section_continuation_count"], 1)
+        self.assertEqual(result["context"]["generation_attempts"], 3)
+        self.assertEqual(result["usage"]["total_tokens"], 45)
+        self.assertEqual(result["finish_reason"], "stop")
+
     def test_ask_uses_local_query_planner_for_location_questions(self) -> None:
         generator = _PlanningGenerator()
         service = api.RagApiService(
@@ -2095,10 +2273,9 @@ class ApiServiceTests(unittest.TestCase):
 
         self.assertFalse(result["abstained"])
         self.assertEqual(result["answer_completeness"], "supported_subset")
-        self.assertTrue(
-            str(result["answer"]).startswith(
-                "### Pontos sustentados pela investigação"
-            )
+        self.assertEqual(
+            result["answer"],
+            "The observed operation advances state [S1].",
         )
         self.assertIn(
             "Investigação concluída com limitações",

@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **20 de agosto de 2026**, na versão candidata **0.42.8**. Antes de
+> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.43.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,28 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A versão 0.43.0 troca a passagem única de geração por uma primeira síntese
+incremental para perguntas complexas. O backend cria um caderno de evidências a
+partir das facetas da investigação e da proveniência dos chunks que chegaram ao
+pacote final. Facetas comprovadas pela mesma evidência local são agrupadas;
+facetas independentes recebem seções distintas; lacunas permanecem registradas
+sem serem transformadas em fatos. Nós estruturais já observados podem ser
+distribuídos entre as seções para sustentar transições. O algoritmo opera sobre
+IDs opacos, relações persistidas e proveniência, sem conhecer projeto, branch,
+caminho, símbolo ou conceito científico.
+
+Cada uma das até quatro seções recebe no máximo quatro fontes e uma reserva
+própria de saída. Uma seção interrompida pelo teto recebe uma única continuação
+limitada com as mesmas fontes. O modelo redige somente aquela parte, com citações globais e
+sem inventar conexões entre definições vizinhas. As seções são reunidas e então
+passam pelas mesmas auditorias de citação, afirmação e cobertura existentes. Na
+interface, o progresso mostra a organização do caderno e a elaboração de cada
+seção dentro do painel recolhível de investigação. O rótulo editorial “Pontos
+sustentados pela investigação” foi removido da resposta; a condição continua
+disponível como metadado interno. A próxima ação é validar na Morgoth as duas
+perguntas longas da suíte e comparar extensão, etapas cobertas, citações e
+latência com a 0.42.9.
 
 A versão 0.42.9 corrige uma perda de evidência observada em explicações longas.
 Quando o servidor local recusa a soma entre entrada e reserva máxima de saída, a
