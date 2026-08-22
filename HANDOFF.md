@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.4**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.5**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,25 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação real da 0.44.4 comprovou a navegação por ciclo de vida. A fronteira
+de malha passou a conter `MeshManager::initialize`, `configure` e
+`runInitialRemesh`, o caminho `mesh_manager.cpp` entrou no pacote e a resposta
+teve 3.639 caracteres com 19 afirmações sustentadas. Entretanto, o chamador
+`domain.cpp` foi expulso pelas dez fontes finais. O DPM continuou recuperando
+seus três caminhos obrigatórios, embora a geração tenha oscilado para 4.492
+caracteres. Portanto, ampliar vocabulário, ações ou contexto já não é a próxima
+medida: os dois lados da aresta existem, mas competem entre si na seleção final.
+
+A 0.44.5 reserva papéis estruturais genéricos. O candidato lexical mais forte é
+mantido como âncora e, quando observados, o melhor `agent_callers_evidence` e o
+melhor `agent_callees_evidence` recebem uma vaga antes da diversidade adicional.
+Assim, uma explicação de fluxo pode conservar simultaneamente o coordenador e
+sua implementação. A regra opera apenas sobre arestas resolvidas e chunks já
+autorizados; não contém caminhos, símbolos ou projetos. A próxima validação deve
+confirmar os três caminhos da malha juntos. Se isso ocorrer, o próximo trabalho
+deve analisar a resposta e a auditoria de cobertura, não continuar alterando a
+recuperação.
 
 A validação real da 0.44.3 mostrou que a coerência do DPM melhorou: os três
 caminhos obrigatórios foram preservados, a fronteira reuniu configuração,

@@ -1006,6 +1006,48 @@ class InvestigatorTests(unittest.TestCase):
             ["factory", "setup"],
         )
 
+    def test_structural_frontier_reserves_upstream_and_downstream_roles(self) -> None:
+        selected = select_graph_frontier_results(
+            question="Explain adaptive grid initialization",
+            search_hints=["grid setup flow"],
+            results=[
+                {
+                    "chunk_id": "factory",
+                    "path": "src/grid/factory.cpp",
+                    "title": "GridFactory::create",
+                    "text": "create the adaptive grid",
+                    "source_kind": "agent_symbol_evidence",
+                },
+                {
+                    "chunk_id": "domain",
+                    "path": "src/domain.cpp",
+                    "title": "Domain::setup",
+                    "text": "initialize the grid manager",
+                    "source_kind": "agent_callers_evidence",
+                },
+                {
+                    "chunk_id": "manager",
+                    "path": "src/grid/manager.cpp",
+                    "title": "GridManager::initialize",
+                    "text": "configure adaptive behavior",
+                    "source_kind": "agent_callees_evidence",
+                },
+                {
+                    "chunk_id": "output",
+                    "path": "src/output.cpp",
+                    "title": "Output::writeGrid",
+                    "text": "write the grid",
+                    "source_kind": "agent_terminal_neighborhood_evidence",
+                },
+            ],
+            limit=3,
+        )
+
+        self.assertEqual(
+            [result["chunk_id"] for result in selected],
+            ["factory", "domain", "manager"],
+        )
+
     def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:
         results = [
             {"chunk_id": str(position), "path": "", "title": "", "text": ""}

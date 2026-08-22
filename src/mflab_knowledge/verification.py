@@ -9,7 +9,7 @@ from mflab_knowledge.grounding import citation_ids, factual_units
 
 VERIFICATION_ALGORITHM = "claim_evidence_audit_v4"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v22"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v23"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 

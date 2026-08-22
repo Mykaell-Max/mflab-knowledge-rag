@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v23"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v24"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v2"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
@@ -578,21 +578,49 @@ def select_graph_frontier_results(
     selected: list[dict[str, object]] = []
     selected_ids: set[str] = set()
     selected_paths: set[str] = set()
+
+    def append_selected(result: dict[str, object]) -> bool:
+        if len(selected) >= limit:
+            return False
+        chunk_id = str(result.get("chunk_id", ""))
+        path = str(result.get("path", ""))
+        identity = chunk_id or f"{path}:{result.get('title', '')}"
+        if identity in selected_ids:
+            return False
+        selected.append(result)
+        selected_ids.add(identity)
+        if path:
+            selected_paths.add(path)
+        return True
+
+    # A flow explanation needs both sides of at least one verified edge. Keep
+    # the strongest lexical anchor first, then reserve one upstream caller and
+    # one downstream callee when observed. This prevents path diversity from
+    # preserving either the coordinator or its implementation, but not both.
+    if ordered_candidates:
+        append_selected(ordered_candidates[0])
+    for role in ("callers", "callees"):
+        candidate = next(
+            (
+                result
+                for result in ordered_candidates
+                if role in str(result.get("source_kind", ""))
+            ),
+            None,
+        )
+        if candidate is not None:
+            append_selected(candidate)
+
     diversity_target = min(limit, max(3, limit - 2))
     # Diversity is useful only inside the relevant tier. Previously, a weakly
     # connected helper from an unrelated subsystem could take a distinct-path
     # slot before a second lifecycle method from the queried coordinator.
     diversity_candidates = relevant_candidates or ordered_candidates
     for result in diversity_candidates:
-        chunk_id = str(result.get("chunk_id", ""))
         path = str(result.get("path", ""))
-        identity = chunk_id or f"{path}:{result.get('title', '')}"
         if path and path in selected_paths:
             continue
-        selected.append(result)
-        selected_ids.add(identity)
-        if path:
-            selected_paths.add(path)
+        append_selected(result)
         if len(selected) >= diversity_target:
             break
     if len(selected) >= limit:
@@ -609,15 +637,8 @@ def select_graph_frontier_results(
         ),
     ]
     for result in completion_candidates:
-        chunk_id = str(result.get("chunk_id", ""))
-        path = str(result.get("path", ""))
-        identity = chunk_id or f"{path}:{result.get('title', '')}"
-        if identity in selected_ids:
+        if not append_selected(result):
             continue
-        selected.append(result)
-        selected_ids.add(identity)
-        if path:
-            selected_paths.add(path)
         if len(selected) >= limit:
             return selected
     return selected

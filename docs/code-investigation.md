@@ -423,6 +423,12 @@ continuam removidas da pontuação lexical normal, evitando que palavras como
 inicialização a um método chamado `setup`. O vocabulário é de engenharia de
 software e não contém subsistemas, projetos, branches ou arquivos científicos.
 
+Na 0.44.5, a fronteira reserva uma âncora lexical e os dois lados de uma aresta
+resolvida: um chamador e um chamado. Essa pequena cobertura por papéis evita que
+a diversidade de caminhos retenha somente a origem ou somente a implementação.
+As vagas restantes continuam sendo preenchidas pelo ranqueamento normal, e a
+reserva não transforma relações não resolvidas em fatos.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a
