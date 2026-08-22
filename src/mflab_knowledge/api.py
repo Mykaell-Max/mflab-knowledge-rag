@@ -173,7 +173,8 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v1"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v2"
+SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v1"
 MAX_EVIDENCE_SECTIONS = 4
 MAX_SECTION_SOURCES = 4
 
@@ -3057,6 +3058,9 @@ class RagApiService:
                     "agent_investigation": context.get("agent_investigation"),
                     "evidence_notebook": evidence_notebook,
                     "sectional_synthesis": False,
+                    "section_composition": False,
+                    "section_composition_attempted": False,
+                    "section_composition_algorithm": SECTION_COMPOSITION_ALGORITHM,
                     "section_generation_count": 0,
                     "section_continuation_count": 0,
                     "requested_max_context_characters": requested_context_limit,
@@ -3091,6 +3095,8 @@ class RagApiService:
             )
         )
         sectional_synthesis = False
+        section_composition = False
+        section_composition_attempted = False
         section_generation_count = 0
         section_continuation_count = 0
         section_output_limit: int | None = None
@@ -3121,6 +3127,7 @@ class RagApiService:
                 2048 if response_depth == "detailed" else 1024,
             )
             generated_sections: list[dict[str, object]] = []
+            generated_section_plans: list[dict[str, object]] = []
             try:
                 for position, section in enumerate(notebook_sections, start=1):
                     assert isinstance(section, dict)
@@ -3213,6 +3220,7 @@ class RagApiService:
                             )
                             section_continuation_count += 1
                     generated_sections.append(generated_section)
+                    generated_section_plans.append(section)
                     section_generation_count += 1
                     record(
                         "generation",
@@ -3231,6 +3239,7 @@ class RagApiService:
                     "A resposta será elaborada pelo caminho compatível de passagem única.",
                 )
                 generated_sections.clear()
+                generated_section_plans.clear()
                 section_generation_count = 0
                 section_continuation_count = 0
                 section_output_limit = None
@@ -3238,6 +3247,109 @@ class RagApiService:
                 if generated_sections:
                     generated = _combine_section_generations(generated_sections)
                     sectional_synthesis = True
+                    composer = getattr(self.generator, "compose_sections", None)
+                    if callable(composer) and len(generated_sections) >= 2:
+                        section_composition_attempted = True
+                        notebook_aspects: list[dict[str, object]] = []
+                        observed_aspect_ids: set[str] = set()
+                        composition_sections: list[dict[str, object]] = []
+                        for section, generated_section in zip(
+                            generated_section_plans,
+                            generated_sections,
+                            strict=False,
+                        ):
+                            assert isinstance(section, dict)
+                            section_aspects = [
+                                {
+                                    "aspect_id": str(
+                                        aspect.get("aspect_id", "")
+                                    ),
+                                    "aspect": str(aspect.get("aspect", "")),
+                                }
+                                for aspect in section.get("aspects", [])
+                                if isinstance(aspect, dict)
+                            ]
+                            for aspect in section_aspects:
+                                aspect_id = str(aspect.get("aspect_id", ""))
+                                if not aspect_id or aspect_id in observed_aspect_ids:
+                                    continue
+                                observed_aspect_ids.add(aspect_id)
+                                notebook_aspects.append(aspect)
+                            composition_sections.append(
+                                {
+                                    "section_id": section.get("section_id"),
+                                    "aspects": section_aspects,
+                                    "answer": generated_section.get("answer", ""),
+                                }
+                            )
+                        record(
+                            "generation",
+                            "Seções técnicas em composição final",
+                            (
+                                "Os rascunhos serão reorganizados em um fluxo único; "
+                                "somente as fontes autorizadas continuam valendo como "
+                                "evidência."
+                            ),
+                            {
+                                "sections": len(composition_sections),
+                                "aspects": len(notebook_aspects),
+                            },
+                        )
+                        (
+                            composition_sources,
+                            composition_evidence_characters,
+                            _composition_truncated,
+                        ) = _pack_context_results(
+                            raw_sources,
+                            max_context_characters=effective_context_limit,
+                            source_limit=len(raw_sources),
+                        )
+                        generation_attempts += 1
+                        try:
+                            composed = composer(
+                                question=str(context["query"]),
+                                instructions=str(context["instructions"]),
+                                sections=composition_sections,
+                                aspects=notebook_aspects,
+                                sources=composition_sources,
+                                max_output_tokens=generation_output_limit,
+                                temperature=temperature,
+                            )
+                        except (
+                            GenerationContextTooLargeError,
+                            GenerationUnavailableError,
+                            ValueError,
+                            TypeError,
+                        ) as exc:
+                            self.log(
+                                "Composição final das seções indisponível; "
+                                f"preservando seções fundadas: {exc}",
+                                "warning",
+                            )
+                            record(
+                                "generation",
+                                "Composição final indisponível",
+                                "As seções fundadas foram preservadas sem perda.",
+                            )
+                        else:
+                            composed_usage = _combine_section_generations(
+                                [*generated_sections, composed]
+                            ).get("usage")
+                            if composed_usage is not None:
+                                composed["usage"] = composed_usage
+                            generated = composed
+                            section_composition = True
+                            record(
+                                "generation",
+                                "Composição técnica concluída",
+                                "A resposta integrada seguirá para as auditorias normais.",
+                                {
+                                    "sections": len(composition_sections),
+                                    "evidence_characters": (
+                                        composition_evidence_characters
+                                    ),
+                                },
+                            )
 
         if generated is None:
             record(
@@ -4150,6 +4262,9 @@ class RagApiService:
                 "response_depth": response_depth,
                 "generation_attempts": generation_attempts,
                 "sectional_synthesis": sectional_synthesis,
+                "section_composition": section_composition,
+                "section_composition_attempted": section_composition_attempted,
+                "section_composition_algorithm": SECTION_COMPOSITION_ALGORITHM,
                 "section_generation_count": section_generation_count,
                 "section_continuation_count": section_continuation_count,
                 "section_max_output_tokens": section_output_limit,

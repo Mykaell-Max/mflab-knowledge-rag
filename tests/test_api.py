@@ -59,6 +59,26 @@ class _SequencedGenerator(_Generator):
         }
 
 
+class _ComposingGenerator(_SequencedGenerator):
+    def __init__(self, answers: list[str], composed_answer: str) -> None:
+        super().__init__(answers)
+        self.composed_answer = composed_answer
+        self.composition_calls: list[dict[str, object]] = []
+
+    def compose_sections(self, **kwargs: object) -> dict[str, object]:
+        self.composition_calls.append(kwargs)
+        return {
+            "answer": self.composed_answer,
+            "model": "local-test-model",
+            "finish_reason": "stop",
+            "usage": {
+                "prompt_tokens": 20,
+                "completion_tokens": 10,
+                "total_tokens": 30,
+            },
+        }
+
+
 class _PlanningGenerator(_Generator):
     def __init__(self) -> None:
         super().__init__("The call flow is established [S1].")
@@ -289,7 +309,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v1")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v2")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -1741,6 +1761,104 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["context"]["generation_attempts"], 3)
         self.assertEqual(result["usage"]["total_tokens"], 45)
         self.assertEqual(result["finish_reason"], "stop")
+
+    def test_ask_composes_grounded_sections_before_final_audit(self) -> None:
+        generator = _ComposingGenerator(
+            [
+                "## Entry\n\nThe entry is visible [S1].",
+                "## Advance\n\nThe advance is visible [S2].",
+            ],
+            (
+                "## Flow\n\nThe entry is visible [S1].\n\n"
+                "The advance is visible [S2]."
+            ),
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_output_tokens=4096,
+                verify_evidence=False,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "entry",
+                "project": "Solver",
+                "path": "src/entry.cpp",
+                "text": "void enter() {}",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "advance",
+                "project": "Solver",
+                "path": "src/advance.cpp",
+                "text": "void advance() {}",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the complete flow",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "exploration": {"intent": "mechanism"},
+                "agent_investigation": {
+                    "coverage": [
+                        {
+                            "aspect_id": "A1",
+                            "aspect": "entry point",
+                            "status": "covered",
+                            "chunk_ids": ["entry"],
+                        },
+                        {
+                            "aspect_id": "A2",
+                            "aspect": "advancement",
+                            "status": "covered",
+                            "chunk_ids": ["advance"],
+                        },
+                    ]
+                },
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 40,
+                "truncated": False,
+                "sources": sources,
+                "investigation": {"steps": []},
+            },
+        ):
+            result = service.ask(
+                query="Explain the complete flow",
+                response_depth="detailed",
+            )
+
+        self.assertEqual(len(generator.composition_calls), 1)
+        composition = generator.composition_calls[0]
+        self.assertEqual(composition["sources"], sources)
+        self.assertEqual(
+            [aspect["aspect_id"] for aspect in composition["aspects"]],
+            ["A1", "A2"],
+        )
+        self.assertIn("## Entry", composition["sections"][0]["answer"])
+        self.assertEqual(result["answer"], generator.composed_answer)
+        self.assertTrue(result["context"]["sectional_synthesis"])
+        self.assertTrue(result["context"]["section_composition"])
+        self.assertTrue(result["context"]["section_composition_attempted"])
+        self.assertEqual(result["context"]["generation_attempts"], 3)
+        self.assertEqual(result["usage"]["total_tokens"], 60)
 
     def test_ask_uses_local_query_planner_for_location_questions(self) -> None:
         generator = _PlanningGenerator()

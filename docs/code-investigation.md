@@ -435,6 +435,16 @@ mas não ocupam sozinhos as vagas de âncora e chamador. Essa distinção preser
 uma unidade coordenadora de outra família quando ela faz parte da aresta
 observada.
 
+Na 0.44.7, as respostas locais deixam de ser apenas concatenadas. Um compositor
+final recebe os aspectos solicitados, os rascunhos seccionais e novamente um
+pacote global limitado das fontes autorizadas. Os rascunhos são candidatos não
+confiáveis: não provam fatos, não autorizam transições e não podem substituir as
+fontes. O compositor deve eliminar repetição e evidência incidental, organizar
+um fluxo técnico único e manter os IDs globais das citações. A resposta
+composta continua sujeita ao sanitizador literal de código, à auditoria
+afirmação-fonte e à auditoria independente de cobertura. Falha ou excesso de
+contexto na composição preserva as seções anteriores como fallback seguro.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a
@@ -444,7 +454,7 @@ memória factual livre, ferramenta de escrita ou busca externa; somente fontes
 autorizadas que já passaram pela recuperação e pelo controle de acesso.
 
 Até quatro seções recebem no máximo quatro fontes cada. Uma seção detalhada pode
-usar até 1.536 tokens, de modo que a resposta composta possa ser longa sem pedir
+usar até 2.048 tokens e uma continuação limitada, de modo que a resposta composta possa ser longa sem pedir
 ao vLLM uma única entrada e saída incompatível com sua janela. Cada chamada é
 instruída a produzir apenas uma seção técnica, a não repetir introdução ou
 conclusão e a não inferir ordem, chamada ou causalidade de definições isoladas.

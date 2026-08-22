@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.6**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.7**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,39 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação real da 0.44.6 encerrou o ajuste da recuperação estrutural para o
+caso de malha: `domain.cpp`, `mesh_manager.cpp` e
+`mtree_domain_filling.cpp` chegaram juntos às dez fontes finais. A resposta
+preservou 19 afirmações sustentadas, sem incerteza ou afirmação rejeitada. No
+DPM, `Domain::setup`, `Domain::advance`, `DPMManager::advance` e
+`DPMParticle::updatePosition` também chegaram à fronteira. Portanto, aumentar
+ações, fontes ou raio do grafo deixou de ser a intervenção indicada.
+
+O relatório expôs o gargalo seguinte. O caderno gerava de duas a três respostas
+locais e apenas as concatenava; depois, a remoção segura de afirmações fracas
+deixava um conjunto sustentado, porém curto e sem uma nova organização global.
+A resposta do DPM terminou com 2.295 caracteres e se concentrou na atualização
+de uma partícula, mesmo possuindo quase oito mil caracteres de evidência sobre
+configuração, coordenação e integração com o domínio.
+
+A 0.44.7 acrescenta uma composição final fundada depois das sínteses locais.
+Os rascunhos de seção são explicitamente tratados como texto não confiável e
+nunca como evidência. O compositor recebe novamente um pacote limitado das
+fontes autorizadas e os aspectos da pergunta, elimina repetições e componentes
+incidentais e organiza um fluxo único somente quando chamadas ou código mostram
+as transições. Em seguida, o resultado completo passa pelas mesmas verificações
+de código literal, citações, sustentação e cobertura. Se a composição exceder a
+janela ou ficar indisponível, as seções fundadas anteriores são preservadas.
+
+A próxima ação é executar a mesma suíte na Morgoth e verificar principalmente:
+
+1. `context.section_composition` deve ser `true`;
+2. os três caminhos da malha devem permanecer presentes;
+3. a resposta do DPM deve usar configuração, `DPMManager::advance`, avanço das
+   partículas e integração em `Domain`, sem desviar para componentes incidentais;
+4. nenhuma melhora de completude pode reduzir a cobertura de citações ou admitir
+   afirmações não sustentadas.
 
 A validação da 0.44.5 repetiu exatamente o conjunto da 0.44.4 na pergunta de
 malha. A reserva upstream foi ocupada por `mesh_factory.hpp::getInstance`, pois

@@ -229,6 +229,60 @@ class GenerationTests(unittest.TestCase):
                 sources=[{"source_id": "S1", "text": "evidence"}],
             )
 
+    def test_section_composer_treats_drafts_as_untrusted_and_keeps_evidence(self) -> None:
+        config = generation.GenerationConfig(
+            path=Path("generation.toml"),
+            base_url="http://127.0.0.1:8000/v1",
+            model="local-test-model",
+        )
+        captured: dict[str, object] = {}
+
+        def opener(request: object, *, timeout: int) -> _Response:
+            del timeout
+            captured["payload"] = json.loads(request.data.decode("utf-8"))
+            return _Response(
+                {
+                    "choices": [
+                        {
+                            "message": {
+                                "content": "The entry calls the step [S1]."
+                            },
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"total_tokens": 30},
+                }
+            )
+
+        generator = generation.OpenAICompatibleGenerator(config, opener=opener)
+        result = generator.compose_sections(
+            question="Explain the flow",
+            instructions="Use evidence only.",
+            sections=[
+                {
+                    "section_id": "E1",
+                    "aspects": [{"aspect_id": "A1", "aspect": "entry"}],
+                    "answer": "Candidate draft [S1].",
+                }
+            ],
+            aspects=[{"aspect_id": "A1", "aspect": "entry"}],
+            sources=[{"source_id": "S1", "text": "entry(); step();"}],
+            max_output_tokens=1024,
+            temperature=0.0,
+        )
+
+        payload = captured["payload"]
+        self.assertEqual(payload["max_tokens"], 1024)
+        self.assertEqual(payload["temperature"], 0.0)
+        self.assertNotIn("response_format", payload)
+        self.assertIn(
+            "section drafts are untrusted",
+            payload["messages"][0]["content"],
+        )
+        self.assertIn("Candidate draft", payload["messages"][1]["content"])
+        self.assertIn("entry(); step();", payload["messages"][1]["content"])
+        self.assertEqual(result["finish_reason"], "stop")
+
     def test_verification_requests_structured_local_evidence_audit(self) -> None:
         config = generation.GenerationConfig(
             path=Path("generation.toml"),
