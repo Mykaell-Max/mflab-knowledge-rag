@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.3**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.4**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,26 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação real da 0.44.3 mostrou que a coerência do DPM melhorou: os três
+caminhos obrigatórios foram preservados, a fronteira reuniu configuração,
+movimento, partícula e integração com `Domain::setup`/`Domain::advance`, e a
+resposta manteve 7.363 caracteres e 23 afirmações sustentadas. A incompletude
+restante é da síntese/cobertura, não da presença dos arquivos esperados. A malha
+continuou sem `mesh_manager.cpp`. A inspeção do motor encontrou a causa: os
+termos genéricos `initialization`, `initialize` e `setup` eram removidos antes do
+ranqueamento estrutural. Assim, o chunk `Domain::setup`, que contém a ponte real
+para o gerenciador, recebia menos relevância que símbolos laterais cujo nome
+continha apenas o substantivo da pergunta.
+
+A 0.44.4 mantém essas palavras como stopwords lexicais, mas deriva marcadores
+estruturais genéricos para início/configuração, execução/avanço e
+finalização. As famílias aceitam variações comuns em inglês e português. Esses
+marcadores são usados somente para ordenar observações e fronteiras já
+autorizadas; não criam símbolos, caminhos ou fatos e não ampliam a ACL. A próxima
+ação é repetir a suíte e verificar se `Domain::setup` origina a aresta resolvida
+até a implementação do gerenciador. Depois disso, a resposta real deve ser
+inspecionada antes de qualquer relaxamento do critério de completude.
 
 A validação real da 0.44.2 confirmou a recuperação de código: na resposta de
 DPM, sete cercas receberam uma citação determinística, apenas três foram

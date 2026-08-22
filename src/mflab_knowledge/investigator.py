@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v22"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v23"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v2"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
@@ -59,6 +59,85 @@ _NAVIGATION_STOPWORDS = {
     "source",
     "trecho",
     "work",
+}
+
+_LIFECYCLE_VOCABULARY = {
+    "lifecycle_start": {
+        "bootstrap",
+        "build",
+        "configure",
+        "configuration",
+        "create",
+        "creation",
+        "init",
+        "initialization",
+        "initialize",
+        "initializing",
+        "setup",
+        "configuracao",
+        "configurar",
+        "criacao",
+        "criar",
+        "inicializacao",
+        "inicializar",
+        "inicio",
+    },
+    "lifecycle_step": {
+        "advance",
+        "advancement",
+        "execute",
+        "execution",
+        "run",
+        "step",
+        "update",
+        "atualizar",
+        "avancar",
+        "avanco",
+        "executar",
+        "passo",
+    },
+    "lifecycle_finish": {
+        "cleanup",
+        "destroy",
+        "finalization",
+        "finalize",
+        "shutdown",
+        "destruir",
+        "encerrar",
+        "finalizacao",
+        "finalizar",
+    },
+}
+
+_LIFECYCLE_PREFIXES = {
+    "lifecycle_start": (
+        "bootstrap",
+        "build",
+        "configur",
+        "creat",
+        "cria",
+        "init",
+        "inicial",
+        "setup",
+    ),
+    "lifecycle_step": (
+        "advanc",
+        "atualiz",
+        "avanc",
+        "execut",
+        "passo",
+        "run",
+        "step",
+        "updat",
+    ),
+    "lifecycle_finish": (
+        "cleanup",
+        "destroy",
+        "destru",
+        "encerr",
+        "final",
+        "shutdown",
+    ),
 }
 
 
@@ -385,6 +464,30 @@ def _search_terms(value: object) -> set[str]:
     }
 
 
+def _structural_search_terms(value: object) -> set[str]:
+    """Retain generic lifecycle intent without restoring noisy stopwords."""
+
+    text = unicodedata.normalize("NFKD", str(value)).encode(
+        "ascii", "ignore"
+    ).decode("ascii")
+    text = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", text)
+    raw_tokens = {
+        token.casefold() for token in re.findall(r"[A-Za-z0-9]+", text)
+    }
+    terms = _search_terms(value)
+    terms.update(
+        marker
+        for marker, vocabulary in _LIFECYCLE_VOCABULARY.items()
+        if raw_tokens & vocabulary
+        or any(
+            token.startswith(prefix)
+            for token in raw_tokens
+            for prefix in _LIFECYCLE_PREFIXES[marker]
+        )
+    )
+    return terms
+
+
 def _humanize_identifier(value: str) -> str:
     text = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", value)
     text = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
@@ -409,16 +512,16 @@ def select_graph_frontier_results(
 
     if limit < 1 or not results:
         return []
-    query_terms = _search_terms(
+    query_terms = _structural_search_terms(
         " ".join([question, *(str(hint) for hint in search_hints)])
     )
     ranked: list[tuple[float, int, dict[str, object]]] = []
     scores_by_object: dict[int, float] = {}
     for position, result in enumerate(results):
-        path_title_terms = _search_terms(
+        path_title_terms = _structural_search_terms(
             f"{result.get('path', '')} {result.get('title', '')}"
         )
-        text_terms = _search_terms(result.get("text", ""))
+        text_terms = _structural_search_terms(result.get("text", ""))
         score = 4.0 * len(query_terms & path_title_terms)
         score += float(len(query_terms & text_terms))
         ranked.append((score, -position, result))
@@ -889,13 +992,13 @@ def fallback_investigation_actions(
 
     if not observations:
         return []
-    query_terms = _search_terms(
+    query_terms = _structural_search_terms(
         " ".join([question, *(str(hint) for hint in search_hints)])
     )
     observation_terms: list[set[str]] = []
     for observation in observations:
         observation_terms.append(
-            _search_terms(
+            _structural_search_terms(
                 " ".join(
                     str(observation.get(field, ""))
                     for field in ("path", "title", "kind", "preview")
@@ -911,7 +1014,7 @@ def fallback_investigation_actions(
     for position, (observation, terms) in enumerate(
         zip(observations, observation_terms, strict=True)
     ):
-        path_title_terms = _search_terms(
+        path_title_terms = _structural_search_terms(
             f"{observation.get('path', '')} {observation.get('title', '')}"
         )
         score = 0.0

@@ -415,6 +415,14 @@ candidatos relacionados à consulta e só depois admite nós incidentalmente
 conectados; operações relevantes do mesmo coordenador deixam de ser expulsas
 apenas por compartilharem um arquivo.
 
+Na 0.44.4, o ranqueamento estrutural acrescenta marcadores de ciclo de vida.
+Variações linguísticas de início/configuração, execução/avanço e finalização
+são aproximadas apenas durante a escolha entre chunks já observados. Elas
+continuam removidas da pontuação lexical normal, evitando que palavras como
+`initialize` dominem qualquer busca, mas permitem relacionar uma pergunta de
+inicialização a um método chamado `setup`. O vocabulário é de engenharia de
+software e não contém subsistemas, projetos, branches ou arquivos científicos.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

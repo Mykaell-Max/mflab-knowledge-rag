@@ -974,6 +974,38 @@ class InvestigatorTests(unittest.TestCase):
             ["configure", "advance"],
         )
 
+    def test_structural_frontier_preserves_lifecycle_synonyms(self) -> None:
+        selected = select_graph_frontier_results(
+            question="Inicialize a grade adaptativa e explique o fluxo",
+            search_hints=["adaptive grid initialization"],
+            results=[
+                {
+                    "chunk_id": "factory",
+                    "path": "src/grid/factory.cpp",
+                    "title": "GridFactory::create",
+                    "text": "create the adaptive grid",
+                },
+                {
+                    "chunk_id": "setup",
+                    "path": "src/domain.cpp",
+                    "title": "Domain::setup",
+                    "text": "initialize and configure the grid manager",
+                },
+                {
+                    "chunk_id": "export",
+                    "path": "src/output.cpp",
+                    "title": "Output::exportGrid",
+                    "text": "write the adaptive grid",
+                },
+            ],
+            limit=2,
+        )
+
+        self.assertEqual(
+            [result["chunk_id"] for result in selected],
+            ["factory", "setup"],
+        )
+
     def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:
         results = [
             {"chunk_id": str(position), "path": "", "title": "", "text": ""}
