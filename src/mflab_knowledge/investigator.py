@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v21"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v22"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v2"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
@@ -413,6 +413,7 @@ def select_graph_frontier_results(
         " ".join([question, *(str(hint) for hint in search_hints)])
     )
     ranked: list[tuple[float, int, dict[str, object]]] = []
+    scores_by_object: dict[int, float] = {}
     for position, result in enumerate(results):
         path_title_terms = _search_terms(
             f"{result.get('path', '')} {result.get('title', '')}"
@@ -421,6 +422,7 @@ def select_graph_frontier_results(
         score = 4.0 * len(query_terms & path_title_terms)
         score += float(len(query_terms & text_terms))
         ranked.append((score, -position, result))
+        scores_by_object[id(result)] = score
     if any(score > 0 for score, _position, _result in ranked):
         ranked.sort(key=lambda item: (item[0], item[1]), reverse=True)
         candidate_tiers = [
@@ -455,6 +457,7 @@ def select_graph_frontier_results(
     # temporal step and finalizer in the same file can never coexist when the
     # frontier also contains many helper paths.
     ordered_candidates: list[dict[str, object]] = []
+    relevant_candidates: list[dict[str, object]] = []
     ordered_identities: set[str] = set()
     for candidates in candidate_tiers:
         for result in candidates:
@@ -465,12 +468,19 @@ def select_graph_frontier_results(
                 continue
             ordered_identities.add(identity)
             ordered_candidates.append(result)
+            score = scores_by_object.get(id(result), 0.0)
+            if score > 0:
+                relevant_candidates.append(result)
 
     selected: list[dict[str, object]] = []
     selected_ids: set[str] = set()
     selected_paths: set[str] = set()
     diversity_target = min(limit, max(3, limit - 2))
-    for result in ordered_candidates:
+    # Diversity is useful only inside the relevant tier. Previously, a weakly
+    # connected helper from an unrelated subsystem could take a distinct-path
+    # slot before a second lifecycle method from the queried coordinator.
+    diversity_candidates = relevant_candidates or ordered_candidates
+    for result in diversity_candidates:
         chunk_id = str(result.get("chunk_id", ""))
         path = str(result.get("path", ""))
         identity = chunk_id or f"{path}:{result.get('title', '')}"
@@ -484,7 +494,18 @@ def select_graph_frontier_results(
             break
     if len(selected) >= limit:
         return selected
-    for result in ordered_candidates:
+    # Consume all remaining query-relevant lifecycle methods before filling
+    # unused capacity with merely connected frontier nodes.
+    relevant_object_ids = {id(result) for result in relevant_candidates}
+    completion_candidates = [
+        *relevant_candidates,
+        *(
+            result
+            for result in ordered_candidates
+            if id(result) not in relevant_object_ids
+        ),
+    ]
+    for result in completion_candidates:
         chunk_id = str(result.get("chunk_id", ""))
         path = str(result.get("path", ""))
         identity = chunk_id or f"{path}:{result.get('title', '')}"
@@ -795,22 +816,31 @@ def pending_graph_continuations(
     # while retaining bounded room for actual call-edge continuation.
     neighborhood_quota = min(
         len(neighborhood_candidates),
-        max(1, (limit * 3 + 3) // 4),
+        max(1, (limit + 1) // 2),
     )
-    selected_positions = {
-        round(
-            position
-            * (len(neighborhood_candidates) - 1)
-            / max(neighborhood_quota - 1, 1)
-        )
-        for position in range(neighborhood_quota)
-    }
-    selected = [
-        action
-        for position, action in enumerate(neighborhood_candidates)
-        if position in selected_positions
-    ]
-    selected.extend(call_candidates[: max(0, limit - len(selected))])
+
+    def sample(
+        candidates: list[dict[str, str]], quota: int
+    ) -> list[dict[str, str]]:
+        if quota < 1 or not candidates:
+            return []
+        sample_size = min(quota, len(candidates))
+        positions = {
+            round(
+                position * (len(candidates) - 1) / max(sample_size - 1, 1)
+            )
+            for position in range(sample_size)
+        }
+        return [
+            action
+            for position, action in enumerate(candidates)
+            if position in positions
+        ]
+
+    selected = sample(neighborhood_candidates, neighborhood_quota)
+    selected.extend(
+        sample(call_candidates, max(0, limit - len(selected)))
+    )
     return selected[:limit]
 
 

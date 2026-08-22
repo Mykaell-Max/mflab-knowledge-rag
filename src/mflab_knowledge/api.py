@@ -171,7 +171,7 @@ CONTEXT_DIVERSITY_TARGET = 6
 AGENT_CONTEXT_DIVERSITY_TARGET = 10
 CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
-TERMINAL_GRAPH_ROUNDS = 2
+TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
 EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v1"
 MAX_EVIDENCE_SECTIONS = 4
@@ -2424,7 +2424,7 @@ class RagApiService:
                             fetched = fetch_chunk_neighborhood(
                                 self.settings.database_url,
                                 chunk_id=action["chunk_id"],
-                                radius=2,
+                                radius=5,
                                 project=str(frontier.get("project", "")) or None,
                                 branch=str(occurrence.get("branch", "")) or None,
                                 allowed_access=self._allowed_access(allowed_access),

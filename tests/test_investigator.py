@@ -903,9 +903,76 @@ class InvestigatorTests(unittest.TestCase):
             for action in actions
             if action["tool"] == "open_neighborhood"
         ]
-        self.assertEqual(len(neighborhoods), 6)
+        self.assertEqual(len(neighborhoods), 4)
         self.assertEqual(neighborhoods[0], "0")
         self.assertEqual(neighborhoods[-1], "7")
+
+    def test_terminal_continuation_balances_local_and_call_graph_reads(self) -> None:
+        actions = pending_graph_continuations(
+            [
+                {
+                    "chunk_id": str(position),
+                    "source_kind": "agent_callees_evidence",
+                }
+                for position in range(8)
+            ],
+            [],
+            limit=8,
+        )
+
+        self.assertEqual(
+            sum(action["tool"] == "open_neighborhood" for action in actions),
+            4,
+        )
+        self.assertEqual(
+            sum(action["tool"] == "find_callees" for action in actions),
+            4,
+        )
+        call_targets = [
+            action["chunk_id"]
+            for action in actions
+            if action["tool"] == "find_callees"
+        ]
+        self.assertEqual(call_targets[0], "0")
+        self.assertEqual(call_targets[-1], "7")
+
+    def test_relevant_siblings_precede_incidental_path_diversity(self) -> None:
+        selected = select_graph_frontier_results(
+            question="Explain particle manager configuration and advancement",
+            search_hints=["particle lifecycle"],
+            results=[
+                {
+                    "chunk_id": "configure",
+                    "path": "src/particle/manager.cpp",
+                    "title": "ParticleManager::configure",
+                    "text": "configure particle state",
+                },
+                {
+                    "chunk_id": "advance",
+                    "path": "src/particle/manager.cpp",
+                    "title": "ParticleManager::advance",
+                    "text": "advance particle state",
+                },
+                {
+                    "chunk_id": "timer",
+                    "path": "src/util/timer.cpp",
+                    "title": "Timer::stop",
+                    "text": "record time",
+                },
+                {
+                    "chunk_id": "writer",
+                    "path": "src/output/writer.cpp",
+                    "title": "Writer::flush",
+                    "text": "write fields",
+                },
+            ],
+            limit=3,
+        )
+
+        self.assertEqual(
+            [result["chunk_id"] for result in selected[:2]],
+            ["configure", "advance"],
+        )
 
     def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:
         results = [

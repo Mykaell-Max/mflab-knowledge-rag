@@ -407,6 +407,14 @@ amostra de vizinhanças locais ao longo de toda a fronteira. Assim, um método
 irmão observado no mesmo arquivo pode entrar na rodada seguinte sem depender de
 um nome adivinhado pelo modelo.
 
+Na 0.44.3, a última travessia divide o orçamento entre vizinhanças locais e
+arestas de chamada, amostrando a extensão da fronteira em ambos os canais. Uma
+rodada adicional permite que um método irmão recém-observado origine o próximo
+salto de chamadas. O ranqueamento aplica diversidade de arquivos dentro dos
+candidatos relacionados à consulta e só depois admite nós incidentalmente
+conectados; operações relevantes do mesmo coordenador deixam de ser expulsas
+apenas por compartilharem um arquivo.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

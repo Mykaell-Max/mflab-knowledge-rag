@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.2**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.3**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -252,6 +252,28 @@ Caminhos usados durante o piloto:
 
 ## 11. Próxima ação recomendada
 
+A validação real da 0.44.2 confirmou a recuperação de código: na resposta de
+DPM, sete cercas receberam uma citação determinística, apenas três foram
+removidas e a saída cresceu de 1.918 para 7.389 caracteres. A pergunta de malha
+produziu 3.144 caracteres e perdeu somente uma cerca. Ambas terminaram com
+`finish_reason=stop`, todas as afirmações finais foram sustentadas e a API e o
+timer permaneceram saudáveis. A suíte ainda marcou 0/2 porque as duas respostas
+foram corretamente declaradas como subconjuntos sustentados: a malha não reteve
+`mesh_manager.cpp`, e o DPM perdeu o chunk da partícula e não comprovou toda a
+integração de domínio. A fronteira mostrou o motivo: a diversidade de caminhos
+promoveu operações laterais, como saída, temporização e outro solucionador,
+antes de métodos repetidos do subsistema perguntado.
+
+A 0.44.3 transforma a continuação terminal em uma pequena busca em feixe
+determinística. Vizinhanças locais e arestas de chamada dividem igualmente cada
+rodada, ambas amostradas do início ao fim da fronteira; a leitura local usa um
+raio maior e há uma terceira rodada somente de banco. Na seleção, diversidade
+é aplicada primeiro apenas entre candidatos que compartilham vocabulário com a
+pergunta. Métodos relevantes repetidos de um mesmo coordenador precedem nós
+apenas conectados. Não há nome de projeto, arquivo, símbolo ou mecanismo nessa
+política. A próxima ação é repetir a suíte real e comparar os caminhos, a
+cobertura e o tamanho das respostas com a execução da 0.44.2.
+
 A validação real da 0.44.1 preservou dez fontes e fez ambos os casos terminarem
 com `finish_reason=stop`, mas ainda removeu nove blocos de código. A resposta de
 DPM ficou com 1.918 caracteres e a de malha com 1.965; todas as afirmações finais
@@ -266,9 +288,8 @@ Quando linhas completas correspondem a exatamente uma fonte autorizada, o
 backend anexa sua citação mesmo que o modelo a tenha colocado longe da cerca.
 Trechos ambíguos entre fontes, alterados ou cortados continuam removidos. O
 resumo passa a mostrar separadamente blocos removidos e citações anexadas.
-Na exploração, cada rodada terminal reserva três quartos das leituras para uma
-amostra uniforme de vizinhanças locais, incluindo a cauda da fronteira, e o
-restante para chamadas resolvidas. Chunks vizinhos voltam a participar da
+Na exploração, cada rodada terminal intercala leituras de vizinhanças locais,
+incluindo a cauda da fronteira, e chamadas resolvidas. Chunks vizinhos voltam a participar da
 seleção e podem originar o salto estrutural seguinte. Isso é genérico por
 identidade de chunk e ordem de relevância; não conhece nomes científicos. A
 próxima ação é executar a mesma suíte na Morgoth dentro do `tmux`.
