@@ -783,6 +783,38 @@ class InvestigatorTests(unittest.TestCase):
             ],
         )
 
+    def test_answer_coverage_accepts_verified_claim_from_assigned_section(
+        self,
+    ) -> None:
+        result = reconcile_answer_coverage_with_provenance(
+            {
+                "algorithm": "test",
+                "performed": True,
+                "complete": True,
+                "coverage": [
+                    {
+                        "aspect": "integration",
+                        "status": "covered",
+                        "claim_ids": ["C1"],
+                    }
+                ],
+            },
+            investigation_coverage=[
+                {"aspect": "integration", "chunk_ids": ["coordinator"]},
+            ],
+            sources=[
+                {"source_id": "S1", "chunk_id": "coordinator"},
+                {"source_id": "S2", "chunk_id": "runtime-call"},
+            ],
+            supported_claims=[
+                {"claim_id": "C1", "source_ids": ["S2"]},
+            ],
+            sectional_claim_ids={"integration": {"C1"}},
+        )
+
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["coverage"][0]["status"], "covered")
+
     def test_complete_coverage_must_repeat_with_the_same_evidence(self) -> None:
         complete = [
             {

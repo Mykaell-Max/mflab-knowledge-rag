@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 from typing import Iterable
 
 AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v25"
-ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v3"
+ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v4"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -711,6 +711,7 @@ def reconcile_answer_coverage_with_provenance(
     investigation_coverage: Iterable[dict[str, object]],
     sources: Iterable[dict[str, object]],
     supported_claims: Iterable[dict[str, object]],
+    sectional_claim_ids: dict[str, set[str]] | None = None,
 ) -> dict[str, object]:
     """Join semantic coverage to the exact evidence retained for each facet.
 
@@ -779,7 +780,20 @@ def reconcile_answer_coverage_with_provenance(
                 for claim_id in item.get("claim_ids", [])
                 for source_id in source_ids_by_claim.get(str(claim_id), set())
             }
-            if not (cited_for_verdict & aspect_source_ids):
+            section_ids = (sectional_claim_ids or {}).get(
+                str(item.get("aspect", "")).casefold(),
+                set(),
+            )
+            raw_audited_claim_ids = item.get("claim_ids")
+            audited_claim_ids = (
+                {str(value) for value in raw_audited_claim_ids}
+                if isinstance(raw_audited_claim_ids, list)
+                else set()
+            )
+            if not (
+                cited_for_verdict & aspect_source_ids
+                or audited_claim_ids & section_ids
+            ):
                 item["status"] = "partial"
         reconciled.append(item)
     result = dict(answer_coverage)

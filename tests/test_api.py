@@ -263,6 +263,43 @@ class ApiServiceTests(unittest.TestCase):
             generation_config=Path("missing-generation-for-test.toml"),
         )
 
+    def test_notebook_ranking_context_includes_bounded_planner_vocabulary(
+        self,
+    ) -> None:
+        value = api._notebook_ranking_context(
+            "Como a malha inicia?",
+            {
+                "query_plan": {
+                    "queries": ["adaptive mesh initialization"],
+                    "identifiers": ["MeshFactory::createMesh"],
+                }
+            },
+        )
+
+        self.assertIn("Como a malha inicia?", value)
+        self.assertIn("adaptive mesh initialization", value)
+        self.assertIn("MeshFactory::createMesh", value)
+
+    def test_section_formatter_replaces_headings_but_keeps_code_directives(
+        self,
+    ) -> None:
+        answer = api._format_section_answer(
+            (
+                "# Unstable model heading\n\nObserved behavior [S1].\n\n"
+                "```cpp\n#include <vector>\nstate.advance();\n```"
+            ),
+            {
+                "aspects": [
+                    {"aspect_id": "A1", "aspect": "runtime advancement"}
+                ]
+            },
+            position=1,
+        )
+
+        self.assertTrue(answer.startswith("## Runtime advancement"))
+        self.assertNotIn("Unstable model heading", answer)
+        self.assertIn("#include <vector>", answer)
+
     def test_context_packing_limits_source_count_without_spending_full_budget(self) -> None:
         packed, used, truncated = api._pack_context_results(
             [
@@ -318,7 +355,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v4")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v5")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -1877,9 +1914,9 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(generator.calls[2]["max_output_tokens"], 1536)
         self.assertIn("SECTIONAL SYNTHESIS CONTRACT", generator.calls[0]["instructions"])
         self.assertIn("SECTION CONTINUATION CONTRACT", generator.calls[1]["instructions"])
-        self.assertIn("## Entrada", result["answer"])
+        self.assertIn("## Entry point", result["answer"])
         self.assertIn("local setup", result["answer"])
-        self.assertIn("## Avanço", result["answer"])
+        self.assertIn("## Advancement", result["answer"])
         self.assertTrue(result["context"]["sectional_synthesis"])
         self.assertEqual(result["context"]["section_generation_count"], 2)
         self.assertEqual(result["context"]["section_continuation_count"], 2)
@@ -1972,8 +2009,8 @@ class ApiServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(len(generator.composition_calls), 0)
-        self.assertIn("## Entry", result["answer"])
-        self.assertIn("## Advance", result["answer"])
+        self.assertIn("## Entry point", result["answer"])
+        self.assertIn("## Advancement", result["answer"])
         self.assertTrue(result["context"]["sectional_synthesis"])
         self.assertFalse(result["context"]["section_composition"])
         self.assertFalse(result["context"]["section_composition_attempted"])
@@ -2854,12 +2891,12 @@ class ApiServiceTests(unittest.TestCase):
         generator = _CoverageVerifyingGenerator(
             answers=[
                 "## Configuration\n\nThe runtime configures state [S1].",
-                "## Advancement\n\nThe runtime advances state [S2].",
+                "## Advancement\n\nThe runtime advances state [S1].",
             ],
             audits=[
                 '{"claims":['
                 '{"claim_id":"C1","verdict":"supported","source_ids":["S1"]},'
-                '{"claim_id":"C2","verdict":"supported","source_ids":["S2"]}]}'
+                '{"claim_id":"C2","verdict":"supported","source_ids":["S1"]}]}'
             ],
             coverage_audits=[
                 '{"coverage":[{"aspect_id":"A1","status":"covered",'

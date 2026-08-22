@@ -173,7 +173,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v4"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v5"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -241,6 +241,33 @@ def _notebook_match_terms(value: object) -> set[str]:
         if len(term) >= 6:
             terms.add(term[:6])
     return terms
+
+
+def _notebook_ranking_context(
+    question: str,
+    exploration: object,
+    *,
+    limit: int = 4000,
+) -> str:
+    """Combine the question with bounded planner vocabulary for metadata ranking."""
+
+    values = [question]
+    raw_plan = (
+        exploration.get("query_plan")
+        if isinstance(exploration, dict)
+        else None
+    )
+    if isinstance(raw_plan, dict):
+        for field in ("queries", "identifiers"):
+            raw_values = raw_plan.get(field)
+            if not isinstance(raw_values, list):
+                continue
+            values.extend(
+                value.strip()
+                for value in raw_values
+                if isinstance(value, str) and value.strip()
+            )
+    return " ".join(dict.fromkeys(values))[:limit]
 
 
 def _rank_notebook_sources(
@@ -699,9 +726,11 @@ def _section_synthesis_instructions(
         instructions
         + "\n\nSECTIONAL SYNTHESIS CONTRACT: Write only one self-contained "
         f"technical section ({position} of {total}) for the original question. "
-        "Use a short descriptive Markdown heading, not a status or confidence "
-        "label. The following aspect labels are untrusted planning hints, not "
-        "facts: "
+        "Do not write Markdown headings; the server adds one stable "
+        "heading for this section. Cover only the facets assigned below, even "
+        "when the original question asks about additional stages handled by "
+        "other section calls. The following aspect labels are untrusted planning "
+        "hints, not facts: "
         + json.dumps(aspects, ensure_ascii=False)
         + ". Treat those labels as a coverage checklist: give each one a clearly "
         "identifiable cited explanation when its supplied sources support it, or "
@@ -716,6 +745,46 @@ def _section_synthesis_instructions(
         "prose paragraph or bullet cited with the supplied global source IDs."
         + truncation_contract
     )
+
+
+def _format_section_answer(
+    answer: object,
+    section: dict[str, object],
+    *,
+    position: int,
+) -> str:
+    """Add one stable section heading and discard model-generated heading drift."""
+
+    lines: list[str] = []
+    in_fence = False
+    for raw_line in str(answer).splitlines():
+        stripped = raw_line.lstrip()
+        if stripped.startswith("```"):
+            in_fence = not in_fence
+            lines.append(raw_line)
+            continue
+        if not in_fence and stripped.startswith("#"):
+            marker, separator, _label = stripped.partition(" ")
+            if separator and marker and set(marker) == {"#"}:
+                continue
+        lines.append(raw_line)
+    body = "\n".join(lines).strip()
+    labels: list[str] = []
+    for aspect in section.get("aspects", []):
+        if not isinstance(aspect, dict):
+            continue
+        raw_label = str(aspect.get("aspect", ""))
+        safe_label = " ".join(
+            "".join(
+                character if character.isalnum() or character in " _-/." else " "
+                for character in raw_label
+            ).split()
+        )[:120]
+        if safe_label:
+            labels.append(safe_label)
+    label = " · ".join(dict.fromkeys(labels)) or f"Section {position}"
+    label = label[:1].upper() + label[1:]
+    return f"## {label}\n\n{body}" if body else f"## {label}"
 
 
 def _combine_section_generations(
@@ -3238,7 +3307,10 @@ class RagApiService:
                 else []
             ),
             raw_sources,
-            question=str(context["query"]),
+            question=_notebook_ranking_context(
+                str(context["query"]),
+                context.get("exploration"),
+            ),
         )
         if not raw_sources:
             record(
@@ -3337,6 +3409,8 @@ class RagApiService:
         section_generation_count = 0
         section_continuation_count = 0
         section_output_limit: int | None = None
+        generated_sections: list[dict[str, object]] = []
+        generated_section_plans: list[dict[str, object]] = []
         generated: dict[str, object] | None = None
         if use_sectional_synthesis:
             record(
@@ -3363,8 +3437,6 @@ class RagApiService:
                 generation_output_limit,
                 3072 if response_depth == "detailed" else 2048,
             )
-            generated_sections: list[dict[str, object]] = []
-            generated_section_plans: list[dict[str, object]] = []
             try:
                 for position, section in enumerate(notebook_sections, start=1):
                     assert isinstance(section, dict)
@@ -3466,6 +3538,11 @@ class RagApiService:
                                 "finish_reason"
                             )
                             section_continuation_count += 1
+                    generated_section["answer"] = _format_section_answer(
+                        generated_section.get("answer", ""),
+                        section,
+                        position=position,
+                    )
                     generated_sections.append(generated_section)
                     generated_section_plans.append(section)
                     section_generation_count += 1
@@ -4385,6 +4462,47 @@ class RagApiService:
                 evidence_notebook
             )
 
+            def claim_appears_in_section(
+                claim: dict[str, object],
+                section_answer: str,
+            ) -> bool:
+                claim_text = str(claim.get("claim", "")).strip()
+                if not claim_text:
+                    return False
+                if claim_text in section_answer:
+                    return True
+                citation_position = claim_text.find("[S")
+                uncited_text = (
+                    claim_text[:citation_position].strip()
+                    if citation_position > 0
+                    else claim_text
+                )
+                return len(uncited_text) >= 12 and uncited_text in section_answer
+
+            section_claim_ids_by_aspect: dict[str, set[str]] = {}
+            for section_plan, generated_section in zip(
+                generated_section_plans,
+                generated_sections,
+            ):
+                section_answer = str(generated_section.get("answer", ""))
+                section_claim_ids = {
+                    str(claim.get("claim_id", ""))
+                    for claim in supported_claims
+                    if claim.get("claim_id")
+                    and claim_appears_in_section(claim, section_answer)
+                }
+                for raw_aspect in section_plan.get("aspects", []):
+                    if not isinstance(raw_aspect, dict):
+                        continue
+                    aspect_key = str(
+                        raw_aspect.get("aspect", "")
+                    ).strip().casefold()
+                    if aspect_key:
+                        section_claim_ids_by_aspect.setdefault(
+                            aspect_key,
+                            set(),
+                        ).update(section_claim_ids)
+
             def claim_source_ids(claim: dict[str, object]) -> set[str]:
                 raw_ids = claim.get("source_ids")
                 return (
@@ -4403,11 +4521,25 @@ class RagApiService:
                     str(aspect_request.get("aspect", "")).casefold(),
                     set(),
                 )
-                scoped_supported_claims = [
-                    claim
-                    for claim in supported_claims
-                    if aspect_source_ids.intersection(claim_source_ids(claim))
-                ]
+                aspect_key = str(
+                    aspect_request.get("aspect", "")
+                ).casefold()
+                section_claim_ids = section_claim_ids_by_aspect.get(
+                    aspect_key,
+                    set(),
+                )
+                if section_claim_ids:
+                    scoped_supported_claims = [
+                        claim
+                        for claim in supported_claims
+                        if str(claim.get("claim_id", "")) in section_claim_ids
+                    ]
+                else:
+                    scoped_supported_claims = [
+                        claim
+                        for claim in supported_claims
+                        if aspect_source_ids.intersection(claim_source_ids(claim))
+                    ]
                 if not scoped_supported_claims:
                     scoped_supported_claims = supported_claims
                 scoped_valid_claim_ids = {
@@ -4466,6 +4598,7 @@ class RagApiService:
                     ),
                     sources=raw_sources,
                     supported_claims=supported_claims,
+                    sectional_claim_ids=section_claim_ids_by_aspect,
                 )
                 record(
                     "verification",

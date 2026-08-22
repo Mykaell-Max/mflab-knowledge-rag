@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.10**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.11**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,29 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.44.10 eliminou os cortes por limite: a malha terminou em `stop`, passou de
+1.212 para 2.676 caracteres e conservou um bloco exato; o DPM passou de 4.074
+para 6.467 caracteres, quatro seções e quatro blocos exatos. Todas as 26
+afirmações finais dos dois casos foram sustentadas. A falha restante foi de
+associação de facetas. Por exemplo, a afirmação verificada de que
+`Domain::advance` chama `DPMManager::advance` citou S10, mas a auditoria de
+`domain integration` ficou restrita aos IDs S3/S4 e declarou lacuna. As quatro
+chamadas seccionais também repetiram títulos e etapas umas das outras.
+
+A 0.44.11 liga a auditoria ao texto efetivamente produzido pela chamada
+seccional, depois da verificação fonte a fonte, em vez de exigir que a citação
+tenha o mesmo ID usado como âncora inicial. Isso permite que um chamador
+estrutural verificado sustente a integração sem transformar o plano em prova.
+O servidor remove títulos criados pelo modelo e adiciona exatamente um título
+estável por seção; diretivas dentro de blocos de código são preservadas. O
+prompt proíbe cada chamada de reexplicar facetas atribuídas a outras seções.
+
+O ranqueamento do caderno passa a combinar a pergunta com consultas e
+identificadores já produzidos pelo planejador. Assim, uma pergunta em português
+sobre `malha` pode selecionar caminhos contendo `mesh` sem dicionário científico
+ou nomes de projetos no motor. O vocabulário continua limitado e serve apenas
+para ordenar fontes autorizadas.
 
 A avaliação real da 0.44.9 confirmou que o grafo encontrou os caminhos corretos
 e que a montagem seccional preservou mais conteúdo que a composição global. Os

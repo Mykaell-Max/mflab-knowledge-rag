@@ -471,6 +471,15 @@ da respectiva seção. Títulos originais sobrevivem ao salvamento determinísti
 e uma seção pode ter até duas continuações locais. Essas regras ampliam a
 resposta sem liberar uma reescrita global ou promover o caderno a evidência.
 
+Na 0.44.11, a associação final de facetas acompanha as afirmações que nasceram
+em cada chamada seccional e que depois passaram pela auditoria de evidência. Um
+chamador estrutural pode, portanto, sustentar uma integração mesmo quando seu ID
+difere da âncora usada para iniciar a exploração. Títulos gerados pelo modelo
+são substituídos por um único título estável por seção, e cada chamada é
+instruída a não repetir etapas pertencentes às demais. Consultas e
+identificadores do planejador complementam a pergunta no ranqueamento de
+metadados, oferecendo ponte multilíngue sem vocabulário científico fixo.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a
