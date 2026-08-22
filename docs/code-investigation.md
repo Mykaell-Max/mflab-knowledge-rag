@@ -388,6 +388,16 @@ determinística adicional e só são publicadas quando o texto aparece literalme
 em uma fonte citada cujo conteúdo esteja completo. Essa checagem se repete após
 qualquer revisão do modelo.
 
+A 0.44.1 distingue uma fonte reduzida de uma linha de código incompleta. Um
+bloco cercado pode usar uma sequência contígua de linhas integralmente visíveis,
+com remoção apenas da indentação comum. Ele é rejeitado se completar uma linha
+cortada, atravessar a omissão ou alterar o conteúdo. Para investigações agentivas,
+o pacote final reserva dez fontes e combina três canais independentes: chunks
+ligados às facetas, recuperação híbrida inicial e fronteira estrutural. Essa
+reserva evita que uma exploração longa elimine seu ponto de partida ou os últimos
+estágios encontrados. Seções detalhadas e sua continuação também recebem uma
+reserva de saída maior, sem alterar o limite de ferramentas ou a ACL.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

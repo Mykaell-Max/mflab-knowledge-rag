@@ -373,7 +373,7 @@ class ApiServiceTests(unittest.TestCase):
             "candidate_context",
         )
 
-    def test_section_prompt_forbids_code_from_truncated_sources(self) -> None:
+    def test_section_prompt_limits_code_to_visible_lines_in_truncated_sources(self) -> None:
         instructions = api._section_synthesis_instructions(
             api.CONTEXT_INSTRUCTIONS,
             {
@@ -386,7 +386,8 @@ class ApiServiceTests(unittest.TestCase):
         )
 
         self.assertIn("Text-truncated source IDs: S2", instructions)
-        self.assertIn("never quote a fenced code block", instructions)
+        self.assertIn("fully and contiguously visible", instructions)
+        self.assertIn("never cross the marker", instructions)
 
     def test_context_packing_preserves_distinct_paths_before_repeated_chunks(self) -> None:
         packed, _used, _truncated = api._pack_context_results(
@@ -1727,8 +1728,8 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(generator.calls[0]["sources"], [sources[0]])
         self.assertEqual(generator.calls[1]["sources"], [sources[0]])
         self.assertEqual(generator.calls[2]["sources"], [sources[1]])
-        self.assertEqual(generator.calls[0]["max_output_tokens"], 1536)
-        self.assertEqual(generator.calls[1]["max_output_tokens"], 1024)
+        self.assertEqual(generator.calls[0]["max_output_tokens"], 2048)
+        self.assertEqual(generator.calls[1]["max_output_tokens"], 1536)
         self.assertIn("SECTIONAL SYNTHESIS CONTRACT", generator.calls[0]["instructions"])
         self.assertIn("SECTION CONTINUATION CONTRACT", generator.calls[1]["instructions"])
         self.assertIn("## Entrada", result["answer"])

@@ -2,13 +2,14 @@ from __future__ import annotations
 
 import json
 import re
+import textwrap
 from collections.abc import Callable
 
 from mflab_knowledge.grounding import citation_ids, factual_units
 
-VERIFICATION_ALGORITHM = "claim_evidence_audit_v3"
+VERIFICATION_ALGORITHM = "claim_evidence_audit_v4"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v18"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v19"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -324,6 +325,24 @@ _FENCED_CODE_BLOCK = re.compile(
 )
 
 
+def _line_aligned_code_excerpt(code: str, source_text: str) -> bool:
+    """Accept only complete contiguous source lines, allowing common dedent."""
+
+    candidate = textwrap.dedent(code.replace("\r\n", "\n")).strip("\n")
+    if not candidate:
+        return False
+    candidate_lines = [line.rstrip() for line in candidate.splitlines()]
+    source_lines = source_text.replace("\r\n", "\n").splitlines()
+    width = len(candidate_lines)
+    for start in range(0, len(source_lines) - width + 1):
+        window = textwrap.dedent(
+            "\n".join(source_lines[start : start + width])
+        ).strip("\n")
+        if [line.rstrip() for line in window.splitlines()] == candidate_lines:
+            return True
+    return False
+
+
 def _exact_supported_code_blocks(
     answer: str,
     sources: list[dict[str, object]],
@@ -333,24 +352,23 @@ def _exact_supported_code_blocks(
     """Keep generated code only when it is verbatim authorized evidence."""
 
     source_text = {
-        str(source.get("source_id", "")): str(source.get("text", "")).replace(
-            "\r\n", "\n"
-        )
+        str(source.get("source_id", "")): str(source.get("text", ""))
         for source in sources
         if str(source.get("source_id", "")) in allowed_source_ids
-        and source.get("text_truncated") is not True
     }
     selected: list[str] = []
     seen: set[tuple[str, str]] = set()
     for match in _FENCED_CODE_BLOCK.finditer(answer):
-        code = match.group("code").replace("\r\n", "\n").strip("\n")
+        code = textwrap.dedent(
+            match.group("code").replace("\r\n", "\n")
+        ).strip("\n")
         if not code or len(code) > 8_000:
             continue
         source_id = next(
             (
                 candidate
                 for candidate, text in source_text.items()
-                if code in text
+                if _line_aligned_code_excerpt(code, text)
             ),
             None,
         )
@@ -368,24 +386,22 @@ def sanitize_fenced_code_blocks(
     answer: str,
     sources: list[dict[str, object]],
 ) -> tuple[str, int]:
-    """Remove code that is not verbatim in a cited, complete source excerpt."""
+    """Remove code that is not a complete-line excerpt from cited evidence."""
 
     source_text = {
-        str(source.get("source_id", "")): str(source.get("text", "")).replace(
-            "\r\n", "\n"
-        )
+        str(source.get("source_id", "")): str(source.get("text", ""))
         for source in sources
-        if source.get("source_id") and source.get("text_truncated") is not True
+        if source.get("source_id")
     }
     removed = 0
 
     def replace(match: re.Match[str]) -> str:
         nonlocal removed
-        code = match.group("code").replace("\r\n", "\n").strip("\n")
+        code = match.group("code")
         nearby = answer[max(0, match.start() - 240) : match.end() + 120]
         cited = citation_ids(nearby)
         if code and any(
-            source_id in cited and code in text
+            source_id in cited and _line_aligned_code_excerpt(code, text)
             for source_id, text in source_text.items()
         ):
             return match.group(0)

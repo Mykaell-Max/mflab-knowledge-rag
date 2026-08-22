@@ -230,7 +230,7 @@ class VerificationTests(unittest.TestCase):
         self.assertIn("[S1]", str(result))
         self.assertNotIn("invented_call", str(result))
 
-    def test_supported_subset_rejects_code_from_a_truncated_source(self) -> None:
+    def test_supported_subset_keeps_complete_lines_from_a_truncated_source(self) -> None:
         result = supported_claim_subset(
             {
                 "claims": [
@@ -255,7 +255,7 @@ class VerificationTests(unittest.TestCase):
             ],
         )
 
-        self.assertNotIn("```", str(result))
+        self.assertIn("```cpp\nstate.advance();\n```", str(result))
 
     def test_sanitizes_fenced_code_against_its_cited_complete_source(self) -> None:
         answer = (
@@ -272,13 +272,28 @@ class VerificationTests(unittest.TestCase):
         self.assertIn("state.advance", sanitized)
         self.assertNotIn("invented", sanitized)
 
-    def test_sanitizer_rejects_exact_code_from_truncated_context(self) -> None:
+    def test_sanitizer_keeps_complete_lines_from_truncated_context(self) -> None:
         sanitized, removed = sanitize_fenced_code_blocks(
             "```cpp\nstate.advance();\n```\n\n[S1]",
             [
                 {
                     "source_id": "S1",
                     "text": "state.advance();",
+                    "text_truncated": True,
+                }
+            ],
+        )
+
+        self.assertEqual(removed, 0)
+        self.assertIn("```cpp\nstate.advance();\n```", sanitized)
+
+    def test_sanitizer_rejects_a_clipped_line_from_truncated_context(self) -> None:
+        sanitized, removed = sanitize_fenced_code_blocks(
+            "```cpp\nstate.advan\n```\n\n[S1]",
+            [
+                {
+                    "source_id": "S1",
+                    "text": "state.advance();\n... [trecho intermediário omitido] ...",
                     "text_truncated": True,
                 }
             ],

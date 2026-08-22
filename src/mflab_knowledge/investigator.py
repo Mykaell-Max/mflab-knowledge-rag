@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v19"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v20"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v2"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3

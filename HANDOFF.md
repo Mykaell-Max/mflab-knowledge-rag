@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **21 de agosto de 2026**, na versão candidata **0.44.0**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.1**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,29 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação real da 0.44.0 passou operacionalmente, manteve a API saudável e
+restaurou a automação, mas reprovou 0/2 expectativas científicas. A checagem de
+linhas atomizadas funcionou: nenhuma afirmação rejeitada sobreviveu. A política
+de código, entretanto, removeu oito blocos somente porque seus chunks continham
+alguma redução, mesmo quando as linhas citadas estavam integralmente visíveis.
+Isso consumiu a geração com exemplos que depois foram descartados, reduziu a
+resposta de DPM a 1.095 caracteres e deixou sua continuação com
+`finish_reason=length`. A fronteira encontrou `Domain::setup`, `Domain::advance`
+e outra operação do gerenciador, mas o pacote final de oito fontes ainda perdeu
+parte dessa cauda; na pergunta de malha também perdeu um resultado-base relevante.
+
+A 0.44.1 aceita cercas de código provenientes de fontes reduzidas somente quando
+o trecho corresponde a linhas completas, contíguas e dedentadas do texto
+realmente fornecido. Linhas cortadas, reconstruções e trechos que atravessam o
+marcador de omissão continuam removidos deterministicamente. A janela agentiva
+passa de oito para dez fontes e reserva, em ordem, evidência por faceta,
+resultados-base independentes e toda a fronteira estrutural selecionada. Seções
+detalhadas recebem até 2.048 tokens e sua única continuação até 1.536. Essas
+regras são orientadas por proveniência, canal de recuperação e limites; não
+contêm projeto, branch, caminho, símbolo ou mecanismo científico. A próxima
+ação é repetir a mesma suíte na Morgoth dentro do `tmux` e comparar blocos
+removidos, `finish_reason`, fontes preservadas e cobertura final.
 
 A validação real da 0.43.3 confirmou que a infraestrutura de respostas longas
 permanece estável. Os dois casos terminaram com HTTP 200, `finish_reason=stop`,

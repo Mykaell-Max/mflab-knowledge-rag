@@ -168,7 +168,7 @@ def _response_depth_instructions(response_depth: str) -> str:
         ) from exc
 
 CONTEXT_DIVERSITY_TARGET = 6
-AGENT_CONTEXT_DIVERSITY_TARGET = 8
+AGENT_CONTEXT_DIVERSITY_TARGET = 10
 CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 2
@@ -461,9 +461,11 @@ def _section_synthesis_instructions(
         if source.get("text_truncated") is True
     ]
     truncation_contract = (
-        " Sources marked as text-truncated may support local prose, but never "
-        "quote a fenced code block from them because their excerpt may end inside "
-        f"a statement. Text-truncated source IDs: {', '.join(truncated_ids)}."
+        " Sources marked as text-truncated contain an explicit omission. A fenced "
+        "code excerpt is allowed only when every quoted line is fully and "
+        "contiguously visible on one side of that omission; never cross the marker, "
+        "complete a clipped line, reconstruct omitted code, or present the excerpt "
+        f"as the full function. Text-truncated source IDs: {', '.join(truncated_ids)}."
         if truncated_ids
         else ""
     )
@@ -2561,19 +2563,6 @@ class RagApiService:
             reserved_context_chunk_ids = reserve_chunk_ids_by_aspect(
                 agent_coverage
             )
-            # The semantic ledger reserves evidence for user-requested facets.
-            # Keep a separate bounded sample of resolved graph nodes as well:
-            # these often contain the caller/callee code needed to explain how
-            # individually correct stages connect. The selection is driven by
-            # the question and graph, never by repository-specific names.
-            final_reserved_context_chunk_ids = list(
-                dict.fromkeys(
-                    [
-                        *reserved_context_chunk_ids,
-                        *graph_frontier_chunk_ids[:4],
-                    ]
-                )
-            )
             baseline_candidates: list[dict[str, object]] = []
             baseline_seen: set[str] = set()
             for retrieval_item in retrievals:
@@ -2606,6 +2595,19 @@ class RagApiService:
                     [*initial_baseline_chunk_ids, *ranked_baseline_chunk_ids]
                 )
             )[:4]
+            # Initial hybrid evidence is an independent retrieval channel, not
+            # disposable scaffolding for graph exploration. Reserve it alongside
+            # aspect evidence and the complete selected frontier so a later tool
+            # walk cannot evict the original entry point or a lifecycle tail.
+            final_reserved_context_chunk_ids = list(
+                dict.fromkeys(
+                    [
+                        *reserved_context_chunk_ids,
+                        *baseline_chunk_ids,
+                        *graph_frontier_chunk_ids,
+                    ]
+                )
+            )
             # Evidence explicitly retained for distinct coverage aspects owns
             # the first positions. Baseline retrieval and graph frontiers fill
             # the remainder, instead of displacing later requested stages.
@@ -3106,7 +3108,7 @@ class RagApiService:
             }
             section_output_limit = min(
                 generation_output_limit,
-                1536 if response_depth == "detailed" else 1024,
+                2048 if response_depth == "detailed" else 1024,
             )
             generated_sections: list[dict[str, object]] = []
             try:
@@ -3183,7 +3185,7 @@ class RagApiService:
                                     str(generated_section.get("answer", "")),
                                 ),
                                 sources=section_sources,
-                                max_output_tokens=min(section_output_limit, 1024),
+                                max_output_tokens=min(section_output_limit, 1536),
                                 temperature=temperature,
                             )
                         except GenerationContextTooLargeError:
