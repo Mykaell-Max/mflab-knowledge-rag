@@ -149,6 +149,9 @@ def show_response(label: str, response: dict[str, object]) -> None:
         f" ({context.get('section_generation_count', 0)} seções)"
         f" | continuações={context.get('section_continuation_count', 0)}"
         f" | suporte descoberto={context.get('citation_discovery', False)}"
+        f" | código removido={context.get('code_blocks_removed', 0)}"
+        f" | citações de código anexadas="
+        f"{context.get('code_citations_attached', 0)}"
     )
     rejected = verification.get("claims")
     rejected = rejected if isinstance(rejected, list) else []

@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.1**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.2**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,27 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação real da 0.44.1 preservou dez fontes e fez ambos os casos terminarem
+com `finish_reason=stop`, mas ainda removeu nove blocos de código. A resposta de
+DPM ficou com 1.918 caracteres e a de malha com 1.965; todas as afirmações finais
+foram sustentadas, mas a cobertura permaneceu parcial. O grafo passou a reter
+`Domain::setup`, `Domain::advance` e outra operação do gerenciador. Na pergunta
+de malha, a implementação do gerenciador continuou ausente apesar de ser parte
+real do fluxo: a busca chegou a um método vizinho no coordenador, mas a continuação
+terminal percorria somente chamadas e não seus chunks locais adjacentes.
+
+A 0.44.2 trata código literal como descoberta determinística de proveniência.
+Quando linhas completas correspondem a exatamente uma fonte autorizada, o
+backend anexa sua citação mesmo que o modelo a tenha colocado longe da cerca.
+Trechos ambíguos entre fontes, alterados ou cortados continuam removidos. O
+resumo passa a mostrar separadamente blocos removidos e citações anexadas.
+Na exploração, cada rodada terminal reserva três quartos das leituras para uma
+amostra uniforme de vizinhanças locais, incluindo a cauda da fronteira, e o
+restante para chamadas resolvidas. Chunks vizinhos voltam a participar da
+seleção e podem originar o salto estrutural seguinte. Isso é genérico por
+identidade de chunk e ordem de relevância; não conhece nomes científicos. A
+próxima ação é executar a mesma suíte na Morgoth dentro do `tmux`.
 
 A validação real da 0.44.0 passou operacionalmente, manteve a API saudável e
 restaurou a automação, mas reprovou 0/2 expectativas científicas. A checagem de

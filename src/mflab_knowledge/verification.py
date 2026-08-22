@@ -9,7 +9,7 @@ from mflab_knowledge.grounding import citation_ids, factual_units
 
 VERIFICATION_ALGORITHM = "claim_evidence_audit_v4"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v19"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v20"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -385,7 +385,7 @@ def _exact_supported_code_blocks(
 def sanitize_fenced_code_blocks(
     answer: str,
     sources: list[dict[str, object]],
-) -> tuple[str, int]:
+) -> tuple[str, int, int]:
     """Remove code that is not a complete-line excerpt from cited evidence."""
 
     source_text = {
@@ -394,21 +394,31 @@ def sanitize_fenced_code_blocks(
         if source.get("source_id")
     }
     removed = 0
+    citations_attached = 0
 
     def replace(match: re.Match[str]) -> str:
-        nonlocal removed
+        nonlocal removed, citations_attached
         code = match.group("code")
         nearby = answer[max(0, match.start() - 240) : match.end() + 120]
         cited = citation_ids(nearby)
-        if code and any(
-            source_id in cited and _line_aligned_code_excerpt(code, text)
+        matching_ids = [
+            source_id
             for source_id, text in source_text.items()
-        ):
+            if code and _line_aligned_code_excerpt(code, text)
+        ]
+        if any(source_id in cited for source_id in matching_ids):
             return match.group(0)
+        # Exact code is itself deterministic evidence discovery. Attach a
+        # source only when the visible excerpt identifies one unambiguous scope;
+        # common one-liners duplicated across branches or files still require
+        # an explicit nearby citation from the model.
+        if len(matching_ids) == 1:
+            citations_attached += 1
+            return match.group(0) + f"\n\n[{matching_ids[0]}]"
         removed += 1
         return ""
 
-    return _FENCED_CODE_BLOCK.sub(replace, answer), removed
+    return _FENCED_CODE_BLOCK.sub(replace, answer), removed, citations_attached
 
 
 def supported_claim_subset(

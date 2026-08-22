@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v20"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v21"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v2"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
@@ -749,7 +749,7 @@ def pending_graph_continuations(
     *,
     limit: int = 8,
 ) -> list[dict[str, str]]:
-    """Continue unresolved observed call frontiers for one final bounded hop."""
+    """Read local context and continue unresolved calls on the final frontier."""
 
     if limit < 1:
         return []
@@ -760,25 +760,58 @@ def pending_graph_continuations(
         )
         for action in previous_actions
     }
-    selected: list[dict[str, str]] = []
-    seen: set[str] = set()
+    neighborhood_candidates: list[dict[str, str]] = []
+    call_candidates: list[dict[str, str]] = []
+    seen_neighborhoods: set[str] = set()
+    seen_calls: set[str] = set()
     for result in results:
+        chunk_id = str(result.get("chunk_id", "")).strip()
+        neighborhood_identity = ("open_neighborhood", chunk_id)
+        if (
+            chunk_id
+            and chunk_id not in seen_neighborhoods
+            and neighborhood_identity not in prior
+        ):
+            seen_neighborhoods.add(chunk_id)
+            neighborhood_candidates.append(
+                {"tool": "open_neighborhood", "chunk_id": chunk_id}
+            )
         source_kind = str(result.get("source_kind", ""))
         if source_kind not in {
             "agent_callers_evidence",
             "agent_callees_evidence",
+            "agent_terminal_neighborhood_evidence",
             "agent_terminal_callees_evidence",
         }:
             continue
-        chunk_id = str(result.get("chunk_id", "")).strip()
         identity = ("find_callees", chunk_id)
-        if not chunk_id or chunk_id in seen or identity in prior:
+        if not chunk_id or chunk_id in seen_calls or identity in prior:
             continue
-        seen.add(chunk_id)
-        selected.append({"tool": "find_callees", "chunk_id": chunk_id})
-        if len(selected) >= limit:
-            break
-    return selected
+        seen_calls.add(chunk_id)
+        call_candidates.append({"tool": "find_callees", "chunk_id": chunk_id})
+
+    # Local neighborhoods expose sibling lifecycle methods without requiring a
+    # guessed symbol. Sample the whole ordered frontier, including its tail,
+    # while retaining bounded room for actual call-edge continuation.
+    neighborhood_quota = min(
+        len(neighborhood_candidates),
+        max(1, (limit * 3 + 3) // 4),
+    )
+    selected_positions = {
+        round(
+            position
+            * (len(neighborhood_candidates) - 1)
+            / max(neighborhood_quota - 1, 1)
+        )
+        for position in range(neighborhood_quota)
+    }
+    selected = [
+        action
+        for position, action in enumerate(neighborhood_candidates)
+        if position in selected_positions
+    ]
+    selected.extend(call_candidates[: max(0, limit - len(selected))])
+    return selected[:limit]
 
 
 def bounded_action_batch(

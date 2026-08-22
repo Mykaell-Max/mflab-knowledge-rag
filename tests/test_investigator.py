@@ -879,10 +879,33 @@ class InvestigatorTests(unittest.TestCase):
         self.assertEqual(
             actions,
             [
+                {"tool": "open_neighborhood", "chunk_id": "downstream"},
+                {"tool": "open_neighborhood", "chunk_id": "upstream"},
+                {"tool": "open_neighborhood", "chunk_id": "second-hop"},
+                {"tool": "open_neighborhood", "chunk_id": "lexical"},
                 {"tool": "find_callees", "chunk_id": "downstream"},
                 {"tool": "find_callees", "chunk_id": "second-hop"},
             ],
         )
+
+    def test_terminal_continuation_samples_the_tail_for_local_context(self) -> None:
+        actions = pending_graph_continuations(
+            [
+                {"chunk_id": str(position), "source_kind": "retrieval"}
+                for position in range(8)
+            ],
+            [],
+            limit=8,
+        )
+
+        neighborhoods = [
+            action["chunk_id"]
+            for action in actions
+            if action["tool"] == "open_neighborhood"
+        ]
+        self.assertEqual(len(neighborhoods), 6)
+        self.assertEqual(neighborhoods[0], "0")
+        self.assertEqual(neighborhoods[-1], "7")
 
     def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:
         results = [

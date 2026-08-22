@@ -263,17 +263,18 @@ class VerificationTests(unittest.TestCase):
             "```cpp\nstate.advance();\n```\n\n[S1]\n\n"
             "```cpp\ninvented();\n```\n\n[S1]"
         )
-        sanitized, removed = sanitize_fenced_code_blocks(
+        sanitized, removed, attached = sanitize_fenced_code_blocks(
             answer,
             [{"source_id": "S1", "text": "state.advance();"}],
         )
 
         self.assertEqual(removed, 1)
+        self.assertEqual(attached, 0)
         self.assertIn("state.advance", sanitized)
         self.assertNotIn("invented", sanitized)
 
     def test_sanitizer_keeps_complete_lines_from_truncated_context(self) -> None:
-        sanitized, removed = sanitize_fenced_code_blocks(
+        sanitized, removed, attached = sanitize_fenced_code_blocks(
             "```cpp\nstate.advance();\n```\n\n[S1]",
             [
                 {
@@ -285,10 +286,11 @@ class VerificationTests(unittest.TestCase):
         )
 
         self.assertEqual(removed, 0)
+        self.assertEqual(attached, 0)
         self.assertIn("```cpp\nstate.advance();\n```", sanitized)
 
     def test_sanitizer_rejects_a_clipped_line_from_truncated_context(self) -> None:
-        sanitized, removed = sanitize_fenced_code_blocks(
+        sanitized, removed, attached = sanitize_fenced_code_blocks(
             "```cpp\nstate.advan\n```\n\n[S1]",
             [
                 {
@@ -300,6 +302,30 @@ class VerificationTests(unittest.TestCase):
         )
 
         self.assertEqual(removed, 1)
+        self.assertEqual(attached, 0)
+        self.assertNotIn("```", sanitized)
+
+    def test_sanitizer_attaches_the_only_exact_source_to_uncited_code(self) -> None:
+        sanitized, removed, attached = sanitize_fenced_code_blocks(
+            "```cpp\nstate.advance();\n```",
+            [{"source_id": "S4", "text": "state.advance();"}],
+        )
+
+        self.assertEqual(removed, 0)
+        self.assertEqual(attached, 1)
+        self.assertEqual(sanitized, "```cpp\nstate.advance();\n```\n\n[S4]")
+
+    def test_sanitizer_rejects_ambiguous_uncited_code(self) -> None:
+        sanitized, removed, attached = sanitize_fenced_code_blocks(
+            "```cpp\nreturn true;\n```",
+            [
+                {"source_id": "S1", "text": "return true;"},
+                {"source_id": "S2", "text": "return true;"},
+            ],
+        )
+
+        self.assertEqual(removed, 1)
+        self.assertEqual(attached, 0)
         self.assertNotIn("```", sanitized)
 
 

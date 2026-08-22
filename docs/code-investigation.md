@@ -398,6 +398,15 @@ reserva evita que uma exploração longa elimine seu ponto de partida ou os últ
 estágios encontrados. Seções detalhadas e sua continuação também recebem uma
 reserva de saída maior, sem alterar o limite de ferramentas ou a ACL.
 
+Na 0.44.2, um bloco de linhas completas que coincide com exatamente uma fonte
+autorizada recebe sua citação de forma determinística quando a redação não a
+deixou próxima da cerca. Coincidências em mais de um escopo continuam exigindo
+uma citação explícita, evitando atribuição arbitrária entre branches ou projetos.
+A conclusão terminal do grafo também intercala chamadas resolvidas com uma
+amostra de vizinhanças locais ao longo de toda a fronteira. Assim, um método
+irmão observado no mesmo arquivo pode entrar na rodada seguinte sem depender de
+um nome adivinhado pelo modelo.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

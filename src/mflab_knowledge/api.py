@@ -2420,23 +2420,35 @@ class RagApiService:
                         occurrence if isinstance(occurrence, dict) else {}
                     )
                     try:
-                        call_ids = call_graph_chunk_ids(
-                            self.settings.database_url,
-                            chunk_id=action["chunk_id"],
-                            direction="callees",
-                            limit=12,
-                            project=str(frontier.get("project", "")) or None,
-                            branch=str(occurrence.get("branch", "")) or None,
-                            allowed_access=self._allowed_access(allowed_access),
-                        )
-                        fetched = fetch_chunks_by_id(
-                            self.settings.database_url,
-                            chunk_ids=call_ids,
-                            limit=12,
-                            project=str(frontier.get("project", "")) or None,
-                            branch=str(occurrence.get("branch", "")) or None,
-                            allowed_access=self._allowed_access(allowed_access),
-                        )
+                        if action["tool"] == "open_neighborhood":
+                            fetched = fetch_chunk_neighborhood(
+                                self.settings.database_url,
+                                chunk_id=action["chunk_id"],
+                                radius=2,
+                                project=str(frontier.get("project", "")) or None,
+                                branch=str(occurrence.get("branch", "")) or None,
+                                allowed_access=self._allowed_access(allowed_access),
+                            )
+                            source_kind = "agent_terminal_neighborhood_evidence"
+                        else:
+                            call_ids = call_graph_chunk_ids(
+                                self.settings.database_url,
+                                chunk_id=action["chunk_id"],
+                                direction="callees",
+                                limit=12,
+                                project=str(frontier.get("project", "")) or None,
+                                branch=str(occurrence.get("branch", "")) or None,
+                                allowed_access=self._allowed_access(allowed_access),
+                            )
+                            fetched = fetch_chunks_by_id(
+                                self.settings.database_url,
+                                chunk_ids=call_ids,
+                                limit=12,
+                                project=str(frontier.get("project", "")) or None,
+                                branch=str(occurrence.get("branch", "")) or None,
+                                allowed_access=self._allowed_access(allowed_access),
+                            )
+                            source_kind = "agent_terminal_callees_evidence"
                     except Exception:
                         self.log(
                             "Continuação terminal do grafo indisponível; preservando a fronteira já observada",
@@ -2444,9 +2456,7 @@ class RagApiService:
                         )
                         continue
                     for result in fetched:
-                        result["source_kind"] = (
-                            "agent_terminal_callees_evidence"
-                        )
+                        result["source_kind"] = source_kind
                     round_results.extend(fetched)
                     completed = {
                         **action,
@@ -3298,7 +3308,7 @@ class RagApiService:
         assert isinstance(raw_sources, list)
         assert generated is not None
         answer = str(generated["answer"])
-        answer, removed_code_blocks = sanitize_fenced_code_blocks(
+        answer, removed_code_blocks, code_citations_attached = sanitize_fenced_code_blocks(
             answer,
             raw_sources,
         )
@@ -3359,11 +3369,16 @@ class RagApiService:
                 )
             else:
                 answer = str(generated["answer"])
-                answer, retry_removed_code_blocks = sanitize_fenced_code_blocks(
+                (
+                    answer,
+                    retry_removed_code_blocks,
+                    retry_code_citations,
+                ) = sanitize_fenced_code_blocks(
                     answer,
                     raw_sources,
                 )
                 removed_code_blocks += retry_removed_code_blocks
+                code_citations_attached += retry_code_citations
                 assessment = _grounding_assessment(
                     answer,
                     raw_sources,
@@ -3676,11 +3691,16 @@ class RagApiService:
                         temperature=temperature,
                     )
                     answer = str(generated["answer"])
-                    answer, repair_removed_code_blocks = sanitize_fenced_code_blocks(
+                    (
+                        answer,
+                        repair_removed_code_blocks,
+                        repair_code_citations,
+                    ) = sanitize_fenced_code_blocks(
                         answer,
                         raw_sources,
                     )
                     removed_code_blocks += repair_removed_code_blocks
+                    code_citations_attached += repair_code_citations
                     assessment = _grounding_assessment(
                         answer,
                         raw_sources,
@@ -4139,6 +4159,7 @@ class RagApiService:
                 "evidence_repair": evidence_repair,
                 "citation_discovery": citation_discovery,
                 "code_blocks_removed": removed_code_blocks,
+                "code_citations_attached": code_citations_attached,
             },
         }
 
