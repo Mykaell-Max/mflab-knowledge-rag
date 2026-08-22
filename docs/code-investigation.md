@@ -429,6 +429,12 @@ a diversidade de caminhos retenha somente a origem ou somente a implementação.
 As vagas restantes continuam sendo preenchidas pelo ranqueamento normal, e a
 reserva não transforma relações não resolvidas em fatos.
 
+Na 0.44.6, a diversidade estrutural agrupa arquivos pela mesma rota sem a
+extensão final. Cabeçalho e implementação continuam sendo fontes separadas,
+mas não ocupam sozinhos as vagas de âncora e chamador. Essa distinção preserva
+uma unidade coordenadora de outra família quando ela faz parte da aresta
+observada.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

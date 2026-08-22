@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.5**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.6**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,23 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação da 0.44.5 repetiu exatamente o conjunto da 0.44.4 na pergunta de
+malha. A reserva upstream foi ocupada por `mesh_factory.hpp::getInstance`, pois
+o seletor considerava o cabeçalho e a implementação `mesh_factory.cpp` como
+caminhos diversos. O coordenador continuou fora, embora os métodos do
+`MeshManager` e a implementação adaptativa estivessem presentes. O DPM manteve
+seus caminhos esperados, reforçando que o problema é a última escolha de fontes
+da malha e não ausência no índice.
+
+A 0.44.6 mede diversidade por família de arquivo sem extensão. Um par de
+cabeçalho/implementação compartilha uma família para fins de reserva, embora os
+chunks e suas citações continuem independentes. Ao escolher o papel upstream, o
+seletor prefere outra família antes de repetir a âncora. A regra é aplicável a
+qualquer extensão reconhecida por `PurePosixPath` e não conhece linguagem,
+projeto, branch ou símbolo. A próxima ação é repetir a suíte. Se os três caminhos
+esperados entrarem juntos, congelar a recuperação e extrair as respostas e as
+auditorias detalhadas do relatório para tratar completude.
 
 A validação real da 0.44.4 comprovou a navegação por ciclo de vida. A fronteira
 de malha passou a conter `MeshManager::initialize`, `configure` e

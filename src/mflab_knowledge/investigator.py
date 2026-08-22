@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v24"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v25"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v2"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
@@ -577,7 +577,11 @@ def select_graph_frontier_results(
 
     selected: list[dict[str, object]] = []
     selected_ids: set[str] = set()
-    selected_paths: set[str] = set()
+    selected_path_families: set[str] = set()
+
+    def path_family(path: str) -> str:
+        candidate = PurePosixPath(path)
+        return str(candidate.with_suffix("")) if candidate.suffix else path
 
     def append_selected(result: dict[str, object]) -> bool:
         if len(selected) >= limit:
@@ -590,7 +594,7 @@ def select_graph_frontier_results(
         selected.append(result)
         selected_ids.add(identity)
         if path:
-            selected_paths.add(path)
+            selected_path_families.add(path_family(path))
         return True
 
     # A flow explanation needs both sides of at least one verified edge. Keep
@@ -600,13 +604,19 @@ def select_graph_frontier_results(
     if ordered_candidates:
         append_selected(ordered_candidates[0])
     for role in ("callers", "callees"):
+        role_candidates = [
+            result
+            for result in ordered_candidates
+            if role in str(result.get("source_kind", ""))
+        ]
         candidate = next(
             (
                 result
-                for result in ordered_candidates
-                if role in str(result.get("source_kind", ""))
+                for result in role_candidates
+                if path_family(str(result.get("path", "")))
+                not in selected_path_families
             ),
-            None,
+            role_candidates[0] if role_candidates else None,
         )
         if candidate is not None:
             append_selected(candidate)
@@ -618,7 +628,7 @@ def select_graph_frontier_results(
     diversity_candidates = relevant_candidates or ordered_candidates
     for result in diversity_candidates:
         path = str(result.get("path", ""))
-        if path and path in selected_paths:
+        if path and path_family(path) in selected_path_families:
             continue
         append_selected(result)
         if len(selected) >= diversity_target:

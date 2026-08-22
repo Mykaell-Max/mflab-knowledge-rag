@@ -1019,6 +1019,13 @@ class InvestigatorTests(unittest.TestCase):
                     "source_kind": "agent_symbol_evidence",
                 },
                 {
+                    "chunk_id": "factory-header",
+                    "path": "src/grid/factory.hpp",
+                    "title": "GridFactory::getInstance",
+                    "text": "access the adaptive grid factory",
+                    "source_kind": "agent_callers_evidence",
+                },
+                {
                     "chunk_id": "domain",
                     "path": "src/domain.cpp",
                     "title": "Domain::setup",
@@ -1046,6 +1053,38 @@ class InvestigatorTests(unittest.TestCase):
         self.assertEqual(
             [result["chunk_id"] for result in selected],
             ["factory", "domain", "manager"],
+        )
+
+    def test_path_diversity_treats_header_and_source_as_one_family(self) -> None:
+        selected = select_graph_frontier_results(
+            question="Explain component initialization",
+            search_hints=[],
+            results=[
+                {
+                    "chunk_id": "source",
+                    "path": "src/component.cpp",
+                    "title": "Component::initialize",
+                    "text": "initialize component",
+                },
+                {
+                    "chunk_id": "header",
+                    "path": "src/component.hpp",
+                    "title": "Component",
+                    "text": "component interface",
+                },
+                {
+                    "chunk_id": "driver",
+                    "path": "src/driver.cpp",
+                    "title": "Driver::setup",
+                    "text": "initialize component",
+                },
+            ],
+            limit=2,
+        )
+
+        self.assertEqual(
+            [result["chunk_id"] for result in selected],
+            ["source", "driver"],
         )
 
     def test_samples_ordered_frontier_when_vocabulary_has_no_overlap(self) -> None:
