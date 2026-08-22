@@ -174,9 +174,25 @@ MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
 EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v2"
-SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v1"
+SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 MAX_EVIDENCE_SECTIONS = 4
 MAX_SECTION_SOURCES = 4
+MAX_COMPOSITION_DRAFT_CHARACTERS = 1600
+
+
+def _compact_composition_draft(value: object, *, limit: int) -> str:
+    """Keep section findings bounded without treating them as evidence."""
+
+    text = str(value).strip()
+    if len(text) <= limit:
+        return text
+    tail_size = max(160, limit // 4)
+    head_size = limit - tail_size
+    return (
+        text[:head_size].rstrip()
+        + "\n\n[... rascunho intermediário compactado ...]\n\n"
+        + text[-tail_size:].lstrip()
+    )
 
 
 def _notebook_terms(value: object) -> set[str]:
@@ -3061,6 +3077,9 @@ class RagApiService:
                     "section_composition": False,
                     "section_composition_attempted": False,
                     "section_composition_algorithm": SECTION_COMPOSITION_ALGORITHM,
+                    "section_composition_attempts": 0,
+                    "section_composition_reduced": False,
+                    "section_composition_max_output_tokens": None,
                     "section_generation_count": 0,
                     "section_continuation_count": 0,
                     "requested_max_context_characters": requested_context_limit,
@@ -3097,6 +3116,9 @@ class RagApiService:
         sectional_synthesis = False
         section_composition = False
         section_composition_attempted = False
+        section_composition_attempts = 0
+        section_composition_reduced = False
+        section_composition_max_output_tokens: int | None = None
         section_generation_count = 0
         section_continuation_count = 0
         section_output_limit: int | None = None
@@ -3279,7 +3301,10 @@ class RagApiService:
                                 {
                                     "section_id": section.get("section_id"),
                                     "aspects": section_aspects,
-                                    "answer": generated_section.get("answer", ""),
+                                    "answer": _compact_composition_draft(
+                                        generated_section.get("answer", ""),
+                                        limit=MAX_COMPOSITION_DRAFT_CHARACTERS,
+                                    ),
                                 }
                             )
                         record(
@@ -3295,37 +3320,108 @@ class RagApiService:
                                 "aspects": len(notebook_aspects),
                             },
                         )
-                        (
-                            composition_sources,
-                            composition_evidence_characters,
-                            _composition_truncated,
-                        ) = _pack_context_results(
-                            raw_sources,
-                            max_context_characters=effective_context_limit,
-                            source_limit=len(raw_sources),
+                        composition_context_limit = effective_context_limit
+                        composition_draft_limit = (
+                            MAX_COMPOSITION_DRAFT_CHARACTERS
                         )
-                        generation_attempts += 1
-                        try:
-                            composed = composer(
-                                question=str(context["query"]),
-                                instructions=str(context["instructions"]),
-                                sections=composition_sections,
-                                aspects=notebook_aspects,
-                                sources=composition_sources,
-                                max_output_tokens=generation_output_limit,
-                                temperature=temperature,
+                        composition_output_limit = min(
+                            generation_output_limit,
+                            2048,
+                        )
+                        composed: dict[str, object] | None = None
+                        composition_evidence_characters = 0
+                        for composition_attempt in range(1, 4):
+                            compact_sections = [
+                                {
+                                    **section,
+                                    "answer": _compact_composition_draft(
+                                        section.get("answer", ""),
+                                        limit=composition_draft_limit,
+                                    ),
+                                }
+                                for section in composition_sections
+                            ]
+                            (
+                                composition_sources,
+                                composition_evidence_characters,
+                                _composition_truncated,
+                            ) = _pack_context_results(
+                                raw_sources,
+                                max_context_characters=composition_context_limit,
+                                source_limit=len(raw_sources),
                             )
-                        except (
-                            GenerationContextTooLargeError,
-                            GenerationUnavailableError,
-                            ValueError,
-                            TypeError,
-                        ) as exc:
-                            self.log(
-                                "Composição final das seções indisponível; "
-                                f"preservando seções fundadas: {exc}",
-                                "warning",
+                            section_composition_attempts += 1
+                            section_composition_max_output_tokens = (
+                                composition_output_limit
                             )
+                            generation_attempts += 1
+                            try:
+                                composed = composer(
+                                    question=str(context["query"]),
+                                    instructions=str(context["instructions"]),
+                                    sections=compact_sections,
+                                    aspects=notebook_aspects,
+                                    sources=composition_sources,
+                                    max_output_tokens=composition_output_limit,
+                                    temperature=temperature,
+                                )
+                            except GenerationContextTooLargeError:
+                                section_composition_reduced = True
+                                if composition_attempt >= 3:
+                                    self.log(
+                                        "Composição final excedeu a janela após "
+                                        "três tentativas; preservando seções fundadas",
+                                        "warning",
+                                    )
+                                    break
+                                composition_context_limit = max(
+                                    4000,
+                                    composition_context_limit * 3 // 4,
+                                )
+                                composition_draft_limit = max(
+                                    600,
+                                    composition_draft_limit * 2 // 3,
+                                )
+                                if composition_attempt >= 2:
+                                    composition_output_limit = min(
+                                        composition_output_limit,
+                                        1536,
+                                    )
+                                record(
+                                    "generation",
+                                    "Composição será retomada com entrada compacta",
+                                    (
+                                        "Rascunhos redundantes e janelas de evidência "
+                                        "foram reduzidos antes de reservar menos saída."
+                                    ),
+                                    {
+                                        "attempt": composition_attempt + 1,
+                                        "evidence_characters": (
+                                            composition_context_limit
+                                        ),
+                                        "draft_characters_per_section": (
+                                            composition_draft_limit
+                                        ),
+                                        "max_output_tokens": (
+                                            composition_output_limit
+                                        ),
+                                    },
+                                )
+                                continue
+                            except (
+                                GenerationUnavailableError,
+                                ValueError,
+                                TypeError,
+                            ) as exc:
+                                self.log(
+                                    "Composição final das seções indisponível; "
+                                    f"preservando seções fundadas: {exc}",
+                                    "warning",
+                                )
+                                break
+                            else:
+                                break
+                        if composed is None:
                             record(
                                 "generation",
                                 "Composição final indisponível",
@@ -4265,6 +4361,11 @@ class RagApiService:
                 "section_composition": section_composition,
                 "section_composition_attempted": section_composition_attempted,
                 "section_composition_algorithm": SECTION_COMPOSITION_ALGORITHM,
+                "section_composition_attempts": section_composition_attempts,
+                "section_composition_reduced": section_composition_reduced,
+                "section_composition_max_output_tokens": (
+                    section_composition_max_output_tokens
+                ),
                 "section_generation_count": section_generation_count,
                 "section_continuation_count": section_continuation_count,
                 "section_max_output_tokens": section_output_limit,

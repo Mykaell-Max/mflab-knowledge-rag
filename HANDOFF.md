@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.7**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.8**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,28 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação real da 0.44.7 não chegou a avaliar o compositor. O serviço tentou a
+nova etapa nos dois casos, mas o vLLM recusou a soma de fontes reidratadas,
+rascunhos seccionais e uma reserva de 3.072 tokens. O fallback preservou
+integralmente as respostas da 0.44.6; por isso os textos e as métricas ficaram
+idênticos. O journal confirmou `contexto excedeu a janela do gerador local` e
+também mostrou a mesma pressão na descoberta posterior de suporte.
+
+A 0.44.8 torna a composição adaptativa sem reduzir antecipadamente a resposta a
+um texto curto. Rascunhos intermediários, que não são evidência, são limitados a
+uma janela com início e fim preservados. A primeira composição reserva até
+2.048 tokens, ainda suficiente para uma explicação técnica longa. Se o provedor
+recusar a janela, até duas novas tentativas compactam progressivamente rascunhos
+e evidências; somente na última tentativa a reserva de saída cai para 1.536
+tokens. Todas as fontes originais continuam disponíveis para a auditoria final,
+mesmo quando o compositor recebe uma janela textual menor. A resposta registra
+número de tentativas, redução e limite efetivamente reservado.
+
+A próxima ação é repetir a suíte e confirmar primeiro
+`section_composition=True`. Somente depois deve ser julgada a qualidade do novo
+texto. Se a composição concluir, não voltar a alterar o grafo antes de examinar
+a resposta completa, as afirmações removidas e a cobertura por aspecto.
 
 A validação real da 0.44.6 encerrou o ajuste da recuperação estrutural para o
 caso de malha: `domain.cpp`, `mesh_manager.cpp` e

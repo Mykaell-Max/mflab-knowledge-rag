@@ -445,6 +445,14 @@ composta continua sujeita ao sanitizador literal de código, à auditoria
 afirmação-fonte e à auditoria independente de cobertura. Falha ou excesso de
 contexto na composição preserva as seções anteriores como fallback seguro.
 
+Na 0.44.8, o orçamento desse compositor se adapta à janela real do provedor.
+Rascunhos são compactados antes das fontes porque são apenas candidatos e não
+possuem valor probatório. A saída começa com até 2.048 tokens. Uma recusa por
+comprimento provoca no máximo duas retomadas, reduzindo gradualmente a janela
+de evidência e os rascunhos; a reserva de saída só cai para 1.536 tokens na
+última tentativa. O pacote original de fontes permanece intacto para o
+sanitizador, a verificação semântica e a auditoria de cobertura posteriores.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

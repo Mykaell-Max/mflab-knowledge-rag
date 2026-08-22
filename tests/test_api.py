@@ -60,13 +60,22 @@ class _SequencedGenerator(_Generator):
 
 
 class _ComposingGenerator(_SequencedGenerator):
-    def __init__(self, answers: list[str], composed_answer: str) -> None:
+    def __init__(
+        self,
+        answers: list[str],
+        composed_answer: str,
+        *,
+        context_failures: int = 0,
+    ) -> None:
         super().__init__(answers)
         self.composed_answer = composed_answer
+        self.context_failures = context_failures
         self.composition_calls: list[dict[str, object]] = []
 
     def compose_sections(self, **kwargs: object) -> dict[str, object]:
         self.composition_calls.append(kwargs)
+        if len(self.composition_calls) <= self.context_failures:
+            raise GenerationContextTooLargeError("context too large")
         return {
             "answer": self.composed_answer,
             "model": "local-test-model",
@@ -1772,6 +1781,7 @@ class ApiServiceTests(unittest.TestCase):
                 "## Flow\n\nThe entry is visible [S1].\n\n"
                 "The advance is visible [S2]."
             ),
+            context_failures=1,
         )
         service = api.RagApiService(
             self.settings(),
@@ -1845,8 +1855,8 @@ class ApiServiceTests(unittest.TestCase):
                 response_depth="detailed",
             )
 
-        self.assertEqual(len(generator.composition_calls), 1)
-        composition = generator.composition_calls[0]
+        self.assertEqual(len(generator.composition_calls), 2)
+        composition = generator.composition_calls[-1]
         self.assertEqual(composition["sources"], sources)
         self.assertEqual(
             [aspect["aspect_id"] for aspect in composition["aspects"]],
@@ -1857,7 +1867,13 @@ class ApiServiceTests(unittest.TestCase):
         self.assertTrue(result["context"]["sectional_synthesis"])
         self.assertTrue(result["context"]["section_composition"])
         self.assertTrue(result["context"]["section_composition_attempted"])
-        self.assertEqual(result["context"]["generation_attempts"], 3)
+        self.assertEqual(result["context"]["section_composition_attempts"], 2)
+        self.assertTrue(result["context"]["section_composition_reduced"])
+        self.assertEqual(
+            result["context"]["section_composition_max_output_tokens"],
+            2048,
+        )
+        self.assertEqual(result["context"]["generation_attempts"], 4)
         self.assertEqual(result["usage"]["total_tokens"], 60)
 
     def test_ask_uses_local_query_planner_for_location_questions(self) -> None:

@@ -148,6 +148,8 @@ def show_response(label: str, response: dict[str, object]) -> None:
         f" | síntese seccional={context.get('sectional_synthesis', False)}"
         f" ({context.get('section_generation_count', 0)} seções)"
         f" | composição final={context.get('section_composition', False)}"
+        f" ({context.get('section_composition_attempts', 0)} tentativa(s),"
+        f" reduzida={context.get('section_composition_reduced', False)})"
         f" | continuações={context.get('section_continuation_count', 0)}"
         f" | suporte descoberto={context.get('citation_discovery', False)}"
         f" | código removido={context.get('code_blocks_removed', 0)}"
