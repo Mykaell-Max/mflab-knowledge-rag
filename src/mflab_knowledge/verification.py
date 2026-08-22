@@ -18,6 +18,7 @@ _SENTENCE_BOUNDARY = re.compile(
     r"(?:(?:,|;)\s*S\d+\s*)*\]))?"
     r"(?:\s+(?=(?:[`*_>(\[]*[A-ZÀ-ÖØ-Þ0-9]))|(?=$))"
 )
+_MARKDOWN_HEADING = re.compile(r"(?m)^#{1,6}[ \t]+[^\r\n]+[ \t]*$")
 
 
 def _atomic_factual_units(unit: str) -> list[str]:
@@ -449,6 +450,45 @@ def supported_claim_subset(
     if not selected:
         return None
     result = "\n\n".join(selected)
+    if answer is not None:
+        # Preserve the original section labels around surviving claims.  The
+        # labels are copied verbatim and remain non-factual presentation
+        # structure; no prose is invented.  Flattening a sectional answer made
+        # a later completeness audit lose which supported statements answered
+        # configuration, advancement, or integration.
+        headings = list(_MARKDOWN_HEADING.finditer(answer))
+        if headings:
+            grouped: list[str] = []
+            retained: set[str] = set()
+            boundaries: list[tuple[str | None, int, int]] = []
+            if headings[0].start() > 0:
+                boundaries.append((None, 0, headings[0].start()))
+            for position, heading in enumerate(headings):
+                end = (
+                    headings[position + 1].start()
+                    if position + 1 < len(headings)
+                    else len(answer)
+                )
+                boundaries.append((heading.group(0).strip(), heading.end(), end))
+            selected_set = set(selected)
+            for heading, start, end in boundaries:
+                section_claims = [
+                    str(claim.get("text", "")).strip()
+                    for claim in claims_for_verification(answer[start:end])
+                    if str(claim.get("text", "")).strip() in selected_set
+                ]
+                section_claims = list(dict.fromkeys(section_claims))
+                if not section_claims:
+                    continue
+                if heading:
+                    grouped.append(heading)
+                grouped.append("\n\n".join(section_claims))
+                retained.update(section_claims)
+            remaining = [claim for claim in selected if claim not in retained]
+            if remaining:
+                grouped.append("\n\n".join(remaining))
+            if grouped:
+                result = "\n\n".join(grouped)
     if answer is not None and sources:
         code_blocks = _exact_supported_code_blocks(
             answer,

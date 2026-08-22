@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 from typing import Iterable
 
 AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v25"
-ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v2"
+ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v3"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18

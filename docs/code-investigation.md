@@ -463,6 +463,14 @@ admitir um componente vizinho. Lacunas podem reutilizar a fonte correta de outra
 seção, enquanto a antiga distribuição round-robin de nós incidentais é
 eliminada. A auditoria final permanece inalterada.
 
+Na 0.44.10, fontes diretamente observadas para uma faceta são mantidas separadas
+de complementos estruturais selecionados por metadados. Isso evita que duas
+facetas sejam fundidas apenas porque receberam o mesmo arquivo auxiliar. Cada
+auditoria de completude vê somente afirmações sustentadas pelo escopo primário
+da respectiva seção. Títulos originais sobrevivem ao salvamento determinístico,
+e uma seção pode ter até duas continuações locais. Essas regras ampliam a
+resposta sem liberar uma reescrita global ou promover o caderno a evidência.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

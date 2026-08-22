@@ -318,7 +318,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v3")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v4")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -427,6 +427,52 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("S2", by_aspect["particle advancement"])
         self.assertIn("S3", by_aspect["domain integration"])
         self.assertNotIn("S4", by_aspect["domain integration"])
+
+    def test_evidence_notebook_keeps_repeated_explicit_question_subject(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "configuration",
+                    "status": "partial",
+                    "chunk_ids": ["primary"],
+                }
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "primary",
+                    "path": "src/target/configure.cpp",
+                    "title": "Target::configure",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "secondary",
+                    "path": "src/target/configuration.cpp",
+                    "title": "TargetConfiguration",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "runtime",
+                    "path": "src/target/runtime.cpp",
+                    "title": "Target::advance",
+                },
+                {
+                    "source_id": "S4",
+                    "chunk_id": "neighbor",
+                    "path": "src/neighbor/configuration.cpp",
+                    "title": "NeighborConfiguration",
+                },
+            ],
+            question="Explain Target configuration",
+        )
+
+        selected = set(notebook["sections"][0]["source_ids"])
+        self.assertIn("S1", selected)
+        self.assertIn("S2", selected)
+        self.assertNotIn("S4", selected)
 
     def test_evidence_notebook_assigns_gap_to_matching_authorized_context(
         self,
@@ -1743,10 +1789,11 @@ class ApiServiceTests(unittest.TestCase):
         generator = _SequencedGenerator(
             [
                 "## Entrada\n\nThe entry point is shown here [S1].",
+                "The local setup continues [S1].",
                 "The local setup is then completed [S1].",
                 "## Avanço\n\nThe advancement stage is shown here [S2].",
             ],
-            finish_reasons=["length", "stop", "stop"],
+            finish_reasons=["length", "length", "stop", "stop"],
         )
         service = api.RagApiService(
             self.settings(),
@@ -1820,12 +1867,14 @@ class ApiServiceTests(unittest.TestCase):
                 response_depth="detailed",
             )
 
-        self.assertEqual(len(generator.calls), 3)
+        self.assertEqual(len(generator.calls), 4)
         self.assertEqual(generator.calls[0]["sources"], [sources[0]])
         self.assertEqual(generator.calls[1]["sources"], [sources[0]])
-        self.assertEqual(generator.calls[2]["sources"], [sources[1]])
-        self.assertEqual(generator.calls[0]["max_output_tokens"], 2048)
+        self.assertEqual(generator.calls[2]["sources"], [sources[0]])
+        self.assertEqual(generator.calls[3]["sources"], [sources[1]])
+        self.assertEqual(generator.calls[0]["max_output_tokens"], 3072)
         self.assertEqual(generator.calls[1]["max_output_tokens"], 1536)
+        self.assertEqual(generator.calls[2]["max_output_tokens"], 1536)
         self.assertIn("SECTIONAL SYNTHESIS CONTRACT", generator.calls[0]["instructions"])
         self.assertIn("SECTION CONTINUATION CONTRACT", generator.calls[1]["instructions"])
         self.assertIn("## Entrada", result["answer"])
@@ -1833,9 +1882,9 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("## Avanço", result["answer"])
         self.assertTrue(result["context"]["sectional_synthesis"])
         self.assertEqual(result["context"]["section_generation_count"], 2)
-        self.assertEqual(result["context"]["section_continuation_count"], 1)
-        self.assertEqual(result["context"]["generation_attempts"], 3)
-        self.assertEqual(result["usage"]["total_tokens"], 45)
+        self.assertEqual(result["context"]["section_continuation_count"], 2)
+        self.assertEqual(result["context"]["generation_attempts"], 4)
+        self.assertEqual(result["usage"]["total_tokens"], 60)
         self.assertEqual(result["finish_reason"], "stop")
 
     def test_ask_preserves_grounded_sections_without_global_rewrite(self) -> None:
@@ -2797,6 +2846,120 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(
             [call["aspects"][0]["aspect_id"] for call in generator.coverage_calls],
             ["A1", "A2"],
+        )
+
+    def test_answer_coverage_scopes_supported_claims_to_notebook_section(
+        self,
+    ) -> None:
+        generator = _CoverageVerifyingGenerator(
+            answers=[
+                "## Configuration\n\nThe runtime configures state [S1].",
+                "## Advancement\n\nThe runtime advances state [S2].",
+            ],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported","source_ids":["S1"]},'
+                '{"claim_id":"C2","verdict":"supported","source_ids":["S2"]}]}'
+            ],
+            coverage_audits=[
+                '{"coverage":[{"aspect_id":"A1","status":"covered",'
+                '"claim_ids":["C1"]}]}',
+                '{"coverage":[{"aspect_id":"A2","status":"covered",'
+                '"claim_ids":["C2"]}]}',
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "configure",
+                "project": "Solver",
+                "path": "src/configure.cpp",
+                "text": "The runtime configures state.",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "advance",
+                "project": "Solver",
+                "path": "src/advance.cpp",
+                "text": "The runtime advances state.",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain configuration and advancement",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 80,
+                "truncated": False,
+                "sources": sources,
+                "exploration": {
+                    "intent": "mechanism",
+                    "query_plan": {
+                        "aspects": ["configuration", "advancement"],
+                        "aspect_anchors": [
+                            {
+                                "aspect": "configuration",
+                                "question_span": "configuration",
+                            },
+                            {
+                                "aspect": "advancement",
+                                "question_span": "advancement",
+                            },
+                        ],
+                    },
+                },
+                "agent_investigation": {
+                    "coverage": [
+                        {
+                            "aspect": "configuration",
+                            "status": "covered",
+                            "chunk_ids": ["configure"],
+                        },
+                        {
+                            "aspect": "advancement",
+                            "status": "covered",
+                            "chunk_ids": ["advance"],
+                        },
+                    ]
+                },
+                "investigation": {"steps": []},
+            },
+        ):
+            result = service.ask(
+                query="Explain configuration and advancement",
+                response_depth="detailed",
+            )
+
+        self.assertEqual(result["answer_completeness"], "complete")
+        self.assertEqual(len(generator.coverage_calls), 2)
+        self.assertEqual(
+            [
+                [claim["claim_id"] for claim in call["supported_claims"]]
+                for call in generator.coverage_calls
+            ],
+            [["C1"], ["C2"]],
         )
 
     def test_deterministic_salvage_reuses_verdicts_for_identical_claims(self) -> None:

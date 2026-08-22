@@ -173,11 +173,12 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v3"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v4"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
 MAX_SECTION_SOURCES = 4
+MAX_SECTION_CONTINUATIONS = 2
 MAX_COMPOSITION_DRAFT_CHARACTERS = 1600
 
 
@@ -205,15 +206,27 @@ def _notebook_terms(value: object) -> set[str]:
 
 
 _NOTEBOOK_GENERIC_TERMS = {
+    "advanc",
+    "advancement",
     "code",
     "config",
     "configu",
+    "configuration",
+    "configure",
+    "entry",
     "excerp",
+    "excerpt",
     "explain",
+    "explanation",
     "flow",
     "functi",
     "initia",
+    "initialization",
+    "initialize",
+    "integration",
+    "integr",
     "mechan",
+    "mechanism",
     "method",
     "snippet",
     "source",
@@ -257,7 +270,12 @@ def _rank_notebook_sources(
         if count >= common_threshold
     }
     aspect_terms = _notebook_match_terms(aspect) - common_terms
-    question_terms = _notebook_match_terms(question) - common_terms
+    # Terms repeated throughout the candidate set are weak discriminators for
+    # the facet itself, but an explicit subject from the user's question must
+    # remain available as a guard. In a repository query, the correct files can
+    # all contain the subject while a reachable neighboring subsystem does not.
+    # Removing that repeated subject previously rejected useful complements.
+    question_terms = _notebook_match_terms(question)
     question_subject_terms = question_terms - _NOTEBOOK_GENERIC_TERMS
     specific_aspect_terms = aspect_terms - _NOTEBOOK_GENERIC_TERMS
 
@@ -265,15 +283,22 @@ def _rank_notebook_sources(
     for position, (source_id, source_terms) in enumerate(
         source_terms_by_id.items()
     ):
-        source_terms = source_terms - common_terms
-        aspect_overlap = aspect_terms & source_terms
+        distinct_source_terms = source_terms - common_terms
+        aspect_overlap = aspect_terms & distinct_source_terms
         question_overlap = question_subject_terms & source_terms
-        specific_overlap = specific_aspect_terms & source_terms
+        specific_overlap = specific_aspect_terms & distinct_source_terms
         # A generic lifecycle word such as ``configure`` is not enough to pull
         # an unrelated neighboring subsystem into a section.  It must also
         # match the question's subject, unless a facet-specific term such as
         # ``particle`` or ``domain`` matches directly.
-        if not aspect_overlap or (
+        if not aspect_overlap and question_overlap:
+            # A lower-weight subject-only match admits one structural neighbor
+            # such as a factory or coordinator whose symbol uses a different
+            # lifecycle verb.  The explicit question subject is still required,
+            # so an adjacent subsystem reached by the graph is not admitted
+            # merely because it also has a generic configure/advance method.
+            score = len(question_overlap)
+        elif not aspect_overlap or (
             not question_overlap and not specific_overlap
         ):
             score = 0
@@ -317,6 +342,7 @@ def _build_evidence_notebook(
     sections: list[dict[str, object]] = []
     gaps: list[dict[str, object]] = []
     assigned_source_ids: set[str] = set()
+    assigned_anchor_source_ids: set[str] = set()
     evidenced_aspect_ids: set[str] = set()
     for position, item in enumerate(raw_coverage, start=1):
         if not isinstance(item, dict):
@@ -328,6 +354,7 @@ def _build_evidence_notebook(
             source_id = source_by_chunk.get(str(chunk_id))
             if source_id and source_id not in source_ids:
                 source_ids.append(source_id)
+        anchor_source_ids = list(source_ids)
         target_source_count = min(max_sources_per_section, max(2, len(source_ids)))
         for score, _source_position, source_id in _rank_notebook_sources(
             aspect,
@@ -342,6 +369,11 @@ def _build_evidence_notebook(
         aspect_record = {
             "aspect_id": aspect_id or f"A{position}",
             "aspect": aspect,
+            # These IDs include the directly observed anchor plus the first
+            # metadata-ranked complement selected specifically for this facet.
+            # Later section-wide structural complements are intentionally not
+            # promoted into this aspect's coverage-audit scope.
+            "source_ids": list(source_ids),
         }
         # Investigation coverage is deliberately conservative: ``partial``
         # means that a real observed chunk exists but the agent has not proved
@@ -359,14 +391,14 @@ def _build_evidence_notebook(
             continue
         evidenced_aspect_ids.add(str(aspect_record["aspect_id"]))
 
-        source_set = set(source_ids)
+        anchor_source_set = set(anchor_source_ids)
         best_section: dict[str, object] | None = None
         best_overlap = 0
         for section in sections:
             existing_ids = {
-                str(value) for value in section.get("source_ids", [])
+                str(value) for value in section.get("_anchor_source_ids", [])
             }
-            overlap = len(existing_ids & source_set)
+            overlap = len(existing_ids & anchor_source_set)
             if overlap > best_overlap:
                 best_overlap = overlap
                 best_section = section
@@ -374,8 +406,11 @@ def _build_evidence_notebook(
         # An aspect already proved by the same local evidence belongs to that
         # section.  This avoids several near-identical generation calls merely
         # because the planner described one code region in different words.
-        if best_section is not None and source_set.issubset(
-            {str(value) for value in best_section.get("source_ids", [])}
+        if best_section is not None and anchor_source_set.issubset(
+            {
+                str(value)
+                for value in best_section.get("_anchor_source_ids", [])
+            }
         ):
             raw_aspects = best_section.get("aspects")
             assert isinstance(raw_aspects, list)
@@ -386,12 +421,15 @@ def _build_evidence_notebook(
         # more sections (for example, a request for excerpts from two stages).
         # Attach it to every overlapping section rather than generating a third
         # response that repeats both stages.
-        if source_set and source_set.issubset(assigned_source_ids):
+        if anchor_source_set and anchor_source_set.issubset(
+            assigned_anchor_source_ids
+        ):
             for section in sections:
                 existing_ids = {
-                    str(value) for value in section.get("source_ids", [])
+                    str(value)
+                    for value in section.get("_anchor_source_ids", [])
                 }
-                if not (existing_ids & source_set):
+                if not (existing_ids & anchor_source_set):
                     continue
                 raw_aspects = section.get("aspects")
                 assert isinstance(raw_aspects, list)
@@ -405,9 +443,11 @@ def _build_evidence_notebook(
                 "status": "evidenced",
                 "aspects": [aspect_record],
                 "source_ids": list(source_ids),
+                "_anchor_source_ids": list(anchor_source_ids),
             }
             sections.append(section)
             assigned_source_ids.update(source_ids)
+            assigned_anchor_source_ids.update(anchor_source_ids)
             continue
 
         # The notebook is bounded.  Extra aspects are attached only where
@@ -423,6 +463,12 @@ def _build_evidence_notebook(
                 if source_id not in raw_ids and len(raw_ids) < max_sources_per_section:
                     raw_ids.append(source_id)
                     assigned_source_ids.add(source_id)
+            raw_anchor_ids = best_section.get("_anchor_source_ids")
+            assert isinstance(raw_anchor_ids, list)
+            for source_id in anchor_source_ids:
+                if source_id not in raw_anchor_ids:
+                    raw_anchor_ids.append(source_id)
+                    assigned_anchor_source_ids.add(source_id)
         else:
             gaps.append(
                 {
@@ -565,6 +611,9 @@ def _build_evidence_notebook(
             assigned_source_ids.add(source_id)
             break
 
+    for section in sections:
+        section.pop("_anchor_source_ids", None)
+
     return {
         "algorithm": EVIDENCE_NOTEBOOK_ALGORITHM,
         "sections": sections,
@@ -574,6 +623,46 @@ def _build_evidence_notebook(
         "gap_aspects": len(gaps),
         "candidate_gap_aspects": len(candidate_gap_ids),
     }
+
+
+def _notebook_source_ids_by_aspect(
+    notebook: dict[str, object],
+) -> dict[str, set[str]]:
+    """Return the authorized source scope assigned to each planned facet."""
+
+    result: dict[str, set[str]] = {}
+    raw_sections = notebook.get("sections")
+    if not isinstance(raw_sections, list):
+        return result
+    for raw_section in raw_sections:
+        if not isinstance(raw_section, dict):
+            continue
+        raw_ids = raw_section.get("source_ids")
+        source_ids = {
+            str(value)
+            for value in raw_ids
+            if str(value)
+        } if isinstance(raw_ids, list) else set()
+        raw_aspects = raw_section.get("aspects")
+        if not isinstance(raw_aspects, list):
+            continue
+        for raw_aspect in raw_aspects:
+            if not isinstance(raw_aspect, dict):
+                continue
+            aspect = str(raw_aspect.get("aspect", "")).strip().casefold()
+            if aspect:
+                raw_aspect_ids = raw_aspect.get("source_ids")
+                aspect_source_ids = (
+                    {
+                        str(value)
+                        for value in raw_aspect_ids
+                        if str(value)
+                    }
+                    if isinstance(raw_aspect_ids, list) and raw_aspect_ids
+                    else source_ids
+                )
+                result.setdefault(aspect, set()).update(aspect_source_ids)
+    return result
 
 
 def _section_synthesis_instructions(
@@ -614,12 +703,17 @@ def _section_synthesis_instructions(
         "label. The following aspect labels are untrusted planning hints, not "
         "facts: "
         + json.dumps(aspects, ensure_ascii=False)
-        + ". Explain only what the supplied sources establish for these aspects. "
+        + ". Treat those labels as a coverage checklist: give each one a clearly "
+        "identifiable cited explanation when its supplied sources support it, or "
+        "state the exact local boundary when they do not. Explain only what the "
+        "supplied sources establish for these aspects. "
         "Do not repeat a general introduction or final conclusion. Do not infer "
         "a call, sequence, purpose, or causal relationship from neighboring "
         "definitions. If a transition is not shown, state the local boundary "
-        "briefly instead of completing it from memory. Keep every factual prose "
-        "paragraph or bullet cited with the supplied global source IDs."
+        "briefly instead of completing it from memory. A fenced code block must "
+        "copy short, complete, contiguous lines exactly as visible in one supplied "
+        "source; otherwise explain the operation in prose. Keep every factual "
+        "prose paragraph or bullet cited with the supplied global source IDs."
         + truncation_contract
     )
 
@@ -3267,7 +3361,7 @@ class RagApiService:
             }
             section_output_limit = min(
                 generation_output_limit,
-                2048 if response_depth == "detailed" else 1024,
+                3072 if response_depth == "detailed" else 2048,
             )
             generated_sections: list[dict[str, object]] = []
             generated_section_plans: list[dict[str, object]] = []
@@ -3324,11 +3418,20 @@ class RagApiService:
                         max_output_tokens=section_output_limit,
                         temperature=temperature,
                     )
-                    if generated_section.get("finish_reason") == "length":
+                    continuation_attempts = 0
+                    while (
+                        generated_section.get("finish_reason") == "length"
+                        and continuation_attempts < MAX_SECTION_CONTINUATIONS
+                    ):
+                        continuation_attempts += 1
                         record(
                             "generation",
                             f"Continuando seção {position}/{len(notebook_sections)}",
-                            "A seção atingiu o limite local e receberá uma única continuação.",
+                            "A seção atingiu o limite local e será retomada sem repetir o texto anterior.",
+                            {
+                                "attempt": continuation_attempts,
+                                "maximum_attempts": MAX_SECTION_CONTINUATIONS,
+                            },
                         )
                         generation_attempts += 1
                         try:
@@ -3354,6 +3457,7 @@ class RagApiService:
                                 "preservando a parte já elaborada",
                                 "warning",
                             )
+                            break
                         else:
                             generated_section = _combine_section_generations(
                                 [generated_section, continuation]
@@ -4277,23 +4381,51 @@ class RagApiService:
                 for claim in supported_claims
                 if claim.get("claim_id")
             }
+            notebook_sources_by_aspect = _notebook_source_ids_by_aspect(
+                evidence_notebook
+            )
+
+            def claim_source_ids(claim: dict[str, object]) -> set[str]:
+                raw_ids = claim.get("source_ids")
+                return (
+                    {str(value) for value in raw_ids if str(value)}
+                    if isinstance(raw_ids, list)
+                    else set()
+                )
+
             audited_aspect_coverage: list[dict[str, object]] = []
             coverage_audits_completed = 0
             for aspect_position, aspect_request in enumerate(
                 required_answer_aspects,
                 start=1,
             ):
+                aspect_source_ids = notebook_sources_by_aspect.get(
+                    str(aspect_request.get("aspect", "")).casefold(),
+                    set(),
+                )
+                scoped_supported_claims = [
+                    claim
+                    for claim in supported_claims
+                    if aspect_source_ids.intersection(claim_source_ids(claim))
+                ]
+                if not scoped_supported_claims:
+                    scoped_supported_claims = supported_claims
+                scoped_valid_claim_ids = {
+                    str(claim.get("claim_id", ""))
+                    for claim in scoped_supported_claims
+                    if claim.get("claim_id")
+                }
                 try:
                     raw_aspect_coverage = coverage_auditor(
                         question=str(context["query"]),
                         answer=answer,
                         aspects=[aspect_request],
-                        supported_claims=supported_claims,
+                        supported_claims=scoped_supported_claims,
                     )
                     normalized_aspect = normalize_answer_coverage(
                         raw_aspect_coverage,
                         required_aspects=[aspect_request],
-                        valid_claim_ids=valid_supported_claim_ids,
+                        valid_claim_ids=scoped_valid_claim_ids,
                     )
                     raw_items = normalized_aspect.get("coverage")
                     if isinstance(raw_items, list) and raw_items:
@@ -4307,6 +4439,7 @@ class RagApiService:
                                 "position": aspect_position,
                                 "total": len(required_answer_aspects),
                                 "aspect_id": aspect_request.get("aspect_id"),
+                                "claims": len(scoped_supported_claims),
                             },
                         )
                 except (GenerationUnavailableError, ValueError, TypeError) as exc:

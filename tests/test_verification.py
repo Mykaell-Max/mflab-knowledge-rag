@@ -196,6 +196,44 @@ class VerificationTests(unittest.TestCase):
             "The observed operation advances state [S1].",
         )
 
+    def test_supported_subset_preserves_original_section_headings(self) -> None:
+        answer = (
+            "## Configuration\n\nThe model is configured [S1].\n\n"
+            "An unsupported conclusion follows [S1].\n\n"
+            "## Advancement\n\nThe state advances [S2]."
+        )
+        result = supported_claim_subset(
+            {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "The model is configured [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                    },
+                    {
+                        "claim_id": "C2",
+                        "claim": "An unsupported conclusion follows [S1].",
+                        "verdict": "unsupported",
+                        "source_ids": [],
+                    },
+                    {
+                        "claim_id": "C3",
+                        "claim": "The state advances [S2].",
+                        "verdict": "supported",
+                        "source_ids": ["S2"],
+                    },
+                ]
+            },
+            answer=answer,
+        )
+
+        self.assertEqual(
+            result,
+            "## Configuration\n\nThe model is configured [S1].\n\n"
+            "## Advancement\n\nThe state advances [S2].",
+        )
+
     def test_supported_subset_keeps_only_verbatim_code_from_approved_sources(
         self,
     ) -> None:

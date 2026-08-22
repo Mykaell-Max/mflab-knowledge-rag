@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.9**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.10**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,28 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A avaliação real da 0.44.9 confirmou que o grafo encontrou os caminhos corretos
+e que a montagem seccional preservou mais conteúdo que a composição global. Os
+dois casos falharam apenas em completude. Na malha, uma seção e sua continuação
+terminaram por limite, deixando 1.212 caracteres. No DPM, 12 afirmações foram
+sustentadas e a resposta chegou a 4.074 caracteres, mas a auditoria global não
+associou a seção de domínio à faceta correspondente. O caderno ainda atribuía
+somente uma fonte a cada seção de malha.
+
+A 0.44.10 corrige essas interfaces sem alterar o grafo. Seções comuns recebem
+até 2.048 tokens e seções detalhadas até 3.072, com no máximo duas continuações
+locais. O assunto explícito da pergunta permanece como guarda mesmo quando é
+frequente nas fontes, permitindo incluir um complemento estrutural de fábrica
+ou coordenação sem admitir subsistemas vizinhos que só compartilham verbos
+genéricos. Fontes diretamente observadas ficam separadas dos complementos para
+que facetas distintas não sejam fundidas acidentalmente.
+
+Quando uma resposta precisa do salvamento determinístico, os títulos Markdown
+originais das seções passam a ser preservados. A auditoria de completude recebe,
+para cada faceta, somente as afirmações sustentadas pelas fontes primárias de sua
+seção. Isso reduz confusão do modelo local sem transformar planejamento em
+prova: toda afirmação continua precisando passar pela auditoria fonte a fonte.
 
 A 0.44.8 confirmou que a composição global não é adequada ao Qwen 8B deste
 piloto. Ela concluiu em ambos os casos, mas reduziu a malha de 19 para 7
