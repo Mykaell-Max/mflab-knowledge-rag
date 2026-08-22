@@ -72,6 +72,7 @@ from mflab_knowledge.investigator import (
     reconcile_answer_coverage_with_provenance,
     repeated_complete_coverage,
     reserve_chunk_ids_by_aspect,
+    resolve_verified_answer_contract,
     select_graph_frontier_results,
     successful_graph_traversal,
     synthesis_guidance,
@@ -173,7 +174,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v6"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v7"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -397,7 +398,14 @@ def _build_evidence_notebook(
             if source_id and source_id not in source_ids:
                 source_ids.append(source_id)
         anchor_source_ids = list(source_ids)
-        target_source_count = min(max_sources_per_section, max(2, len(source_ids)))
+        structural_connection_requested = bool(
+            _notebook_match_terms(aspect)
+            & {"flow", "integr", "integration", "mechan", "mechanism"}
+        )
+        target_source_count = min(
+            max_sources_per_section,
+            max(3 if structural_connection_requested else 2, len(source_ids)),
+        )
         for score, _source_position, source_id in _rank_notebook_sources(
             aspect,
             question,
@@ -4501,6 +4509,7 @@ class RagApiService:
                 return len(uncited_text) >= 12 and uncited_text in section_answer
 
             section_claim_ids_by_aspect: dict[str, set[str]] = {}
+            sectional_code_aspects: set[str] = set()
             for section_plan, generated_section in zip(
                 generated_section_plans,
                 generated_sections,
@@ -4523,6 +4532,8 @@ class RagApiService:
                             aspect_key,
                             set(),
                         ).update(section_claim_ids)
+                        if "```" in section_answer:
+                            sectional_code_aspects.add(aspect_key)
 
             def claim_source_ids(claim: dict[str, object]) -> set[str]:
                 raw_ids = claim.get("source_ids")
@@ -4642,6 +4653,13 @@ class RagApiService:
                     sources=raw_sources,
                     supported_claims=supported_claims,
                     sectional_claim_ids=coverage_claim_ids_by_aspect,
+                )
+                answer_coverage = resolve_verified_answer_contract(
+                    answer_coverage,
+                    answer=answer,
+                    supported_claims=supported_claims,
+                    sectional_claim_ids=coverage_claim_ids_by_aspect,
+                    sectional_code_aspects=sectional_code_aspects,
                 )
                 record(
                     "verification",

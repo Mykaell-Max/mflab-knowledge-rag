@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.12**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.13**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,33 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A validação real da 0.44.12 produziu duas respostas longas, citadas e encerradas
+normalmente. O caso de malha teve 4.113 caracteres, 14 afirmações sustentadas,
+zero incertas ou rejeitadas e dois blocos literais. O caso de DPM teve 6.437
+caracteres, 25 afirmações sustentadas, zero incertas ou rejeitadas e quatro
+seções. A suíte permaneceu em 0/2 exclusivamente porque o mesmo modelo que
+verifica facetas classificou todas como `partial` ou `gap`, inclusive a
+integração com `Domain::advance` que aparecia explicitamente na resposta e havia
+passado pela auditoria afirmação-fonte.
+
+A 0.44.13 separa esse parecer probabilístico do contrato objetivo de entrega.
+Uma faceta conservadoramente marcada como parcial só pode ser resolvida quando
+possui afirmações verificadas que nasceram na seção atribuída a ela. Pedidos de
+código exigem bloco cercado na própria seção; pedidos de fluxo, integração ou
+mecanismo exigem ao menos duas unidades factuais verificadas. Lacuna real,
+afirmação isolada e código ausente continuam parciais. Assim, `complete`
+significa que todas as obrigações explícitas da pergunta foram satisfeitas, e
+não que todo o subsistema foi documentado exaustivamente. Facetas estruturais
+também passam a reservar três fontes quando disponíveis, aumentando a chance de
+manter chamador, coordenador e operação local na mesma janela.
+
+A próxima execução na Morgoth deve validar a 0.44.13 com a mesma suíte de dois
+casos. Além da nota, devem ser inspecionados o texto integral, os caminhos usados
+e o campo `answer_coverage.resolution`. Se os dois casos passarem sem afirmações
+incertas ou rejeitadas, o piloto deve ser congelado para a apresentação e a
+próxima melhoria deve usar revisão humana repetida, em vez de continuar
+otimizando contra uma única classificação não determinística.
 
 A 0.44.11 ampliou novamente a resposta de malha para 4.214 caracteres, dois
 blocos exatos e 15 afirmações sustentadas. O DPM entregou 5.984 caracteres,

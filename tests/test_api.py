@@ -375,7 +375,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v6")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v7")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -3017,6 +3017,121 @@ class ApiServiceTests(unittest.TestCase):
                 for call in generator.coverage_calls
             ],
             [["C1"], ["C2"]],
+        )
+
+    def test_verified_section_contract_can_resolve_conservative_partial_labels(
+        self,
+    ) -> None:
+        generator = _CoverageVerifyingGenerator(
+            answers=[
+                "The coordinator enters the worker [S1].\n\n"
+                "The coordinator then advances it [S1].",
+                "The worker advances state [S2].\n\n"
+                "```cpp\nworker.advance();\n```\n\n[S2]",
+            ],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported","source_ids":["S1"]},'
+                '{"claim_id":"C2","verdict":"supported","source_ids":["S1"]},'
+                '{"claim_id":"C3","verdict":"supported","source_ids":["S2"]}]}'
+            ],
+            coverage_audits=[
+                '{"coverage":[{"aspect_id":"A1","status":"partial",'
+                '"claim_ids":["C1","C2"]}]}',
+                '{"coverage":[{"aspect_id":"A2","status":"partial",'
+                '"claim_ids":["C3"]}]}',
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "caller",
+                "project": "Solver",
+                "path": "src/coordinator.cpp",
+                "text": (
+                    "The coordinator enters the worker and then advances it."
+                ),
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "worker",
+                "project": "Solver",
+                "path": "src/worker.cpp",
+                "text": "The worker advances state.\nworker.advance();",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the runtime flow and show a code excerpt",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 120,
+                "truncated": False,
+                "sources": sources,
+                "exploration": {
+                    "intent": "mechanism",
+                    "query_plan": {
+                        "aspect_anchors": [
+                            {
+                                "aspect": "runtime flow",
+                                "question_span": "runtime flow",
+                            },
+                            {
+                                "aspect": "code excerpt",
+                                "question_span": "code excerpt",
+                            },
+                        ]
+                    },
+                },
+                "agent_investigation": {
+                    "coverage": [
+                        {
+                            "aspect": "runtime flow",
+                            "status": "partial",
+                            "chunk_ids": ["caller"],
+                        },
+                        {
+                            "aspect": "code excerpt",
+                            "status": "partial",
+                            "chunk_ids": ["worker"],
+                        },
+                    ]
+                },
+                "investigation": {"steps": []},
+            },
+        ):
+            result = service.ask(
+                query="Explain the runtime flow and show a code excerpt",
+                response_depth="detailed",
+            )
+
+        self.assertEqual(result["answer_completeness"], "complete")
+        self.assertTrue(result["answer_coverage"]["complete"])
+        self.assertEqual(
+            result["answer_coverage"]["resolution"],
+            "verified_answer_contract",
         )
 
     def test_deterministic_salvage_reuses_verdicts_for_identical_claims(self) -> None:

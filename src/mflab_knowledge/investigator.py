@@ -8,7 +8,7 @@ from pathlib import PurePosixPath
 from typing import Iterable
 
 AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v25"
-ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v5"
+ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v6"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -770,20 +770,27 @@ def reconcile_answer_coverage_with_provenance(
                     for claim_id in claim_ids_by_source.get(source_id, []):
                         if claim_id not in supporting_claim_ids:
                             supporting_claim_ids.append(claim_id)
+        section_ids = (sectional_claim_ids or {}).get(
+            str(item.get("aspect", "")).casefold(),
+            set(),
+        )
         if item.get("status") == "gap":
-            if supporting_claim_ids:
+            # A local model may fail to associate an already verified claim with
+            # the display label of its own generated section.  Section membership
+            # is server-owned provenance, so it is a conservative partial floor in
+            # exactly the same way as an investigation chunk retained for a facet.
+            gap_claim_ids = list(
+                dict.fromkeys([*supporting_claim_ids, *sorted(section_ids)])
+            )
+            if gap_claim_ids:
                 item["status"] = "partial"
-                item["claim_ids"] = supporting_claim_ids[:12]
+                item["claim_ids"] = gap_claim_ids[:12]
         elif item.get("status") == "covered" and aspect_source_ids:
             cited_for_verdict = {
                 source_id
                 for claim_id in item.get("claim_ids", [])
                 for source_id in source_ids_by_claim.get(str(claim_id), set())
             }
-            section_ids = (sectional_claim_ids or {}).get(
-                str(item.get("aspect", "")).casefold(),
-                set(),
-            )
             raw_audited_claim_ids = item.get("claim_ids")
             audited_claim_ids = (
                 {str(value) for value in raw_audited_claim_ids}
@@ -802,6 +809,119 @@ def reconcile_answer_coverage_with_provenance(
         item.get("status") == "covered" for item in reconciled
     )
     result["summary"] = coverage_summary(reconciled)
+    return result
+
+
+_COVERAGE_CODE_TERMS = {
+    "code",
+    "codigo",
+    "excerpt",
+    "excerpts",
+    "snippet",
+    "snippets",
+    "trecho",
+    "trechos",
+}
+_COVERAGE_RELATION_TERMS = {
+    "call",
+    "calls",
+    "connect",
+    "connection",
+    "flow",
+    "fluxo",
+    "integracao",
+    "integration",
+    "mechanism",
+    "mecanismo",
+    "sequence",
+    "sequencia",
+}
+
+
+def resolve_verified_answer_contract(
+    answer_coverage: dict[str, object],
+    *,
+    answer: str,
+    supported_claims: Iterable[dict[str, object]],
+    sectional_claim_ids: dict[str, set[str]],
+    sectional_code_aspects: set[str] | None = None,
+) -> dict[str, object]:
+    """Resolve coarse model labels with an objective verified-answer contract.
+
+    The semantic auditor remains useful for finding omissions, but a probabilistic
+    ``partial`` label must not veto an answer indefinitely when the server can
+    establish all of the following facts without scientific assumptions:
+
+    * the facet has claims that passed claim-to-source verification;
+    * those claims occur in the generated section assigned to the facet;
+    * a requested code form is visibly present as fenced code; and
+    * a requested relation has more than one verified factual unit.
+
+    This definition is intentionally about satisfying the explicit question, not
+    exhaustively documenting the subsystem.  A real gap, a missing code form, or
+    a relation represented by only one isolated fact remains partial.
+    """
+
+    raw_items = answer_coverage.get("coverage")
+    if not isinstance(raw_items, list):
+        return answer_coverage
+    supported_by_id = {
+        str(claim.get("claim_id", "")): claim
+        for claim in supported_claims
+        if str(claim.get("claim_id", ""))
+        and claim.get("verdict") == "supported"
+    }
+    fenced_code_present = "```" in answer
+    resolved: list[dict[str, object]] = []
+    for raw_item in raw_items:
+        if not isinstance(raw_item, dict):
+            continue
+        item = dict(raw_item)
+        aspect_key = str(item.get("aspect", "")).strip().casefold()
+        raw_claim_ids = item.get("claim_ids")
+        audited_ids = {
+            str(value)
+            for value in raw_claim_ids
+            if str(value) in supported_by_id
+        } if isinstance(raw_claim_ids, list) else set()
+        section_ids = {
+            value
+            for value in sectional_claim_ids.get(aspect_key, set())
+            if value in supported_by_id
+        }
+        contract_ids = audited_ids & section_ids
+        if not contract_ids and item.get("status") != "covered":
+            resolved.append(item)
+            continue
+        normalized_aspect = unicodedata.normalize(
+            "NFKD", aspect_key.replace("_", " ")
+        ).encode("ascii", "ignore").decode("ascii")
+        terms = re.findall(r"[a-z0-9]+", normalized_aspect)
+        requests_code = bool(set(terms) & _COVERAGE_CODE_TERMS)
+        requests_relation = bool(set(terms) & _COVERAGE_RELATION_TERMS)
+        form_satisfied = not requests_code or (
+            fenced_code_present
+            and aspect_key in (sectional_code_aspects or set())
+        )
+        relation_satisfied = not requests_relation or len(contract_ids) >= 2
+        if (
+            item.get("status") in {"partial", "gap"}
+            and contract_ids
+            and form_satisfied
+            and relation_satisfied
+        ):
+            item["status"] = "covered"
+            item["claim_ids"] = sorted(contract_ids)[:12]
+            item["resolution"] = "verified_answer_contract"
+        resolved.append(item)
+    result = dict(answer_coverage)
+    result["coverage"] = resolved
+    result["complete"] = bool(resolved) and all(
+        item.get("status") == "covered" for item in resolved
+    )
+    result["summary"] = coverage_summary(resolved)
+    if result["complete"]:
+        result["resolution"] = "verified_answer_contract"
     return result
 
 

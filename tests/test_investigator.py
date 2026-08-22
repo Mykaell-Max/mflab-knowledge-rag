@@ -16,6 +16,7 @@ from mflab_knowledge.investigator import (
     reconcile_answer_coverage_with_provenance,
     repeated_complete_coverage,
     reserve_chunk_ids_by_aspect,
+    resolve_verified_answer_contract,
     select_graph_frontier_results,
     successful_graph_traversal,
 )
@@ -814,6 +815,124 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertTrue(result["complete"])
         self.assertEqual(result["coverage"][0]["status"], "covered")
+
+    def test_section_provenance_lifts_a_missed_gap_to_partial(self) -> None:
+        result = reconcile_answer_coverage_with_provenance(
+            {
+                "algorithm": "test",
+                "performed": True,
+                "complete": False,
+                "coverage": [
+                    {
+                        "aspect": "domain integration",
+                        "status": "gap",
+                        "claim_ids": [],
+                    }
+                ],
+            },
+            investigation_coverage=[],
+            sources=[{"source_id": "S1", "chunk_id": "domain"}],
+            supported_claims=[
+                {
+                    "claim_id": "C1",
+                    "verdict": "supported",
+                    "source_ids": ["S1"],
+                }
+            ],
+            sectional_claim_ids={"domain integration": {"C1"}},
+        )
+
+        self.assertFalse(result["complete"])
+        self.assertEqual(
+            result["coverage"],
+            [
+                {
+                    "aspect": "domain integration",
+                    "status": "partial",
+                    "claim_ids": ["C1"],
+                }
+            ],
+        )
+
+    def test_verified_contract_resolves_repeated_partial_model_labels(self) -> None:
+        result = resolve_verified_answer_contract(
+            {
+                "performed": True,
+                "complete": False,
+                "coverage": [
+                    {
+                        "aspect": "configuration",
+                        "status": "partial",
+                        "claim_ids": ["C1"],
+                    },
+                    {
+                        "aspect": "runtime flow",
+                        "status": "partial",
+                        "claim_ids": ["C2", "C3"],
+                    },
+                    {
+                        "aspect": "code snippets",
+                        "status": "partial",
+                        "claim_ids": ["C3"],
+                    },
+                ],
+            },
+            answer="Observed flow.\n\n```cpp\nworker.step();\n```",
+            supported_claims=[
+                {"claim_id": "C1", "verdict": "supported"},
+                {"claim_id": "C2", "verdict": "supported"},
+                {"claim_id": "C3", "verdict": "supported"},
+            ],
+            sectional_claim_ids={
+                "configuration": {"C1"},
+                "runtime flow": {"C2", "C3"},
+                "code snippets": {"C3"},
+            },
+            sectional_code_aspects={"code snippets"},
+        )
+
+        self.assertTrue(result["complete"])
+        self.assertEqual(result["resolution"], "verified_answer_contract")
+        self.assertTrue(
+            all(item["status"] == "covered" for item in result["coverage"])
+        )
+
+    def test_verified_contract_keeps_missing_form_and_isolated_flow_partial(
+        self,
+    ) -> None:
+        result = resolve_verified_answer_contract(
+            {
+                "performed": True,
+                "complete": False,
+                "coverage": [
+                    {
+                        "aspect": "runtime flow",
+                        "status": "partial",
+                        "claim_ids": ["C1"],
+                    },
+                    {
+                        "aspect": "code excerpt",
+                        "status": "partial",
+                        "claim_ids": ["C1"],
+                    },
+                ],
+            },
+            answer="One isolated fact [S1].",
+            supported_claims=[
+                {"claim_id": "C1", "verdict": "supported"},
+            ],
+            sectional_claim_ids={
+                "runtime flow": {"C1"},
+                "code excerpt": {"C1"},
+            },
+            sectional_code_aspects=set(),
+        )
+
+        self.assertFalse(result["complete"])
+        self.assertEqual(
+            [item["status"] for item in result["coverage"]],
+            ["partial", "partial"],
+        )
 
     def test_complete_coverage_must_repeat_with_the_same_evidence(self) -> None:
         complete = [

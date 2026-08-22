@@ -488,6 +488,23 @@ da própria afirmação corresponde aos termos específicos da faceta, resolvend
 chamadas transversais sem aceitar proximidade como prova. O `question_span`
 original delimita o que significa cobertura suficiente para rótulos genéricos.
 
+Na 0.44.13, a nota final deixa de depender exclusivamente de uma nova decisão
+probabilística do mesmo modelo. A auditoria semântica continua avaliando cada
+faceta, mas seu rótulo conservador pode ser reconciliado por um contrato
+determinístico: a faceta precisa ter afirmações que passaram pela verificação
+fonte a fonte e que pertencem à seção gerada para ela. Código solicitado deve
+estar cercado e literal na própria seção. Fluxo, integração, conexão ou
+mecanismo precisam de pelo menos duas unidades factuais verificadas, impedindo
+que uma definição isolada seja promovida a explicação. Uma lacuna reconhecida
+pelo modelo pode subir no máximo para parcial pela mera proveniência; somente o
+contrato completo permite `covered`. Esse critério mede atendimento da pergunta
+explícita, não documentação exaustiva do domínio.
+
+Facetas estruturais passam também a reservar até três fontes antes da síntese,
+quando elas existem no pacote autorizado. A mudança é genérica: usa papéis de
+grafo, proveniência seccional, forma pedida e veredictos já auditados, sem nomes
+de repositórios, branches, arquivos, símbolos ou mecanismos científicos.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a
