@@ -173,7 +173,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v5"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v6"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -296,7 +296,8 @@ def _rank_notebook_sources(
         for term, count in term_frequency.items()
         if count >= common_threshold
     }
-    aspect_terms = _notebook_match_terms(aspect) - common_terms
+    raw_aspect_terms = _notebook_match_terms(aspect)
+    aspect_terms = raw_aspect_terms - common_terms
     # Terms repeated throughout the candidate set are weak discriminators for
     # the facet itself, but an explicit subject from the user's question must
     # remain available as a guard. In a repository query, the correct files can
@@ -305,6 +306,10 @@ def _rank_notebook_sources(
     question_terms = _notebook_match_terms(question)
     question_subject_terms = question_terms - _NOTEBOOK_GENERIC_TERMS
     specific_aspect_terms = aspect_terms - _NOTEBOOK_GENERIC_TERMS
+    structural_connection_requested = bool(
+        raw_aspect_terms
+        & {"flow", "integr", "integration", "mechan", "mechanism"}
+    )
 
     ranked: list[tuple[int, int, str]] = []
     for position, (source_id, source_terms) in enumerate(
@@ -335,6 +340,16 @@ def _rank_notebook_sources(
                 + len(specific_overlap) * 4
                 + len(question_overlap) * 2
             )
+        source_kind = str(source_by_id[source_id].get("source_kind", ""))
+        if (
+            score > 0
+            and structural_connection_requested
+            and any(
+                role in source_kind
+                for role in ("callers", "callees", "neighborhood", "related")
+            )
+        ):
+            score += 10
         ranked.append((score, -position, source_id))
     return sorted(ranked, reverse=True)
 
@@ -442,6 +457,12 @@ def _build_evidence_notebook(
             raw_aspects = best_section.get("aspects")
             assert isinstance(raw_aspects, list)
             raw_aspects.append(aspect_record)
+            raw_ids = best_section.get("source_ids")
+            assert isinstance(raw_ids, list)
+            for source_id in source_ids:
+                if source_id not in raw_ids and len(raw_ids) < max_sources_per_section:
+                    raw_ids.append(source_id)
+                    assigned_source_ids.add(source_id)
             continue
 
         # A cross-cutting facet can cite evidence already divided among two or
@@ -4511,6 +4532,10 @@ class RagApiService:
                     else set()
                 )
 
+            coverage_claim_ids_by_aspect = {
+                aspect: set(claim_ids)
+                for aspect, claim_ids in section_claim_ids_by_aspect.items()
+            }
             audited_aspect_coverage: list[dict[str, object]] = []
             coverage_audits_completed = 0
             for aspect_position, aspect_request in enumerate(
@@ -4528,11 +4553,29 @@ class RagApiService:
                     aspect_key,
                     set(),
                 )
-                if section_claim_ids:
+                specific_claim_terms = (
+                    _notebook_match_terms(aspect_request.get("aspect", ""))
+                    - _NOTEBOOK_GENERIC_TERMS
+                )
+                lexical_claim_ids = {
+                    str(claim.get("claim_id", ""))
+                    for claim in supported_claims
+                    if claim.get("claim_id")
+                    and specific_claim_terms.intersection(
+                        _notebook_match_terms(claim.get("claim", ""))
+                    )
+                }
+                scoped_section_claim_ids = section_claim_ids | lexical_claim_ids
+                coverage_claim_ids_by_aspect.setdefault(
+                    aspect_key,
+                    set(),
+                ).update(lexical_claim_ids)
+                if scoped_section_claim_ids:
                     scoped_supported_claims = [
                         claim
                         for claim in supported_claims
-                        if str(claim.get("claim_id", "")) in section_claim_ids
+                        if str(claim.get("claim_id", ""))
+                        in scoped_section_claim_ids
                     ]
                 else:
                     scoped_supported_claims = [
@@ -4598,7 +4641,7 @@ class RagApiService:
                     ),
                     sources=raw_sources,
                     supported_claims=supported_claims,
-                    sectional_claim_ids=section_claim_ids_by_aspect,
+                    sectional_claim_ids=coverage_claim_ids_by_aspect,
                 )
                 record(
                     "verification",

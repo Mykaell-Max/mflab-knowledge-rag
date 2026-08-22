@@ -280,6 +280,26 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("adaptive mesh initialization", value)
         self.assertIn("MeshFactory::createMesh", value)
 
+    def test_notebook_ranking_prioritizes_structural_edges_for_flow(self) -> None:
+        ranked = api._rank_notebook_sources(
+            "runtime flow",
+            "Explain Target runtime flow",
+            {
+                "S1": {
+                    "path": "src/target/state.cpp",
+                    "title": "TargetState",
+                    "source_kind": "agent_search_evidence",
+                },
+                "S2": {
+                    "path": "src/target/driver.cpp",
+                    "title": "Driver::step",
+                    "source_kind": "agent_callers_evidence",
+                },
+            },
+        )
+
+        self.assertEqual(ranked[0][2], "S2")
+
     def test_section_formatter_replaces_headings_but_keeps_code_directives(
         self,
     ) -> None:
@@ -355,7 +375,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v5")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v6")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)

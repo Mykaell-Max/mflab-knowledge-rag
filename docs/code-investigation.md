@@ -480,6 +480,14 @@ instruída a não repetir etapas pertencentes às demais. Consultas e
 identificadores do planejador complementam a pergunta no ranqueamento de
 metadados, oferecendo ponte multilíngue sem vocabulário científico fixo.
 
+Na 0.44.12, relações estruturais recebem prioridade apenas para facetas de
+fluxo, integração e mecanismo, e somente dentro do assunto resolvido pela
+pergunta. Complementos de facetas com a mesma âncora são reunidos na seção. A
+auditoria pode considerar afirmações sustentadas de outra seção quando o texto
+da própria afirmação corresponde aos termos específicos da faceta, resolvendo
+chamadas transversais sem aceitar proximidade como prova. O `question_span`
+original delimita o que significa cobertura suficiente para rótulos genéricos.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

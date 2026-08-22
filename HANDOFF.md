@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.11**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.12**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,28 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.44.11 ampliou novamente a resposta de malha para 4.214 caracteres, dois
+blocos exatos e 15 afirmações sustentadas. O DPM entregou 5.984 caracteres,
+três blocos exatos e 22 afirmações sustentadas. Ambos terminaram em `stop`, sem
+afirmações incertas ou rejeitadas. A organização ficou legível, mas ainda havia
+uma lacuna real de conexão: `initialize()` e `adjust()` apareciam sem chamador
+explícito. No DPM, a afirmação verificada de integração com `Domain::advance`
+nasceu na seção de avanço, enquanto a auditoria consultou apenas as afirmações
+da seção nominal de integração.
+
+A 0.44.12 prioriza evidências de `callers`, `callees`, vizinhança e relações
+quando a faceta pede fluxo, integração ou mecanismo. Complementos descobertos
+por uma faceta que compartilha a mesma âncora passam a ser incorporados à seção,
+em vez de serem descartados no agrupamento. Na auditoria, afirmações sustentadas
+que mencionem termos específicos da faceta podem complementar as afirmações da
+seção correspondente; a origem seccional e a verificação fonte a fonte continuam
+sendo necessárias para impedir promoção por simples proximidade.
+
+O auditor também passa a interpretar `question_span` como o trecho exato da
+pergunta representado por um rótulo amplo. `covered` continua exigindo uma
+afirmação sustentada que responda à faceta, mas não uma descrição exaustiva de
+todo o subsistema quando o usuário pediu somente uma operação localizada.
 
 A 0.44.10 eliminou os cortes por limite: a malha terminou em `stop`, passou de
 1.212 para 2.676 caracteres e conservou um bloco exato; o DPM passou de 4.074
