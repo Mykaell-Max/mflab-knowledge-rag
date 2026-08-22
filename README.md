@@ -121,6 +121,10 @@ Na interface, perguntas são executadas por uma fila local limitada a um worker.
 O navegador acompanha etapas reais de escopo, recuperação, seleção de fontes,
 síntese, auditoria e eventual revisão. Essa trilha não contém prompts, raciocínio
 interno ou texto integral das fontes.
+Depois das fontes, um painel recolhível desenha o subgrafo estrutural realmente
+percorrido. Ele mostra somente travessias concluídas sobre dados persistidos,
+preserva o escopo de cada nó e permite abrir a fonte citada correspondente.
+Hipóteses de busca do modelo não são exibidas como relações.
 As classes `public` e `lab` são o teto padrão do processo, e cada requisição
 pode apenas restringir esse conjunto, nunca ampliá-lo.
 

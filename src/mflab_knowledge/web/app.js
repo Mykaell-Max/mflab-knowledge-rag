@@ -146,6 +146,163 @@ function updateInvestigationToggleLabel() {
     : "Mostrar etapas";
 }
 
+const SVG_NS = "http://www.w3.org/2000/svg";
+
+function svgElement(name, attributes = {}, text = "") {
+  const node = document.createElementNS(SVG_NS, name);
+  Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, String(value)));
+  if (text) node.textContent = text;
+  return node;
+}
+
+function shortGraphText(value, limit) {
+  const text = String(value || "");
+  return text.length <= limit ? text : `${text.slice(0, Math.max(1, limit - 1))}…`;
+}
+
+function graphPositions(nodes, edges) {
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const incoming = new Map(nodes.map((node) => [node.id, 0]));
+  const outgoing = new Map(nodes.map((node) => [node.id, []]));
+  edges.forEach((edge) => {
+    if (!byId.has(edge.source) || !byId.has(edge.target)) return;
+    incoming.set(edge.target, (incoming.get(edge.target) || 0) + 1);
+    outgoing.get(edge.source).push(edge.target);
+  });
+  const level = new Map();
+  const queue = nodes.filter((node) => incoming.get(node.id) === 0).map((node) => node.id);
+  if (!queue.length && nodes.length) queue.push(nodes[0].id);
+  queue.forEach((id) => level.set(id, 0));
+  while (queue.length) {
+    const current = queue.shift();
+    const nextLevel = Math.min(4, (level.get(current) || 0) + 1);
+    (outgoing.get(current) || []).forEach((target) => {
+      if (level.has(target)) return;
+      level.set(target, nextLevel);
+      queue.push(target);
+    });
+  }
+  nodes.forEach((node) => {
+    if (!level.has(node.id)) level.set(node.id, 0);
+  });
+  const columns = new Map();
+  nodes.forEach((node) => {
+    const value = level.get(node.id) || 0;
+    if (!columns.has(value)) columns.set(value, []);
+    columns.get(value).push(node);
+  });
+  const positions = new Map();
+  [...columns.entries()].sort((left, right) => left[0] - right[0]).forEach(([column, values]) => {
+    values.forEach((node, row) => positions.set(node.id, { x: 32 + column * 238, y: 32 + row * 102 }));
+  });
+  return {
+    positions,
+    width: Math.max(720, 64 + (Math.max(...level.values(), 0) + 1) * 238),
+    height: Math.max(230, 64 + Math.max(...[...columns.values()].map((items) => items.length), 1) * 102),
+  };
+}
+
+function renderInvestigationGraph(graph) {
+  const panel = byId("answer-graph");
+  const canvas = byId("answer-graph-canvas");
+  const summary = byId("answer-graph-summary");
+  const nodes = Array.isArray(graph?.nodes) ? graph.nodes : [];
+  const edges = Array.isArray(graph?.edges) ? graph.edges : [];
+  canvas.replaceChildren();
+  if (graph?.status !== "available" || !nodes.length || !edges.length) {
+    panel.classList.add("hidden");
+    panel.open = false;
+    summary.textContent = "";
+    return;
+  }
+
+  const visibleIds = new Set(nodes.map((node) => node.id));
+  const visibleEdges = edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target));
+  const layout = graphPositions(nodes, visibleEdges);
+  const svg = svgElement("svg", {
+    class: "investigation-graph",
+    viewBox: `0 0 ${layout.width} ${layout.height}`,
+    width: layout.width,
+    height: layout.height,
+    role: "img",
+    "aria-label": `${nodes.length} nós e ${visibleEdges.length} relações estruturais`,
+  });
+  const defs = svgElement("defs");
+  const marker = svgElement("marker", {
+    id: "graph-arrow",
+    viewBox: "0 0 10 10",
+    refX: 9,
+    refY: 5,
+    markerWidth: 6,
+    markerHeight: 6,
+    orient: "auto-start-reverse",
+  });
+  marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#0011ad" }));
+  defs.append(marker);
+  svg.append(defs);
+
+  const edgeLabels = { calls: "chama", related: "relacionado", neighbor: "vizinhança" };
+  visibleEdges.forEach((edge) => {
+    const source = layout.positions.get(edge.source);
+    const target = layout.positions.get(edge.target);
+    if (!source || !target) return;
+    const x1 = source.x + 188;
+    const y1 = source.y + 34;
+    const x2 = target.x;
+    const y2 = target.y + 34;
+    const line = svgElement("path", {
+      d: `M ${x1} ${y1} C ${x1 + 28} ${y1}, ${x2 - 28} ${y2}, ${x2} ${y2}`,
+      class: `graph-edge ${edge.kind || "related"}`,
+    });
+    if (edge.directed) line.setAttribute("marker-end", "url(#graph-arrow)");
+    svg.append(line);
+    svg.append(svgElement(
+      "text",
+      { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 5, class: "graph-edge-label" },
+      edgeLabels[edge.kind] || edge.kind || "relação",
+    ));
+  });
+
+  nodes.forEach((node) => {
+    const position = layout.positions.get(node.id);
+    if (!position) return;
+    const linked = Boolean(node.source_id);
+    const group = svgElement("g", {
+      class: `graph-node${linked ? " linked" : ""}`,
+      transform: `translate(${position.x} ${position.y})`,
+      role: linked ? "link" : "group",
+      "aria-label": [node.label, node.project, node.branch].filter(Boolean).join(", "),
+    });
+    group.append(svgElement("rect", { width: 188, height: 68, rx: 4 }));
+    group.append(svgElement("text", { x: 10, y: 20, class: "graph-node-title" }, shortGraphText(node.label, 25)));
+    group.append(svgElement("text", { x: 10, y: 39, class: "graph-node-path" }, shortGraphText(node.path, 34)));
+    group.append(svgElement(
+      "text",
+      { x: 10, y: 56, class: "graph-node-scope" },
+      shortGraphText([node.project, node.branch].filter(Boolean).join(" · "), 32),
+    ));
+    if (linked) {
+      group.tabIndex = 0;
+      const openSource = () => {
+        const source = document.getElementById(`source-${node.source_id}`);
+        if (source) {
+          source.scrollIntoView({ behavior: "smooth", block: "center" });
+          source.focus({ preventScroll: true });
+        }
+      };
+      group.addEventListener("click", openSource);
+      group.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") openSource();
+      });
+    }
+    svg.append(group);
+  });
+  canvas.append(svg);
+  summary.textContent = `${formatNumber(nodes.length)} nós · ${formatNumber(visibleEdges.length)} relações`;
+  panel.classList.remove("hidden");
+  panel.open = true;
+}
+
 async function runAskJob(payload) {
   const created = await api("/ui-api/ask-jobs", {
     method: "POST",
@@ -682,6 +839,7 @@ async function submitAsk(event) {
   card.replaceChildren();
   sources.replaceChildren();
   renderInvestigation([]);
+  renderInvestigationGraph(null);
   if (submit) submit.disabled = true;
   const payload = {
     query: byId("ask-query").value.trim(),
@@ -722,6 +880,7 @@ async function submitAsk(event) {
     card.append(footer);
     card.classList.remove("hidden");
     (response.sources || []).forEach((source) => sources.append(resultCard(source, source.source_id)));
+    renderInvestigationGraph(response.investigation_graph);
   } catch (error) {
     feedback.textContent = error.message;
   } finally {

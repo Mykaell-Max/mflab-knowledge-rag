@@ -1725,6 +1725,19 @@ class ApiServiceTests(unittest.TestCase):
             ],
             ["src/driver.cpp", "src/helper.cpp"],
         )
+        self.assertEqual(context["investigation_graph"]["status"], "available")
+        self.assertGreaterEqual(context["investigation_graph"]["edge_count"], 2)
+        self.assertTrue(
+            {
+                ("chunk:caller", "chunk:observed", "calls"),
+                ("chunk:observed", "chunk:callee", "calls"),
+            }.issubset(
+                {
+                    (edge["source"], edge["target"], edge["kind"])
+                    for edge in context["investigation_graph"]["edges"]
+                }
+            )
+        )
 
     def test_ask_audits_long_answers_in_bounded_batches(self) -> None:
         answer = "\n\n".join(

@@ -283,7 +283,8 @@ gerador não recebe autorização para reconstruir código ausente das fontes.
 
 A resposta inclui `answer`, `answer_completeness`, `answer_coverage`, `citations_used`,
 `invalid_citations`, `sources`, `scopes`, `citation_coverage`,
-`scope_citation_coverage`, `verification` e `investigation`.
+`scope_citation_coverage`, `verification`, `investigation` e
+`investigation_graph`.
 `answer_completeness` vale `complete` somente quando todas as afirmações finais
 passaram na auditoria e cada aspecto obrigatório ancorado no texto da pergunta
 foi atendido por essas afirmações. Uma poda de sobreafirmações não impede
@@ -309,6 +310,15 @@ individuais (`[S1][S2]`) ou agrupadas estritamente (`[S1, S2]` ou
 combinação projeto/branch/commit; isso não bloqueia uma comparação intencional,
 mas impede que o cliente trate versões distintas como se fossem uma só. O
 texto integral das fontes não é repetido na resposta de `/ask`.
+
+`investigation_graph` contém um subgrafo limitado da investigação atual. Os
+nós preservam projeto, branch, commit, caminho, linhas e o `source_id` quando o
+trecho também aparece nas fontes da resposta. As arestas são criadas somente
+quando uma ferramenta de leitura conclui uma travessia sobre chamadas,
+relações persistidas ou vizinhança estrutural. Consultas sugeridas pelo modelo
+não criam arestas. O payload não contém texto-fonte, aceita no máximo 24 nós e
+36 arestas e informa se houve truncamento. A interface o desenha em SVG num
+painel recolhível e liga nós citados aos cartões correspondentes.
 
 Perguntas complexas podem usar síntese incremental. Nesse caso,
 `context.evidence_notebook` descreve as facetas e fontes autorizadas agrupadas,

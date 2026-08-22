@@ -146,6 +146,29 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 17, 17
 .investigation-step strong { display: block; color: var(--ink); font-size: 0.76rem; line-height: 1.4; }
 .investigation-step p { margin: 0.2rem 0 0; color: var(--muted); font-size: 0.7rem; line-height: 1.45; }
 .investigation-step.current::before { color: #fff; background: var(--accent); }
+.graph-panel { margin-top: 0.9rem; padding: 1.1rem 1.25rem; background: #fff; border: 1px solid var(--line); border-radius: 4px; }
+.graph-heading { display: flex; align-items: center; justify-content: space-between; gap: 1rem; cursor: pointer; list-style: none; }
+.graph-heading::-webkit-details-marker { display: none; }
+.graph-heading:focus-visible { outline: 2px solid var(--accent); outline-offset: 0.35rem; }
+.graph-heading > span:first-child { display: grid; gap: 0.3rem; }
+.graph-heading strong { color: var(--ink); font-size: 0.95rem; }
+.graph-heading small,
+.graph-note { color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
+.graph-summary { color: var(--accent); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.67rem; white-space: nowrap; }
+.graph-canvas { margin-top: 1rem; overflow: auto; background: #fafbfe; border: 1px solid var(--line); border-radius: 3px; }
+.investigation-graph { display: block; min-width: 100%; height: auto; }
+.graph-edge { fill: none; stroke: #aeb7ca; stroke-width: 1.5; }
+.graph-edge.calls { stroke: var(--accent); }
+.graph-edge-label { fill: var(--muted); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 10px; text-anchor: middle; }
+.graph-node { cursor: default; }
+.graph-node.linked { cursor: pointer; }
+.graph-node rect { fill: #fff; stroke: var(--line-strong); stroke-width: 1.2; }
+.graph-node.linked rect { fill: #f5f6ff; stroke: var(--accent); }
+.graph-node:hover rect { stroke: var(--accent); stroke-width: 1.8; }
+.graph-node-title { fill: var(--ink); font-size: 12px; font-weight: 650; }
+.graph-node-path { fill: var(--muted); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 9px; }
+.graph-node-scope { fill: var(--accent); font-size: 9px; }
+.graph-note { margin: 0.75rem 0 0; }
 .result-list { display: grid; gap: 0.75rem; }
 .result-card { padding: 1.1rem; }
 .result-meta { display: flex; flex-wrap: wrap; gap: 0.45rem; margin-bottom: 0.7rem; }

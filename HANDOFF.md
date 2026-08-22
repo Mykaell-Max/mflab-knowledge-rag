@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.13**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.45.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -106,6 +106,8 @@ treinamento.
   `/context` e `/ask`.
 - Interface web integrada em `/ui`, com painel operacional, busca, perguntas e
   fontes, preenchida dinamicamente pela API.
+- Subgrafo recolhível da investigação, montado apenas com travessias estruturais
+  efetivamente executadas e nós vinculados às fontes exibidas.
 - Bind LAN opt-in protegido por chave Bearer forte criada em `.env`; loopback
   continua sendo o padrão e a automação local não precisa distribuir a chave.
 
@@ -251,6 +253,20 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.45.0 expõe na resposta o subgrafo estrutural efetivamente percorrido pela
+investigação. A API registra somente travessias concluídas sobre relações
+persistidas, limita nós e arestas e não converte hipóteses do modelo em
+conexões. A interface desenha esse payload em SVG após as fontes, preserva
+projeto, branch, commit e caminho e permite navegar de um nó citado para o
+cartão da fonte. O painel é recolhível e pode ser capturado remotamente pela
+interface acessada através de um túnel TCP para a API local.
+
+Depois da implantação, executar uma das perguntas aprovadas, conferir se o
+subgrafo mostra apenas conexões observadas e gerar uma captura para a
+apresentação. A captura deve ser substituída no espaço reservado do documento
+de apoio. Relações ausentes não devem ser preenchidas visualmente por
+inferência.
 
 A validação real da 0.44.12 produziu duas respostas longas, citadas e encerradas
 normalmente. O caso de malha teve 4.113 caracteres, 14 afirmações sustentadas,

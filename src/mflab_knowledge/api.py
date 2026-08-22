@@ -77,6 +77,10 @@ from mflab_knowledge.investigator import (
     successful_graph_traversal,
     synthesis_guidance,
 )
+from mflab_knowledge.investigation_graph import (
+    build_investigation_graph,
+    traversal_edges,
+)
 from mflab_knowledge.retrieval import RetrievalPolicy, load_retrieval_policy
 from mflab_knowledge.repository_config import (
     RepositoryCatalog,
@@ -1915,6 +1919,22 @@ class RagApiService:
                 "max_context_characters deve estar entre 1000 e 100000"
             )
         investigation_steps: list[dict[str, object]] = []
+        graph_traversals: list[dict[str, object]] = []
+
+        def record_traversal(
+            tool: str,
+            origin_chunk_id: str,
+            results: list[dict[str, object]],
+            iteration: int | None,
+        ) -> None:
+            graph_traversals.extend(
+                traversal_edges(
+                    tool=tool,
+                    origin_chunk_id=origin_chunk_id,
+                    results=results,
+                    iteration=iteration,
+                )
+            )
 
         def record(
             stage: str,
@@ -2560,6 +2580,12 @@ class RagApiService:
                                 )
                                 for result in fetched:
                                     result["source_kind"] = "agent_neighborhood_evidence"
+                                record_traversal(
+                                    tool,
+                                    str(action["chunk_id"]),
+                                    fetched,
+                                    iteration,
+                                )
                                 iteration_results.extend(fetched)
                         elif tool == "open_related":
                             observation = next(
@@ -2599,6 +2625,12 @@ class RagApiService:
                                     result["source_kind"] = (
                                         "agent_related_evidence"
                                     )
+                                record_traversal(
+                                    tool,
+                                    str(action["chunk_id"]),
+                                    fetched,
+                                    iteration,
+                                )
                                 iteration_results.extend(fetched)
                         elif tool in {"find_callers", "find_callees"}:
                             observation = next(
@@ -2644,6 +2676,12 @@ class RagApiService:
                                     result["source_kind"] = (
                                         f"agent_{direction}_evidence"
                                     )
+                                record_traversal(
+                                    tool,
+                                    str(action["chunk_id"]),
+                                    fetched,
+                                    iteration,
+                                )
                                 known_frontiers = {
                                     str(item.get("chunk_id", ""))
                                     for item in graph_frontier_results
@@ -2786,6 +2824,12 @@ class RagApiService:
                         continue
                     for result in fetched:
                         result["source_kind"] = source_kind
+                    record_traversal(
+                        str(action["tool"]),
+                        str(action["chunk_id"]),
+                        fetched,
+                        MAX_AGENT_ITERATIONS + terminal_round,
+                    )
                     round_results.extend(fetched)
                     completed = {
                         **action,
@@ -3130,6 +3174,22 @@ class RagApiService:
             source["text"] = str(result.get("text", ""))
             sources.append(source)
 
+        graph_results = [
+            result
+            for group in retrievals
+            for result in (
+                group.get("results", [])
+                if isinstance(group.get("results"), list)
+                else []
+            )
+            if isinstance(result, dict)
+        ]
+        investigation_graph = build_investigation_graph(
+            results=graph_results,
+            traversals=graph_traversals,
+            sources=sources,
+        )
+
         instructions = (
             CONTEXT_INSTRUCTIONS
             + exploration_instructions(exploration, sources)
@@ -3194,6 +3254,7 @@ class RagApiService:
                     for result in selected_graph_frontier
                 ],
             },
+            "investigation_graph": investigation_graph,
             "instructions": instructions,
             "source_count": len(sources),
             "retrieved_count": retrieved_count,
@@ -3381,6 +3442,7 @@ class RagApiService:
                     "algorithm": INVESTIGATION_ALGORITHM,
                     "steps": investigation_steps,
                 },
+                "investigation_graph": context.get("investigation_graph"),
                 "context": {
                     "retrieved_count": context["retrieved_count"],
                     "source_count": 0,
@@ -4792,6 +4854,7 @@ class RagApiService:
                 "algorithm": INVESTIGATION_ALGORITHM,
                 "steps": investigation_steps,
             },
+            "investigation_graph": context.get("investigation_graph"),
             "context": {
                 "retrieved_count": context["retrieved_count"],
                 "source_count": context["source_count"],
