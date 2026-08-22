@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.8**. Antes de
+> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.44.9**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -251,6 +251,37 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.44.8 confirmou que a composição global não é adequada ao Qwen 8B deste
+piloto. Ela concluiu em ambos os casos, mas reduziu a malha de 19 para 7
+afirmações sustentadas. No DPM, precisou de três tentativas, terminou por limite,
+produziu sete blocos de código rejeitados e deixou apenas 747 caracteres úteis.
+Uma continuação global apenas ampliaria esse comportamento. O grafo permaneceu
+correto; a regressão ocorreu exclusivamente na reescrita final.
+
+A 0.44.9 retira a composição global do caminho padrão e volta à montagem
+determinística das seções, sem uma chamada que reescreva fatos já apurados. O
+caderno passa a atribuir fontes por aspecto e pelo assunto da pergunta. A
+comparação usa apenas metadados autorizados de caminho, título, formato e tipo
+de fonte; prefixos morfológicos relacionam formas como `configuration` e
+`configure`. Termos presentes na maior parte das fontes são ignorados
+dinamicamente, sem lista de projetos. Um verbo genérico como `configure` não
+pode puxar um subsistema vizinho se esse arquivo não corresponder ao assunto ou
+a um termo específico da faceta.
+
+Lacunas podem reutilizar uma fonte já atribuída a outra seção quando seu caminho
+ou símbolo é o melhor candidato para a faceta. Isso corrige o caso em que fontes
+de `Domain` já existiam no pacote, mas ficavam presas à seção errada. A
+distribuição round-robin de todos os nós restantes foi removida; cada seção
+recebe no máximo um complemento com correspondência real. A regra é genérica e
+não contém projetos, branches, caminhos ou símbolos científicos.
+
+A próxima validação deve observar o caderno antes da nota final. Para uma
+pergunta ampla, as seções precisam representar papéis distintos e não carregar
+componentes incidentais. O critério principal passa a ser a resposta completa:
+se configuração, avanço e integração forem explicados com fontes próprias, a
+arquitetura seccional estará pronta para uma etapa posterior de auditoria e
+complemento localizado, nunca uma reescrita global.
 
 A validação real da 0.44.7 não chegou a avaliar o compositor. O serviço tentou a
 nova etapa nos dois casos, mas o vLLM recusou a soma de fontes reidratadas,

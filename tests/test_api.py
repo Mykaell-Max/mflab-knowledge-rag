@@ -276,7 +276,7 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(used, 600)
         self.assertTrue(truncated)
 
-    def test_evidence_notebook_groups_provenance_and_distributes_graph_nodes(
+    def test_evidence_notebook_groups_provenance_without_incidental_nodes(
         self,
     ) -> None:
         notebook = api._build_evidence_notebook(
@@ -318,14 +318,14 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v2")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v3")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
         sections = notebook["sections"]
         self.assertEqual(len(sections[0]["aspects"]), 3)
         self.assertEqual(len(sections[1]["aspects"]), 3)
-        self.assertIn(
+        self.assertNotIn(
             "S3",
             sections[0]["source_ids"] + sections[1]["source_ids"],
         )
@@ -357,9 +357,76 @@ class ApiServiceTests(unittest.TestCase):
 
         sections = notebook["sections"]
         self.assertEqual(notebook["ready_sections"], 2)
-        self.assertEqual(sections[0]["source_ids"], ["S1", "S3"])
+        self.assertEqual(sections[0]["source_ids"], ["S1"])
         self.assertEqual(sections[1]["source_ids"], ["S2"])
         self.assertEqual(sections[1]["status"], "supporting_context")
+
+    def test_evidence_notebook_assigns_sources_by_aspect_not_round_robin(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "configuration",
+                    "status": "partial",
+                    "chunk_ids": ["target-config"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "particle advancement",
+                    "status": "partial",
+                    "chunk_ids": ["target-advance"],
+                },
+                {
+                    "aspect_id": "A3",
+                    "aspect": "domain integration",
+                    "status": "gap",
+                    "chunk_ids": [],
+                },
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "target-config",
+                    "path": "src/target/configurator.cpp",
+                    "title": "TargetConfigurator::configure",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "target-advance",
+                    "path": "src/target/particle.cpp",
+                    "title": "TargetParticle::advance",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "domain-entry",
+                    "path": "src/domain/domain.cpp",
+                    "title": "Domain::advance",
+                },
+                {
+                    "source_id": "S4",
+                    "chunk_id": "neighbor-config",
+                    "path": "src/neighbor/poisson.cpp",
+                    "title": "Poisson::configure",
+                },
+            ],
+            question=(
+                "Explain Target configuration, particle advancement, "
+                "and domain integration"
+            ),
+        )
+
+        by_aspect = {
+            str(aspect["aspect"]): set(section["source_ids"])
+            for section in notebook["sections"]
+            for aspect in section["aspects"]
+        }
+        self.assertIn("S1", by_aspect["configuration"])
+        self.assertNotIn("S4", by_aspect["configuration"])
+        self.assertIn("S2", by_aspect["particle advancement"])
+        self.assertIn("S3", by_aspect["domain integration"])
+        self.assertNotIn("S4", by_aspect["domain integration"])
 
     def test_evidence_notebook_assigns_gap_to_matching_authorized_context(
         self,
@@ -1771,7 +1838,7 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["usage"]["total_tokens"], 45)
         self.assertEqual(result["finish_reason"], "stop")
 
-    def test_ask_composes_grounded_sections_before_final_audit(self) -> None:
+    def test_ask_preserves_grounded_sections_without_global_rewrite(self) -> None:
         generator = _ComposingGenerator(
             [
                 "## Entry\n\nThe entry is visible [S1].",
@@ -1855,26 +1922,19 @@ class ApiServiceTests(unittest.TestCase):
                 response_depth="detailed",
             )
 
-        self.assertEqual(len(generator.composition_calls), 2)
-        composition = generator.composition_calls[-1]
-        self.assertEqual(composition["sources"], sources)
-        self.assertEqual(
-            [aspect["aspect_id"] for aspect in composition["aspects"]],
-            ["A1", "A2"],
-        )
-        self.assertIn("## Entry", composition["sections"][0]["answer"])
-        self.assertEqual(result["answer"], generator.composed_answer)
+        self.assertEqual(len(generator.composition_calls), 0)
+        self.assertIn("## Entry", result["answer"])
+        self.assertIn("## Advance", result["answer"])
         self.assertTrue(result["context"]["sectional_synthesis"])
-        self.assertTrue(result["context"]["section_composition"])
-        self.assertTrue(result["context"]["section_composition_attempted"])
-        self.assertEqual(result["context"]["section_composition_attempts"], 2)
-        self.assertTrue(result["context"]["section_composition_reduced"])
-        self.assertEqual(
-            result["context"]["section_composition_max_output_tokens"],
-            2048,
+        self.assertFalse(result["context"]["section_composition"])
+        self.assertFalse(result["context"]["section_composition_attempted"])
+        self.assertEqual(result["context"]["section_composition_attempts"], 0)
+        self.assertFalse(result["context"]["section_composition_reduced"])
+        self.assertIsNone(
+            result["context"]["section_composition_max_output_tokens"]
         )
-        self.assertEqual(result["context"]["generation_attempts"], 4)
-        self.assertEqual(result["usage"]["total_tokens"], 60)
+        self.assertEqual(result["context"]["generation_attempts"], 2)
+        self.assertEqual(result["usage"]["total_tokens"], 30)
 
     def test_ask_uses_local_query_planner_for_location_questions(self) -> None:
         generator = _PlanningGenerator()

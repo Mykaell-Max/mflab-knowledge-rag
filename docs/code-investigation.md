@@ -453,6 +453,16 @@ de evidência e os rascunhos; a reserva de saída só cai para 1.536 tokens na
 última tentativa. O pacote original de fontes permanece intacto para o
 sanitizador, a verificação semântica e a auditoria de cobertura posteriores.
 
+A avaliação real mostrou que a reescrita global, mesmo cabendo na janela, perdia
+mais informação do que organizava no modelo local de 8B. Na 0.44.9 ela deixa o
+caminho padrão. As seções fundadas são montadas deterministicamente e cada uma
+recebe fontes ranqueadas contra sua faceta e o assunto da pergunta. A seleção
+usa metadados autorizados, prefixos morfológicos e termos raros no conjunto de
+fontes da própria consulta. Termos genéricos de ciclo de vida não bastam para
+admitir um componente vizinho. Lacunas podem reutilizar a fonte correta de outra
+seção, enquanto a antiga distribuição round-robin de nós incidentais é
+eliminada. A auditoria final permanece inalterada.
+
 A abordagem segue o padrão de decompor uma pergunta ampla em respostas parciais
 fundadas e só depois agregá-las. Ela combina a síntese parcial usada pelo
 GraphRAG, a recuperação iterativa de repositórios explorada pelo RepoCoder e a

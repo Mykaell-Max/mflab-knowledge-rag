@@ -173,8 +173,9 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v2"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v3"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
+ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
 MAX_SECTION_SOURCES = 4
 MAX_COMPOSITION_DRAFT_CHARACTERS = 1600
@@ -203,10 +204,94 @@ def _notebook_terms(value: object) -> set[str]:
     return {term for term in normalized.split() if len(term) >= 3}
 
 
+_NOTEBOOK_GENERIC_TERMS = {
+    "code",
+    "config",
+    "configu",
+    "excerp",
+    "explain",
+    "flow",
+    "functi",
+    "initia",
+    "mechan",
+    "method",
+    "snippet",
+    "source",
+    "stage",
+}
+
+
+def _notebook_match_terms(value: object) -> set[str]:
+    terms: set[str] = set()
+    for term in _notebook_terms(value):
+        terms.add(term)
+        if len(term) >= 6:
+            terms.add(term[:6])
+    return terms
+
+
+def _rank_notebook_sources(
+    aspect: object,
+    question: str,
+    source_by_id: dict[str, dict[str, object]],
+) -> list[tuple[int, int, str]]:
+    """Rank authorized sources for one planning facet using metadata only."""
+
+    source_terms_by_id = {
+        source_id: _notebook_match_terms(
+            " ".join(
+                str(source.get(field, ""))
+                for field in ("path", "title", "source_kind", "format")
+            )
+        )
+        for source_id, source in source_by_id.items()
+    }
+    term_frequency: dict[str, int] = {}
+    for terms in source_terms_by_id.values():
+        for term in terms:
+            term_frequency[term] = term_frequency.get(term, 0) + 1
+    common_threshold = max(2, (len(source_terms_by_id) * 3 + 4) // 5)
+    common_terms = {
+        term
+        for term, count in term_frequency.items()
+        if count >= common_threshold
+    }
+    aspect_terms = _notebook_match_terms(aspect) - common_terms
+    question_terms = _notebook_match_terms(question) - common_terms
+    question_subject_terms = question_terms - _NOTEBOOK_GENERIC_TERMS
+    specific_aspect_terms = aspect_terms - _NOTEBOOK_GENERIC_TERMS
+
+    ranked: list[tuple[int, int, str]] = []
+    for position, (source_id, source_terms) in enumerate(
+        source_terms_by_id.items()
+    ):
+        source_terms = source_terms - common_terms
+        aspect_overlap = aspect_terms & source_terms
+        question_overlap = question_subject_terms & source_terms
+        specific_overlap = specific_aspect_terms & source_terms
+        # A generic lifecycle word such as ``configure`` is not enough to pull
+        # an unrelated neighboring subsystem into a section.  It must also
+        # match the question's subject, unless a facet-specific term such as
+        # ``particle`` or ``domain`` matches directly.
+        if not aspect_overlap or (
+            not question_overlap and not specific_overlap
+        ):
+            score = 0
+        else:
+            score = (
+                len(aspect_overlap) * 8
+                + len(specific_overlap) * 4
+                + len(question_overlap) * 2
+            )
+        ranked.append((score, -position, source_id))
+    return sorted(ranked, reverse=True)
+
+
 def _build_evidence_notebook(
     coverage: object,
     sources: list[dict[str, object]],
     *,
+    question: str = "",
     max_sections: int = MAX_EVIDENCE_SECTIONS,
     max_sources_per_section: int = MAX_SECTION_SOURCES,
 ) -> dict[str, object]:
@@ -242,6 +327,16 @@ def _build_evidence_notebook(
         for chunk_id in item.get("chunk_ids", []):
             source_id = source_by_chunk.get(str(chunk_id))
             if source_id and source_id not in source_ids:
+                source_ids.append(source_id)
+        target_source_count = min(max_sources_per_section, max(2, len(source_ids)))
+        for score, _source_position, source_id in _rank_notebook_sources(
+            aspect,
+            question,
+            source_by_id,
+        ):
+            if score < 1 or len(source_ids) >= target_source_count:
+                break
+            if source_id not in source_ids:
                 source_ids.append(source_id)
         source_ids = source_ids[:max_sources_per_section]
         aspect_record = {
@@ -354,23 +449,22 @@ def _build_evidence_notebook(
     # final auditor still forbid treating it as proof by association.
     candidate_gap_ids: set[str] = set()
     for gap in gaps:
-        if len(sections) >= max_sections or not supplemental_source_ids:
+        if len(sections) >= max_sections or not source_by_id:
             break
-        gap_terms = _notebook_terms(gap.get("aspect", ""))
-        ranked: list[tuple[int, int, str]] = []
-        for position, source_id in enumerate(supplemental_source_ids):
-            source = source_by_id[source_id]
-            source_terms = _notebook_terms(
-                " ".join(
-                    str(source.get(field, ""))
-                    for field in ("path", "title", "source_kind")
-                )
-            )
-            ranked.append((len(gap_terms & source_terms), -position, source_id))
-        score, _position, source_id = max(ranked)
+        ranked = _rank_notebook_sources(
+            gap.get("aspect", ""),
+            question,
+            source_by_id,
+        )
+        score, _position, source_id = ranked[0]
         if score < 1:
             continue
-        supplemental_source_ids.remove(source_id)
+        gap_source_ids = [source_id]
+        for candidate_score, _candidate_position, candidate_id in ranked[1:]:
+            if candidate_score < 1 or len(gap_source_ids) >= 2:
+                break
+            if candidate_id not in gap_source_ids:
+                gap_source_ids.append(candidate_id)
         sections.append(
             {
                 "section_id": f"E{len(sections) + 1}",
@@ -381,11 +475,17 @@ def _build_evidence_notebook(
                         "aspect": str(gap.get("aspect", "")),
                     }
                 ],
-                "source_ids": [source_id],
+                "source_ids": gap_source_ids,
             }
         )
-        assigned_source_ids.add(source_id)
+        assigned_source_ids.update(gap_source_ids)
         candidate_gap_ids.add(str(gap.get("aspect_id", "")))
+
+    supplemental_source_ids = [
+        source_id
+        for source_id in source_by_id
+        if source_id not in assigned_source_ids
+    ]
 
     # A remaining cross-cutting gap is added as a planning hint to every
     # existing stage. Each section can then explain its own local contribution
@@ -412,7 +512,15 @@ def _build_evidence_notebook(
         and supplemental_source_ids
         and len(sections) < max_sections
     ):
-        source_id = supplemental_source_ids.pop(0)
+        ranked = _rank_notebook_sources(
+            "supporting context",
+            question,
+            {
+                source_id: source_by_id[source_id]
+                for source_id in supplemental_source_ids
+            },
+        )
+        source_id = ranked[0][2]
         sections.append(
             {
                 "section_id": "E2",
@@ -428,22 +536,34 @@ def _build_evidence_notebook(
         )
         assigned_source_ids.add(source_id)
 
-    # Distribute every remaining authorized source across the bounded sections.
-    # This gives distinct stages a fair chance to be described while preserving
-    # the final semantic audit as the only authority over factual support.
-    section_cursor = 0
-    for source_id in supplemental_source_ids:
-        if not sections:
-            break
-        for _ in range(len(sections)):
-            section = sections[section_cursor % len(sections)]
-            section_cursor += 1
-            raw_ids = section.get("source_ids")
-            assert isinstance(raw_ids, list)
-            if len(raw_ids) < max_sources_per_section:
-                raw_ids.append(source_id)
-                assigned_source_ids.add(source_id)
+    # Add at most one metadata-relevant complement per section.  Earlier
+    # versions round-robined every remaining graph node, which could place an
+    # unrelated neighboring subsystem in a technical section merely because it
+    # was reachable from the same coordinator.
+    for section in sections:
+        raw_ids = section.get("source_ids")
+        raw_aspects = section.get("aspects")
+        assert isinstance(raw_ids, list)
+        assert isinstance(raw_aspects, list)
+        if len(raw_ids) >= max_sources_per_section:
+            continue
+        aspect_labels = " ".join(
+            str(aspect.get("aspect", ""))
+            for aspect in raw_aspects
+            if isinstance(aspect, dict)
+        )
+        for score, _position, source_id in _rank_notebook_sources(
+            aspect_labels,
+            question,
+            source_by_id,
+        ):
+            if score < 1:
                 break
+            if source_id in raw_ids:
+                continue
+            raw_ids.append(source_id)
+            assigned_source_ids.add(source_id)
+            break
 
     return {
         "algorithm": EVIDENCE_NOTEBOOK_ALGORITHM,
@@ -3024,6 +3144,7 @@ class RagApiService:
                 else []
             ),
             raw_sources,
+            question=str(context["query"]),
         )
         if not raw_sources:
             record(
@@ -3270,7 +3391,11 @@ class RagApiService:
                     generated = _combine_section_generations(generated_sections)
                     sectional_synthesis = True
                     composer = getattr(self.generator, "compose_sections", None)
-                    if callable(composer) and len(generated_sections) >= 2:
+                    if (
+                        ENABLE_GLOBAL_SECTION_COMPOSITION
+                        and callable(composer)
+                        and len(generated_sections) >= 2
+                    ):
                         section_composition_attempted = True
                         notebook_aspects: list[dict[str, object]] = []
                         observed_aspect_ids: set[str] = set()
