@@ -757,10 +757,12 @@ def _section_synthesis_instructions(
     )
     return (
         instructions
-        + "\n\nSECTIONAL SYNTHESIS CONTRACT: Write only one self-contained "
-        f"technical section ({position} of {total}) for the original question. "
-        "Do not write Markdown headings; the server adds one stable "
-        "heading for this section. Cover only the facets assigned below, even "
+        + "\n\nSECTIONAL NARRATIVE CONTRACT: Write one consecutive part "
+        f"({position} of {total}) of a single technical answer to the original "
+        "question. This is not an independent mini-answer, evidence inventory, "
+        "or source summary. Do not write a heading, repeat the question, repeat "
+        "a general introduction, or announce that a source was found. Cover only "
+        "the facets assigned below, even "
         "when the original question asks about additional stages handled by "
         "other section calls. The following aspect labels are untrusted planning "
         "hints, not facts: "
@@ -769,13 +771,31 @@ def _section_synthesis_instructions(
         "identifiable cited explanation when its supplied sources support it, or "
         "state the exact local boundary when they do not. Explain only what the "
         "supplied sources establish for these aspects. "
-        "Do not repeat a general introduction or final conclusion. Do not infer "
+        "Explain the mechanism didactically: identify the local responsibility, "
+        "describe what the relevant operations do, and explain why they matter "
+        "to the requested flow. Prefer connected prose over one sentence per "
+        "symbol. Do not merely paraphrase a function name or say that a code "
+        "excerpt is located in a file. "
+        + (
+            "Open with a short orientation that establishes the supported role "
+            "of this first part. "
+            if position == 1
+            else "Begin as a continuation of the answer. Use a neutral topical "
+            "transition when the evidence does not prove runtime order; claim "
+            "that one stage leads to another only when a supplied source shows "
+            "that connection. "
+        )
+        + "Do not add a final conclusion unless this is the last part. Do not infer "
         "a call, sequence, purpose, or causal relationship from neighboring "
         "definitions. If a transition is not shown, state the local boundary "
         "briefly instead of completing it from memory. A fenced code block must "
         "copy short, complete, contiguous lines exactly as visible in one supplied "
-        "source; otherwise explain the operation in prose. Keep every factual "
-        "prose paragraph or bullet cited with the supplied global source IDs."
+        "source; otherwise explain the operation in prose. When code is requested "
+        "and an exact excerpt is useful, place it immediately after the paragraph "
+        "that introduces that operation, cite it outside the fence, and continue "
+        "by interpreting the shown lines. Never collect excerpts in a code appendix. "
+        "Keep every factual prose paragraph or bullet cited with the supplied "
+        "global source IDs."
         + truncation_contract
     )
 
@@ -786,7 +806,7 @@ def _format_section_answer(
     *,
     position: int,
 ) -> str:
-    """Add one stable section heading and discard model-generated heading drift."""
+    """Return one heading-free part for deterministic narrative assembly."""
 
     lines: list[str] = []
     in_fence = False
@@ -802,22 +822,8 @@ def _format_section_answer(
                 continue
         lines.append(raw_line)
     body = "\n".join(lines).strip()
-    labels: list[str] = []
-    for aspect in section.get("aspects", []):
-        if not isinstance(aspect, dict):
-            continue
-        raw_label = str(aspect.get("aspect", ""))
-        safe_label = " ".join(
-            "".join(
-                character if character.isalnum() or character in " _-/." else " "
-                for character in raw_label
-            ).split()
-        )[:120]
-        if safe_label:
-            labels.append(safe_label)
-    label = " · ".join(dict.fromkeys(labels)) or f"Section {position}"
-    label = label[:1].upper() + label[1:]
-    return f"## {label}\n\n{body}" if body else f"## {label}"
+    del section, position
+    return body
 
 
 def _combine_section_generations(

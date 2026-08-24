@@ -196,7 +196,7 @@ class VerificationTests(unittest.TestCase):
             "The observed operation advances state [S1].",
         )
 
-    def test_supported_subset_preserves_original_section_headings(self) -> None:
+    def test_supported_subset_drops_fragmenting_section_headings(self) -> None:
         answer = (
             "## Configuration\n\nThe model is configured [S1].\n\n"
             "An unsupported conclusion follows [S1].\n\n"
@@ -230,8 +230,7 @@ class VerificationTests(unittest.TestCase):
 
         self.assertEqual(
             result,
-            "## Configuration\n\nThe model is configured [S1].\n\n"
-            "## Advancement\n\nThe state advances [S2].",
+            "The model is configured [S1].\n\nThe state advances [S2].",
         )
 
     def test_supported_subset_keeps_only_verbatim_code_from_approved_sources(
@@ -267,6 +266,62 @@ class VerificationTests(unittest.TestCase):
         self.assertIn("```cpp\nstate.advance();\n```", str(result))
         self.assertIn("[S1]", str(result))
         self.assertNotIn("invented_call", str(result))
+        self.assertNotIn("Trechos de código citados", str(result))
+        self.assertGreater(
+            str(result).find("```cpp"),
+            str(result).find("The operation advances state"),
+        )
+
+    def test_supported_subset_keeps_code_between_its_explanations(self) -> None:
+        answer = (
+            "The manager prepares the state [S1].\n\n"
+            "```cpp\nstate.prepare();\n```\n\n[S1]\n\n"
+            "The prepared state is then available locally [S1].\n\n"
+            "A broad unsupported conclusion follows [S1]."
+        )
+        result = supported_claim_subset(
+            {
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "The manager prepares the state [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                    },
+                    {
+                        "claim_id": "C2",
+                        "claim": (
+                            "The prepared state is then available locally [S1]."
+                        ),
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                    },
+                    {
+                        "claim_id": "C3",
+                        "claim": "A broad unsupported conclusion follows [S1].",
+                        "verdict": "unsupported",
+                        "source_ids": [],
+                    },
+                ]
+            },
+            answer=answer,
+            sources=[
+                {
+                    "source_id": "S1",
+                    "text": "void setup() {\n    state.prepare();\n}",
+                }
+            ],
+        )
+
+        rendered = str(result)
+        self.assertLess(
+            rendered.find("The manager prepares"), rendered.find("```cpp")
+        )
+        self.assertLess(
+            rendered.find("```cpp"), rendered.find("prepared state is then")
+        )
+        self.assertNotIn("unsupported conclusion", rendered)
+        self.assertNotIn("Trechos de código citados", rendered)
 
     def test_supported_subset_keeps_complete_lines_from_a_truncated_source(self) -> None:
         result = supported_claim_subset(

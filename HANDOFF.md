@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.1**. Antes de
+> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.2**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -253,6 +253,28 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.45.2 trata a qualidade narrativa observada nos primeiros testes manuais da
+interface. A investigação encontrava as fontes corretas, mas cada faceta era
+apresentada como uma mini-resposta com título próprio. Quando a auditoria removia
+uma afirmação fraca, o salvamento determinístico também retirava os blocos de
+código de sua posição original e os reunia em um apêndice. Isso produzia texto
+fragmentado, repetições e explicações mais descritivas que didáticas.
+
+As sínteses locais agora são instruídas como partes consecutivas de uma única
+resposta. Elas devem explicar responsabilidade, operação e relevância para o
+fluxo, sem transformar nomes de função em inventário nem anunciar onde um trecho
+foi encontrado. Títulos artificiais de faceta são removidos. Quando a pergunta
+pede código, o trecho literal deve aparecer logo depois do parágrafo que introduz
+a operação e ser interpretado antes da continuação do fluxo.
+
+O salvamento seguro foi alterado sem relaxar a verificação. Afirmações rejeitadas
+continuam sendo removidas, mas as aprovadas voltam aos parágrafos originais e os
+blocos literais autorizados permanecem em sua posição narrativa. A composição
+global continua desabilitada porque a validação da 0.44.8 mostrou regressão com
+o modelo local de 8B. A próxima validação deve repetir as duas perguntas manuais
+pela interface e comparar didática, continuidade, repetição e posição do código,
+sem alterar grafo ou recuperação nesta rodada.
 
 A 0.45.1 torna o subgrafo uma viewport retangular navegável, com pan por
 arraste, zoom pela roda do mouse, controles acessíveis e ajuste integral. O

@@ -19,6 +19,9 @@ _SENTENCE_BOUNDARY = re.compile(
     r"(?:\s+(?=(?:[`*_>(\[]*[A-ZÀ-ÖØ-Þ0-9]))|(?=$))"
 )
 _MARKDOWN_HEADING = re.compile(r"(?m)^#{1,6}[ \t]+[^\r\n]+[ \t]*$")
+_TRAILING_CITATION = re.compile(
+    r"\s*\[\s*S\d+\s*(?:(?:,|;)\s*S\d+\s*)*\]\s*$"
+)
 
 
 def _atomic_factual_units(unit: str) -> list[str]:
@@ -344,21 +347,58 @@ def _line_aligned_code_excerpt(code: str, source_text: str) -> bool:
     return False
 
 
-def _exact_supported_code_blocks(
+def _claim_position(answer: str, claim: str, *, start: int = 0) -> int:
+    """Locate an audited unit even when paragraph citation inheritance added IDs."""
+
+    position = answer.find(claim, start)
+    if position >= 0:
+        return position
+    uncited = _TRAILING_CITATION.sub("", claim).rstrip()
+    return answer.find(uncited, start) if uncited else -1
+
+
+def _ordered_supported_answer(
     answer: str,
-    sources: list[dict[str, object]],
     *,
+    selected: list[str],
+    sources: list[dict[str, object]],
     allowed_source_ids: set[str],
-) -> list[str]:
-    """Keep generated code only when it is verbatim authorized evidence."""
+) -> str:
+    """Preserve narrative and inline-code order while dropping rejected prose.
+
+    The function introduces no prose. Supported sentence-sized claims are grouped
+    back into their original paragraphs. Exact authorized code fences stay at
+    their original position instead of being moved into a generated appendix.
+    """
+
+    events: list[tuple[int, int, str]] = []
+    paragraph_claims: dict[tuple[int, int], list[tuple[int, str]]] = {}
+    search_starts: dict[str, int] = {}
+    for claim in selected:
+        start = search_starts.get(claim, 0)
+        position = _claim_position(answer, claim, start=start)
+        if position < 0:
+            position = len(answer) + len(events)
+            paragraph = (position, position)
+        else:
+            search_starts[claim] = position + 1
+            paragraph_start = answer.rfind("\n\n", 0, position) + 2
+            paragraph_end = answer.find("\n\n", position)
+            if paragraph_end < 0:
+                paragraph_end = len(answer)
+            paragraph = (paragraph_start, paragraph_end)
+        paragraph_claims.setdefault(paragraph, []).append((position, claim))
+
+    for (start, _end), claims in paragraph_claims.items():
+        ordered = [claim for _position, claim in sorted(claims)]
+        events.append((start, 2, " ".join(dict.fromkeys(ordered))))
 
     source_text = {
         str(source.get("source_id", "")): str(source.get("text", ""))
         for source in sources
         if str(source.get("source_id", "")) in allowed_source_ids
     }
-    selected: list[str] = []
-    seen: set[tuple[str, str]] = set()
+    seen_code: set[tuple[str, str]] = set()
     for match in _FENCED_CODE_BLOCK.finditer(answer):
         code = textwrap.dedent(
             match.group("code").replace("\r\n", "\n")
@@ -373,14 +413,36 @@ def _exact_supported_code_blocks(
             ),
             None,
         )
-        if source_id is None or (source_id, code) in seen:
+        if source_id is None or (source_id, code) in seen_code:
             continue
-        seen.add((source_id, code))
-        language = re.sub(r"[^A-Za-z0-9_+.#-]", "", match.group("language"))[:30]
-        selected.append(f"```{language}\n{code}\n```\n\n[{source_id}]")
-        if len(selected) >= 6:
-            break
-    return selected
+        seen_code.add((source_id, code))
+        language = re.sub(
+            r"[^A-Za-z0-9_+.#-]", "", match.group("language")
+        )[:30]
+        events.append(
+            (
+                match.start(),
+                1,
+                f"```{language}\n{code}\n```\n\n[{source_id}]",
+            )
+        )
+
+    if not events:
+        return "\n\n".join(selected)
+
+    headings = list(_MARKDOWN_HEADING.finditer(answer))
+    content_positions = [position for position, _kind, _text in events]
+    for index, heading in enumerate(headings):
+        boundary = headings[index + 1].start() if index + 1 < len(headings) else len(answer)
+        if any(heading.end() <= position < boundary for position in content_positions):
+            events.append((heading.start(), 0, heading.group(0).strip()))
+
+    events.sort(key=lambda item: (item[0], item[1]))
+    output: list[str] = []
+    for _position, _kind, text in events:
+        if text and text not in output:
+            output.append(text)
+    return "\n\n".join(output)
 
 
 def sanitize_fenced_code_blocks(
@@ -449,54 +511,11 @@ def supported_claim_subset(
             selected.append(claim)
     if not selected:
         return None
-    result = "\n\n".join(selected)
-    if answer is not None:
-        # Preserve the original section labels around surviving claims.  The
-        # labels are copied verbatim and remain non-factual presentation
-        # structure; no prose is invented.  Flattening a sectional answer made
-        # a later completeness audit lose which supported statements answered
-        # configuration, advancement, or integration.
-        headings = list(_MARKDOWN_HEADING.finditer(answer))
-        if headings:
-            grouped: list[str] = []
-            retained: set[str] = set()
-            boundaries: list[tuple[str | None, int, int]] = []
-            if headings[0].start() > 0:
-                boundaries.append((None, 0, headings[0].start()))
-            for position, heading in enumerate(headings):
-                end = (
-                    headings[position + 1].start()
-                    if position + 1 < len(headings)
-                    else len(answer)
-                )
-                boundaries.append((heading.group(0).strip(), heading.end(), end))
-            selected_set = set(selected)
-            for heading, start, end in boundaries:
-                section_claims = [
-                    str(claim.get("text", "")).strip()
-                    for claim in claims_for_verification(answer[start:end])
-                    if str(claim.get("text", "")).strip() in selected_set
-                ]
-                section_claims = list(dict.fromkeys(section_claims))
-                if not section_claims:
-                    continue
-                if heading:
-                    grouped.append(heading)
-                grouped.append("\n\n".join(section_claims))
-                retained.update(section_claims)
-            remaining = [claim for claim in selected if claim not in retained]
-            if remaining:
-                grouped.append("\n\n".join(remaining))
-            if grouped:
-                result = "\n\n".join(grouped)
     if answer is not None and sources:
-        code_blocks = _exact_supported_code_blocks(
+        return _ordered_supported_answer(
             answer,
-            sources,
+            selected=selected,
+            sources=sources,
             allowed_source_ids=allowed_source_ids,
         )
-        if code_blocks:
-            result += "\n\n### Trechos de código citados\n\n" + "\n\n".join(
-                code_blocks
-            )
-    return result
+    return "\n\n".join(selected)

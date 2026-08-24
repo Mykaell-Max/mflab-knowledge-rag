@@ -316,7 +316,7 @@ class ApiServiceTests(unittest.TestCase):
             position=1,
         )
 
-        self.assertTrue(answer.startswith("## Runtime advancement"))
+        self.assertTrue(answer.startswith("Observed behavior"))
         self.assertNotIn("Unstable model heading", answer)
         self.assertIn("#include <vector>", answer)
 
@@ -1945,11 +1945,12 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(generator.calls[0]["max_output_tokens"], 3072)
         self.assertEqual(generator.calls[1]["max_output_tokens"], 1536)
         self.assertEqual(generator.calls[2]["max_output_tokens"], 1536)
-        self.assertIn("SECTIONAL SYNTHESIS CONTRACT", generator.calls[0]["instructions"])
+        self.assertIn("SECTIONAL NARRATIVE CONTRACT", generator.calls[0]["instructions"])
         self.assertIn("SECTION CONTINUATION CONTRACT", generator.calls[1]["instructions"])
-        self.assertIn("## Entry point", result["answer"])
+        self.assertNotIn("##", result["answer"])
+        self.assertIn("The entry point", result["answer"])
         self.assertIn("local setup", result["answer"])
-        self.assertIn("## Advancement", result["answer"])
+        self.assertIn("The advancement stage", result["answer"])
         self.assertTrue(result["context"]["sectional_synthesis"])
         self.assertEqual(result["context"]["section_generation_count"], 2)
         self.assertEqual(result["context"]["section_continuation_count"], 2)
@@ -2042,8 +2043,9 @@ class ApiServiceTests(unittest.TestCase):
             )
 
         self.assertEqual(len(generator.composition_calls), 0)
-        self.assertIn("## Entry point", result["answer"])
-        self.assertIn("## Advancement", result["answer"])
+        self.assertNotIn("##", result["answer"])
+        self.assertIn("The entry is visible", result["answer"])
+        self.assertIn("The advance is visible", result["answer"])
         self.assertTrue(result["context"]["sectional_synthesis"])
         self.assertFalse(result["context"]["section_composition"])
         self.assertFalse(result["context"]["section_composition_attempted"])
