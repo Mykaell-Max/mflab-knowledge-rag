@@ -5,6 +5,7 @@ import unittest
 from mflab_knowledge.verification import (
     attach_discovered_citations,
     claims_for_verification,
+    downgrade_callsite_only_claims,
     emit_progress,
     normalize_support_discovery,
     normalize_verification,
@@ -14,6 +15,75 @@ from mflab_knowledge.verification import (
 
 
 class VerificationTests(unittest.TestCase):
+    def test_downgrades_behavior_inferred_from_callsite_only(self) -> None:
+        result = downgrade_callsite_only_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": (
+                            "moveItems() atualiza as posições usando forças [S1]."
+                        ),
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "Aprovado pelo auditor semântico.",
+                    }
+                ],
+                "counts": {
+                    "supported": 1,
+                    "unsupported": 0,
+                    "uncertain": 0,
+                },
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "format": "cpp",
+                    "title": "Manager::advance",
+                    "text": "void Manager::advance() {\n    moveItems();\n}",
+                }
+            ],
+        )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "uncertain")
+        self.assertIn("apenas a chamada", result["claims"][0]["finding"])
+
+    def test_keeps_behavior_supported_by_callable_definition(self) -> None:
+        result = downgrade_callsite_only_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "moveItems() atualiza as posições [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "Definição observada.",
+                    }
+                ],
+                "counts": {
+                    "supported": 1,
+                    "unsupported": 0,
+                    "uncertain": 0,
+                },
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "format": "cpp",
+                    "title": "Manager::moveItems",
+                    "text": "void Manager::moveItems() {\n    position += speed;\n}",
+                }
+            ],
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "supported")
+
     def test_progress_callback_failure_does_not_change_the_event(self) -> None:
         def disconnected(_event: dict[str, object]) -> None:
             raise RuntimeError("client disconnected")

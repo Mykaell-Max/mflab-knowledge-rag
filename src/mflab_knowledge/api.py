@@ -101,6 +101,7 @@ from mflab_knowledge.verification import (
     VERIFICATION_ALGORITHM,
     attach_discovered_citations,
     claims_for_verification,
+    downgrade_callsite_only_claims,
     emit_progress,
     normalize_support_discovery,
     normalize_verification,
@@ -178,7 +179,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v8"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v9"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -323,14 +324,21 @@ def _rank_notebook_sources(
     question: str,
     source_by_id: dict[str, dict[str, object]],
 ) -> list[tuple[int, int, str]]:
-    """Rank authorized sources for one planning facet using metadata only."""
+    """Rank authorized sources using provenance and bounded visible evidence."""
 
     source_terms_by_id = {
         source_id: _notebook_match_terms(
             " ".join(
                 str(source.get(field, ""))
-                for field in ("path", "title", "source_kind", "format")
+                for field in (
+                    "path",
+                    "title",
+                    "source_kind",
+                    "format",
+                    "text",
+                )
             )
+            [:5000]
         )
         for source_id, source in source_by_id.items()
     }
@@ -354,9 +362,8 @@ def _rank_notebook_sources(
     question_terms = _notebook_match_terms(question)
     question_subject_terms = question_terms - _NOTEBOOK_GENERIC_TERMS
     specific_aspect_terms = aspect_terms - _NOTEBOOK_GENERIC_TERMS
-    structural_connection_requested = bool(
-        raw_aspect_terms
-        & {"flow", "integr", "integration", "mechan", "mechanism"}
+    structural_connection_requested = _notebook_needs_structural_context(
+        aspect
     )
 
     ranked: list[tuple[int, int, str]] = []
@@ -444,8 +451,30 @@ def _build_evidence_notebook(
             source_id = source_by_chunk.get(str(chunk_id))
             if source_id and source_id not in source_ids:
                 source_ids.append(source_id)
-        anchor_source_ids = list(source_ids)
         aspect_role = _notebook_aspect_role(aspect)
+        if source_ids and aspect_role == "content":
+            ranked_anchor_candidates = _rank_notebook_sources(
+                aspect,
+                question,
+                source_by_id,
+            )
+            scores_by_source = {
+                source_id: score
+                for score, _source_position, source_id in ranked_anchor_candidates
+            }
+            best_score = max(scores_by_source.values(), default=0)
+            # Coverage chunk IDs are proposed by the local model. Preserve all
+            # ties at the strongest relevance level, but do not let a weak
+            # neighboring utility become a technical stage when a clearly
+            # better authorized source exists for the same facet. If every
+            # source scores zero, retain the observation rather than guessing.
+            if best_score > 0:
+                source_ids = [
+                    source_id
+                    for source_id in source_ids
+                    if scores_by_source.get(source_id, 0) == best_score
+                ]
+        anchor_source_ids = list(source_ids)
         structural_connection_requested = _notebook_needs_structural_context(
             aspect
         )
@@ -463,6 +492,8 @@ def _build_evidence_notebook(
             if source_id not in source_ids:
                 source_ids.append(source_id)
         source_ids = source_ids[:max_sources_per_section]
+        if not anchor_source_ids and source_ids and aspect_role == "content":
+            anchor_source_ids = [source_ids[0]]
         aspect_record = {
             "aspect_id": aspect_id or f"A{position}",
             "aspect": aspect,
@@ -2847,10 +2878,37 @@ class RagApiService:
                 if isinstance(raw_hints, list)
                 else []
             )
+            coverage_chunk_ids = {
+                str(chunk_id)
+                for item in agent_coverage
+                for chunk_id in item.get("chunk_ids", [])
+                if str(chunk_id)
+            }
+            coverage_frontier: list[dict[str, object]] = []
+            if coverage_chunk_ids:
+                for observation in build_observations(retrievals):
+                    if (
+                        str(observation.get("chunk_id", ""))
+                        not in coverage_chunk_ids
+                    ):
+                        continue
+                    coverage_frontier.append(
+                        {
+                            **observation,
+                            "source_kind": "agent_coverage_anchor",
+                            "selected_occurrence": {
+                                "branch": observation.get("branch"),
+                            },
+                        }
+                    )
+            terminal_frontier_candidates = [
+                *coverage_frontier,
+                *graph_frontier_results,
+            ]
             selected_graph_frontier = select_graph_frontier_results(
                 question=query,
                 search_hints=frontier_hints,
-                results=graph_frontier_results,
+                results=terminal_frontier_candidates,
                 limit=8,
             )
             terminal_results: list[dict[str, object]] = []
@@ -4256,6 +4314,10 @@ class RagApiService:
                     raw_audit,
                     claims=unresolved_claims,
                     valid_source_ids=valid_source_ids,
+                )
+                normalized = downgrade_callsite_only_claims(
+                    normalized,
+                    sources=evidence,
                 )
                 raw_findings = normalized.get("claims")
                 if not isinstance(raw_findings, list):

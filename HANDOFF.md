@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.3**. Antes de
+> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.4**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -253,6 +253,24 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.45.4 responde ao teste manual em que a narrativa melhorou, mas uma utilidade
+de tempo foi tratada como inicialização do subsistema e o comportamento interno
+de uma função foi inferido a partir de sua chamada. As propostas de cobertura do
+modelo agora são comparadas com todas as fontes autorizadas da mesma consulta.
+Uma âncora claramente mais fraca deixa de criar uma etapa quando existe outra
+fonte mais alinhada ao assunto e à faceta solicitada. A comparação usa
+vocabulário da pergunta e da evidência visível, sem nomes de projetos, branches,
+arquivos ou mecanismos no motor.
+
+As âncoras mantidas no caderno recebem exploração terminal tanto de vizinhança
+quanto de funções chamadas. Assim, encontrar um coordenador e seu chamador não
+encerra a investigação antes de procurar implementações descendentes. A auditoria
+também ganhou uma regra estrutural determinística: uma chamada isolada prova que
+a operação é invocada, mas não prova seu comportamento interno. Descrições de
+comportamento exigem a definição citada ou permanecem incertas. A validação
+manual deve observar se fontes incidentais desapareceram, se implementações
+descendentes foram recuperadas e se a resposta preservou a sequência solicitada.
 
 A 0.45.3 refina a montagem narrativa sem codificar projetos, branches, símbolos
 ou conceitos científicos no motor. O caderno de evidências passa a distinguir

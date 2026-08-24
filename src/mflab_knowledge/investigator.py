@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v25"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v26"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v6"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
@@ -1067,6 +1067,7 @@ def pending_graph_continuations(
             )
         source_kind = str(result.get("source_kind", ""))
         if source_kind not in {
+            "agent_coverage_anchor",
             "agent_callers_evidence",
             "agent_callees_evidence",
             "agent_terminal_neighborhood_evidence",

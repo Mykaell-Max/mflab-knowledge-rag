@@ -1087,6 +1087,27 @@ class InvestigatorTests(unittest.TestCase):
         self.assertEqual(call_targets[0], "0")
         self.assertEqual(call_targets[-1], "7")
 
+    def test_terminal_continuation_expands_coverage_anchors_downstream(self) -> None:
+        actions = pending_graph_continuations(
+            [
+                {
+                    "chunk_id": "observed-stage",
+                    "source_kind": "agent_coverage_anchor",
+                }
+            ],
+            [],
+            limit=4,
+        )
+
+        self.assertIn(
+            {"tool": "open_neighborhood", "chunk_id": "observed-stage"},
+            actions,
+        )
+        self.assertIn(
+            {"tool": "find_callees", "chunk_id": "observed-stage"},
+            actions,
+        )
+
     def test_relevant_siblings_precede_incidental_path_diversity(self) -> None:
         selected = select_graph_frontier_results(
             question="Explain particle manager configuration and advancement",

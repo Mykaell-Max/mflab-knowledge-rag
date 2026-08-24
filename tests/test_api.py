@@ -375,7 +375,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v8")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v9")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -509,6 +509,38 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(content_owners["particle advancement"], ["E2"])
         self.assertEqual(delivery_owners["mechanism explanation"], ["E1", "E2"])
         self.assertEqual(delivery_owners["code excerpts"], ["E1", "E2"])
+
+    def test_evidence_notebook_replaces_a_weak_model_anchor(self) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "initialization",
+                    "status": "covered",
+                    "chunk_ids": ["timer"],
+                }
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "timer",
+                    "path": "src/util/timer.cpp",
+                    "title": "Timer::initialize",
+                    "text": "void Timer::initialize() { value = 0; }",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "target",
+                    "path": "src/target/manager.cpp",
+                    "title": "TargetManager::initialize",
+                    "text": "void TargetManager::initialize() { target.setup(); }",
+                },
+            ],
+            question="Explain Target initialization",
+        )
+
+        self.assertIn("S2", notebook["sections"][0]["source_ids"])
+        self.assertNotIn("S1", notebook["sections"][0]["source_ids"])
 
     def test_evidence_notebook_assigns_sources_by_aspect_not_round_robin(
         self,

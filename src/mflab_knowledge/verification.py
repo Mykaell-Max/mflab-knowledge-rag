@@ -7,9 +7,9 @@ from collections.abc import Callable
 
 from mflab_knowledge.grounding import citation_ids, factual_units
 
-VERIFICATION_ALGORITHM = "claim_evidence_audit_v4"
+VERIFICATION_ALGORITHM = "claim_evidence_audit_v5"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v24"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v25"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -22,6 +22,21 @@ _MARKDOWN_HEADING = re.compile(r"(?m)^#{1,6}[ \t]+[^\r\n]+[ \t]*$")
 _TRAILING_CITATION = re.compile(
     r"\s*\[\s*S\d+\s*(?:(?:,|;)\s*S\d+\s*)*\]\s*$"
 )
+_CALLABLE_REFERENCE = re.compile(
+    r"(?:\b[A-Za-z_]\w*(?:::|->|\.)?)*\b([A-Za-z_]\w*)\s*\(\s*\)"
+)
+_BEHAVIOR_ASSERTION = re.compile(
+    r"\b(?:calcul|comput|control|gerenc|handle|implement|inicializ|initializ|"
+    r"respons[aá]vel|simul|solv|atualiz|updat)\w*\b",
+    re.IGNORECASE,
+)
+_CODE_FORMATS = {
+    "c",
+    "cpp",
+    "cpp_header",
+    "fortran",
+    "python",
+}
 
 
 def _atomic_factual_units(unit: str) -> list[str]:
@@ -210,6 +225,104 @@ def normalize_verification(
         "passed": passed,
         "claims": findings,
         "counts": counts,
+    }
+
+
+def _source_defines_callable(source: dict[str, object], name: str) -> bool:
+    title = str(source.get("title", ""))
+    if re.search(rf"(?:^|::|\.){re.escape(name)}$", title.strip()):
+        return True
+    text = str(source.get("text", ""))
+    escaped = re.escape(name)
+    definitions = (
+        rf"(?mi)^\s*(?:def|function|subroutine)\s+{escaped}\s*\(",
+        rf"(?ms)^\s*(?!if\b|for\b|while\b|switch\b|return\b)"
+        rf"(?:[A-Za-z_]\w*(?:::\w+)*(?:\s*[*&]+)?\s+)+"
+        rf"(?:(?:[A-Za-z_]\w*)::)*{escaped}\s*\([^;{{}}]*\)"
+        rf"\s*(?:const\s*)?(?:noexcept\s*)?\{{",
+    )
+    return any(re.search(pattern, text) for pattern in definitions)
+
+
+def downgrade_callsite_only_claims(
+    verification: dict[str, object],
+    *,
+    sources: list[dict[str, object]],
+) -> dict[str, object]:
+    """Reject behavioral descriptions supported only by a function call site.
+
+    The semantic auditor remains authoritative for prose and scientific
+    meaning. This narrow deterministic guard handles one structural invariant:
+    seeing ``operation()`` called does not reveal what ``operation`` implements.
+    A code definition or a source whose symbol title names that callable is
+    required before a behavioral claim can remain supported.
+    """
+
+    raw_findings = verification.get("claims")
+    if not isinstance(raw_findings, list):
+        return verification
+    source_by_id = {
+        str(source.get("source_id", "")): source
+        for source in sources
+        if str(source.get("source_id", ""))
+    }
+    findings: list[dict[str, object]] = []
+    for raw_finding in raw_findings:
+        if not isinstance(raw_finding, dict):
+            continue
+        finding = dict(raw_finding)
+        claim = str(finding.get("claim", ""))
+        if (
+            finding.get("verdict") != "supported"
+            or not _BEHAVIOR_ASSERTION.search(claim)
+        ):
+            findings.append(finding)
+            continue
+        callable_names = list(dict.fromkeys(_CALLABLE_REFERENCE.findall(claim)))
+        cited_sources = [
+            source_by_id[str(source_id)]
+            for source_id in finding.get("source_ids", [])
+            if str(source_id) in source_by_id
+            and str(source_by_id[str(source_id)].get("format", ""))
+            in _CODE_FORMATS
+        ]
+        unsupported_callable = next(
+            (
+                name
+                for name in callable_names
+                if any(
+                    re.search(
+                        rf"\b{re.escape(name)}\s*\(",
+                        str(source.get("text", "")),
+                    )
+                    for source in cited_sources
+                )
+                and not any(
+                    _source_defines_callable(source, name)
+                    for source in cited_sources
+                )
+            ),
+            None,
+        )
+        if unsupported_callable is not None:
+            finding["verdict"] = "uncertain"
+            finding["finding"] = (
+                f"A fonte citada mostra apenas a chamada de {unsupported_callable}(), "
+                "não sua implementação."
+            )
+        findings.append(finding)
+    counts = {
+        verdict: sum(item.get("verdict") == verdict for item in findings)
+        for verdict in ("supported", "unsupported", "uncertain")
+    }
+    return {
+        **verification,
+        "algorithm": VERIFICATION_ALGORITHM,
+        "claims": findings,
+        "counts": counts,
+        "passed": bool(findings)
+        and counts["unsupported"] == 0
+        and counts["uncertain"] == 0,
     }
 
 
