@@ -908,7 +908,11 @@ def _section_synthesis_instructions(
         + "Do not add a final conclusion unless this is the last part. Do not infer "
         "a call, sequence, purpose, or causal relationship from neighboring "
         "definitions. If a transition is not shown, state the local boundary "
-        "briefly instead of completing it from memory. A fenced code block must "
+        "briefly instead of completing it from memory. A file path establishes "
+        "where evidence was found, not what a generic setting means. A configuration "
+        "record directly establishes its visible keys and values; assign those "
+        "settings to a subsystem, object, or runtime stage only when the supplied "
+        "content explicitly makes that connection. A fenced code block must "
         "copy short, complete, contiguous lines exactly as visible in one supplied "
         "source; otherwise explain the operation in prose. When code is requested "
         "and an exact excerpt is useful, place it immediately after the paragraph "
@@ -3005,7 +3009,11 @@ class RagApiService:
                             graph_frontier_results.append(dict(result))
                             known_frontiers.add(frontier_id)
                 if not round_results:
-                    break
+                    # A valid call lookup can return no resolved edges. Keep
+                    # the bounded terminal loop alive so the next round may
+                    # read local neighborhoods after those call actions have
+                    # been recorded, instead of abandoning the anchor.
+                    continue
                 terminal_rounds_completed = terminal_round
                 terminal_results.extend(round_results)
                 retrievals.insert(

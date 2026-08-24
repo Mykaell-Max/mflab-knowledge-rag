@@ -370,6 +370,120 @@ class SemanticMapTests(unittest.TestCase):
         self.assertEqual(call["target_kind"], "symbol_receiver_hint")
         self.assertEqual(call["target_document_id"], "first")
 
+    def test_resolves_unqualified_member_call_to_same_owner(self) -> None:
+        documents = [
+            _document("manager", "src/manager.cpp", "cpp"),
+            _document("other", "src/other.cpp", "cpp"),
+        ]
+        chunks = [
+            _chunk(
+                "manager-run",
+                "manager",
+                title="Manager::run",
+                kind="function",
+                line_start=1,
+                line_end=3,
+                text="void Manager::run() { step(); }",
+            ),
+            _chunk(
+                "manager-step",
+                "manager",
+                title="Manager::step",
+                kind="function",
+                line_start=5,
+                line_end=6,
+                text="void Manager::step() {}",
+            ),
+            _chunk(
+                "other-step",
+                "other",
+                title="Other::step",
+                kind="function",
+                line_start=1,
+                line_end=2,
+                text="void Other::step() {}",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = build_semantic_map(
+                documents=documents,
+                chunks=chunks,
+                output_dir=Path(temporary),
+            )
+            relations = [
+                json.loads(line)
+                for line in Path(str(result["relations"])).read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        call = next(
+            item
+            for item in relations
+            if item["kind"] == "calls_symbol" and item["target_name"] == "step"
+        )
+        self.assertEqual(call["target_kind"], "symbol_same_owner")
+        self.assertEqual(call["target_document_id"], "manager")
+
+    def test_prefers_function_body_over_matching_declaration(self) -> None:
+        documents = [
+            _document("caller", "src/caller.cpp", "cpp"),
+            _document("header", "src/manager.hpp", "cpp_header"),
+            _document("implementation", "src/manager.cpp", "cpp"),
+        ]
+        chunks = [
+            _chunk(
+                "caller-run",
+                "caller",
+                title="Caller::run",
+                kind="function",
+                line_start=1,
+                line_end=3,
+                text="void Caller::run() { Manager::step(); }",
+            ),
+            _chunk(
+                "step-declaration",
+                "header",
+                title="Manager::step",
+                kind="function",
+                line_start=2,
+                line_end=2,
+                text="void step();",
+            ),
+            _chunk(
+                "step-definition",
+                "implementation",
+                title="Manager::step",
+                kind="function",
+                line_start=4,
+                line_end=5,
+                text="void Manager::step() {}",
+            ),
+        ]
+
+        with tempfile.TemporaryDirectory() as temporary:
+            result = build_semantic_map(
+                documents=documents,
+                chunks=chunks,
+                output_dir=Path(temporary),
+            )
+            relations = [
+                json.loads(line)
+                for line in Path(str(result["relations"])).read_text(
+                    encoding="utf-8"
+                ).splitlines()
+            ]
+
+        call = next(
+            item
+            for item in relations
+            if item["kind"] == "calls_symbol"
+            and item["source_document_id"] == "caller"
+        )
+        self.assertEqual(call["target_kind"], "symbol_exact_qualified")
+        self.assertEqual(call["target_document_id"], "implementation")
+
 
 if __name__ == "__main__":
     unittest.main()

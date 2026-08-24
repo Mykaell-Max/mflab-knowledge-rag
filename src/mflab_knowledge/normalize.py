@@ -10,7 +10,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Iterable
 
-from mflab_knowledge.semantic_map import build_semantic_map
+from mflab_knowledge.semantic_map import (
+    SEMANTIC_MAP_ALGORITHM,
+    build_semantic_map,
+)
 
 LogCallback = Callable[[str, str], None]
 ProgressCallback = Callable[[int, int, str], None]
@@ -482,7 +485,8 @@ def normalize_manifest(
     _write_jsonl(documents_path, documents)
     _write_jsonl(chunks_path, chunks)
     logger(
-        f"Construindo mapa estrutural v2 para {len(chunks)} chunks",
+        "Construindo mapa estrutural "
+        f"({SEMANTIC_MAP_ALGORITHM}) para {len(chunks)} chunks",
         "info",
     )
     semantic_map = build_semantic_map(

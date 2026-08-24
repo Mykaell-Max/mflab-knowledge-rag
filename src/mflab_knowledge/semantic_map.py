@@ -9,8 +9,8 @@ from collections import defaultdict
 from pathlib import Path, PurePosixPath
 from typing import Iterable
 
-SEMANTIC_MAP_SCHEMA_VERSION = "0.2"
-SEMANTIC_MAP_ALGORITHM = "deterministic_symbols_relations_v2"
+SEMANTIC_MAP_SCHEMA_VERSION = "0.3"
+SEMANTIC_MAP_ALGORITHM = "deterministic_symbols_relations_v3"
 
 SYMBOL_KINDS = {
     "function",
@@ -137,6 +137,31 @@ def _symbol_name(qualified_name: str) -> str:
     return qualified_name.rsplit("::", 1)[-1].strip()
 
 
+def _symbol_owner(qualified_name: str) -> str:
+    return qualified_name.rsplit("::", 1)[0].strip() if "::" in qualified_name else ""
+
+
+def _is_symbol_definition(
+    chunk: dict[str, object],
+    *,
+    file_format: str,
+) -> bool:
+    """Distinguish C/C++ declarations from bodies using only visible syntax."""
+
+    if (
+        file_format not in {"c", "cpp", "cpp_header"}
+        or str(chunk.get("kind", "")).casefold() != "function"
+    ):
+        return True
+    return any(
+        "{" in line
+        for line in _masked_code_lines(
+            str(chunk.get("text", "")),
+            file_format=file_format,
+        )
+    )
+
+
 def _occurrences_by_scope(
     document: dict[str, object],
 ) -> dict[tuple[str, str], dict[str, object]]:
@@ -260,6 +285,10 @@ def _symbol_records(
                 "name": _symbol_name(qualified_name),
                 "qualified_name": qualified_name,
                 "kind": kind,
+                "is_definition": _is_symbol_definition(
+                    chunk,
+                    file_format=str(document.get("format", "unknown")),
+                ),
                 "line_start": line_start,
                 "line_end": int(chunk.get("line_end") or line_start),
                 "occurrences": document.get("occurrences", []),
@@ -481,6 +510,7 @@ def _candidate_call_symbols(
     raw_target: str,
     *,
     repository_id: str,
+    caller_qualified_name: str,
     symbols_by_name: dict[tuple[str, str], list[dict[str, object]]],
 ) -> tuple[list[dict[str, object]], str]:
     parts = re.split(r"::|->|\.", raw_target)
@@ -497,10 +527,50 @@ def _candidate_call_symbols(
             if str(symbol["qualified_name"]).casefold().endswith(normalized)
         ]
         if exact:
-            return exact, "exact_qualified"
+            definitions = [
+                symbol for symbol in exact if bool(symbol.get("is_definition"))
+            ]
+            return definitions or exact, "exact_qualified"
 
     if len(candidates) == 1:
         return candidates, "unique_name"
+
+    # An unqualified member call inside ``Owner::method`` first refers to the
+    # same owner. This is a language-level structural hint, not a repository
+    # convention. It prevents equally named methods in unrelated classes from
+    # turning a local call into an unresolved edge.
+    if len(parts) == 1:
+        caller_owner = _symbol_owner(caller_qualified_name).casefold()
+        if caller_owner:
+            same_owner = [
+                symbol
+                for symbol in candidates
+                if _symbol_owner(str(symbol["qualified_name"])).casefold()
+                == caller_owner
+            ]
+            if same_owner:
+                definitions = [
+                    symbol
+                    for symbol in same_owner
+                    if bool(symbol.get("is_definition"))
+                ]
+                return definitions or same_owner, "same_owner"
+
+        # A declaration and its definition can occur in different documents.
+        # When every candidate has the same qualified identity, prefer the
+        # body while preserving ambiguity between genuinely different owners.
+        qualified_names = {
+            str(symbol["qualified_name"]).casefold() for symbol in candidates
+        }
+        if len(qualified_names) == 1:
+            definitions = [
+                symbol
+                for symbol in candidates
+                if bool(symbol.get("is_definition"))
+            ]
+            if definitions:
+                return definitions, "definition"
+
     if len(parts) < 2:
         return candidates, "branch_unique"
     receiver_terms = _identifier_terms(" ".join(parts[:-1]))
@@ -521,7 +591,17 @@ def _candidate_call_symbols(
     if highest <= 0:
         return candidates, "branch_unique"
     return (
-        [symbol for score, symbol in ranked if score == highest],
+        (
+            definitions
+            if (
+                definitions := [
+                    symbol
+                    for score, symbol in ranked
+                    if score == highest and bool(symbol.get("is_definition"))
+                ]
+            )
+            else [symbol for score, symbol in ranked if score == highest]
+        ),
         "receiver_hint",
     )
 
@@ -622,6 +702,7 @@ def _call_relations(
                 candidates, resolution = _candidate_call_symbols(
                     raw_target,
                     repository_id=str(source_document["repository_id"]),
+                    caller_qualified_name=str(chunk.get("title") or ""),
                     symbols_by_name=symbols_by_name,
                 )
                 if not candidates:

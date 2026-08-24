@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.4**. Antes de
+> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.5**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -253,6 +253,30 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.45.5 trata a regressão manual em que a resposta permaneceu segura, mas ficou
+mais simples e não abriu as implementações chamadas pelo coordenador. A
+continuação terminal agora prioriza todas as arestas de chamada verificadas do
+lote antes de gastar ações com vizinhanças locais. Quando uma consulta de grafo
+válida não retorna resultados, a rodada seguinte ainda pode ler o contexto
+local, em vez de abandonar a âncora silenciosamente.
+
+O mapa estrutural passou para `deterministic_symbols_relations_v3`. Chamadas de
+membro sem qualificador são associadas primeiro ao proprietário da função
+chamadora, e uma definição é preferida a uma declaração com a mesma identidade
+qualificada. Essas regras são sintáticas e genéricas; não contêm nomes de
+projetos, branches, arquivos, classes ou mecanismos científicos. Como o
+algoritmo do mapa mudou, o teste no servidor requer uma execução incremental de
+`index-all --repository mfsim-ng` antes de reiniciar a API. Documentos, chunks e
+embeddings inalterados continuam reutilizáveis.
+
+A síntese e a auditoria também passaram a separar localização de semântica: o
+caminho de um arquivo não prova o significado nem a propriedade de parâmetros
+genéricos. Uma configuração só pode ser atribuída a um subsistema ou estágio
+quando o próprio conteúdo fornecido estabelece essa ligação. A validação manual
+deve observar se a resposta abre as definições descendentes de operações
+coordenadas, explica o que elas fazem e deixa de interpretar configurações
+incidentais apenas pelo diretório em que aparecem.
 
 A 0.45.4 responde ao teste manual em que a narrativa melhorou, mas uma utilidade
 de tempo foi tratada como inicialização do subsistema e o comportamento interno

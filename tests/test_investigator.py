@@ -1030,12 +1030,12 @@ class InvestigatorTests(unittest.TestCase):
         self.assertEqual(
             actions,
             [
+                {"tool": "find_callees", "chunk_id": "downstream"},
+                {"tool": "find_callees", "chunk_id": "second-hop"},
                 {"tool": "open_neighborhood", "chunk_id": "downstream"},
                 {"tool": "open_neighborhood", "chunk_id": "upstream"},
                 {"tool": "open_neighborhood", "chunk_id": "second-hop"},
                 {"tool": "open_neighborhood", "chunk_id": "lexical"},
-                {"tool": "find_callees", "chunk_id": "downstream"},
-                {"tool": "find_callees", "chunk_id": "second-hop"},
             ],
         )
 
@@ -1054,11 +1054,11 @@ class InvestigatorTests(unittest.TestCase):
             for action in actions
             if action["tool"] == "open_neighborhood"
         ]
-        self.assertEqual(len(neighborhoods), 4)
+        self.assertEqual(len(neighborhoods), 8)
         self.assertEqual(neighborhoods[0], "0")
         self.assertEqual(neighborhoods[-1], "7")
 
-    def test_terminal_continuation_balances_local_and_call_graph_reads(self) -> None:
+    def test_terminal_continuation_expands_all_bounded_call_anchors_first(self) -> None:
         actions = pending_graph_continuations(
             [
                 {
@@ -1073,11 +1073,11 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertEqual(
             sum(action["tool"] == "open_neighborhood" for action in actions),
-            4,
+            0,
         )
         self.assertEqual(
             sum(action["tool"] == "find_callees" for action in actions),
-            4,
+            8,
         )
         call_targets = [
             action["chunk_id"]

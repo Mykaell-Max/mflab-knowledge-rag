@@ -1080,14 +1080,6 @@ def pending_graph_continuations(
         seen_calls.add(chunk_id)
         call_candidates.append({"tool": "find_callees", "chunk_id": chunk_id})
 
-    # Local neighborhoods expose sibling lifecycle methods without requiring a
-    # guessed symbol. Sample the whole ordered frontier, including its tail,
-    # while retaining bounded room for actual call-edge continuation.
-    neighborhood_quota = min(
-        len(neighborhood_candidates),
-        max(1, (limit + 1) // 2),
-    )
-
     def sample(
         candidates: list[dict[str, str]], quota: int
     ) -> list[dict[str, str]]:
@@ -1106,9 +1098,15 @@ def pending_graph_continuations(
             if position in positions
         ]
 
-    selected = sample(neighborhood_candidates, neighborhood_quota)
+    # Verified call edges carry more information about an end-to-end flow than
+    # another local window. Expand every bounded call anchor first. On the next
+    # terminal round these actions are already in ``prior``, so the remaining
+    # budget naturally moves to neighborhoods without permanently starving
+    # them. Earlier half-and-half sampling could display a coordinator in the
+    # final answer while never reading one of the operations it invoked.
+    selected = sample(call_candidates, limit)
     selected.extend(
-        sample(call_candidates, max(0, limit - len(selected)))
+        sample(neighborhood_candidates, max(0, limit - len(selected)))
     )
     return selected[:limit]
 

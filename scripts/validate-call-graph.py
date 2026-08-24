@@ -91,7 +91,9 @@ def main() -> int:
     try:
         summary = _json_object(args.summary)
         if summary.get("algorithm") != SEMANTIC_MAP_ALGORITHM:
-            raise ValueError("o resumo não foi produzido pelo mapa estrutural v2")
+            raise ValueError(
+                "o resumo não foi produzido pelo algoritmo estrutural atual"
+            )
         relation_kinds = summary.get("relation_kinds")
         if not isinstance(relation_kinds, dict) or int(
             relation_kinds.get("calls_symbol") or 0
