@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.2**. Antes de
+> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.3**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -253,6 +253,21 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.45.3 refina a montagem narrativa sem codificar projetos, branches, símbolos
+ou conceitos científicos no motor. O caderno de evidências passa a distinguir
+assuntos técnicos de requisitos de apresentação. Rótulos como explicação do
+mecanismo e trechos de código orientam a forma de todas as etapas pertinentes,
+mas não geram novas seções nem repetem o mesmo assunto.
+
+Cada evidência complementar recebe uma única etapa proprietária. Âncoras
+observadas para uma etapa posterior prevalecem sobre semelhanças genéricas de
+metadados encontradas antes, e contexto sem correspondência positiva deixou de
+ser transformado em uma seção arbitrária. O resultado esperado na interface é
+uma explicação conectada, com menos repetição de funções, menos arquivos
+incidentais e blocos de código associados à etapa que realmente sustentam. A
+próxima validação deve repetir a pergunta detalhada sobre um fluxo completo e
+comparar ordem, continuidade, profundidade e diversidade das fontes.
 
 A 0.45.2 trata a qualidade narrativa observada nos primeiros testes manuais da
 interface. A investigação encontrava as fontes corretas, mas cada faceta era

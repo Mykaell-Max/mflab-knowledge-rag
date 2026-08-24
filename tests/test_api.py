@@ -375,13 +375,20 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v7")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v8")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
         sections = notebook["sections"]
-        self.assertEqual(len(sections[0]["aspects"]), 3)
-        self.assertEqual(len(sections[1]["aspects"]), 3)
+        aspect_owners = {
+            str(aspect["aspect"]): section["section_id"]
+            for section in sections
+            for aspect in section["aspects"]
+        }
+        self.assertEqual(aspect_owners["entry"], "E1")
+        self.assertEqual(aspect_owners["advance"], "E2")
+        self.assertEqual(aspect_owners["combined local behavior"], "E1")
+        self.assertNotIn("missing transition", aspect_owners)
         self.assertNotIn(
             "S3",
             sections[0]["source_ids"] + sections[1]["source_ids"],
@@ -413,10 +420,95 @@ class ApiServiceTests(unittest.TestCase):
         )
 
         sections = notebook["sections"]
-        self.assertEqual(notebook["ready_sections"], 2)
+        self.assertEqual(notebook["ready_sections"], 1)
         self.assertEqual(sections[0]["source_ids"], ["S1"])
-        self.assertEqual(sections[1]["source_ids"], ["S2"])
-        self.assertEqual(sections[1]["status"], "supporting_context")
+
+    def test_evidence_notebook_separates_delivery_from_content_stages(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "configuration",
+                    "status": "covered",
+                    "chunk_ids": ["configure"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "particle advancement",
+                    "status": "covered",
+                    "chunk_ids": ["advance"],
+                },
+                {
+                    "aspect_id": "A3",
+                    "aspect": "mechanism explanation",
+                    "status": "covered",
+                    "chunk_ids": ["configure", "advance"],
+                },
+                {
+                    "aspect_id": "A4",
+                    "aspect": "code excerpts",
+                    "status": "covered",
+                    "chunk_ids": ["configure", "advance"],
+                },
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "configure",
+                    "path": "src/target/configure.cpp",
+                    "title": "Target::configure",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "advance",
+                    "path": "src/target/advance.cpp",
+                    "title": "Target::advance",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "incidental",
+                    "path": "src/time_step.cpp",
+                    "title": "TimeStep::initialize",
+                },
+            ],
+            question="Explain Target configuration and particle advancement",
+        )
+
+        sections = notebook["sections"]
+        self.assertEqual(len(sections), 2)
+        self.assertNotIn(
+            "S3",
+            [
+                source_id
+                for section in sections
+                for source_id in section["source_ids"]
+            ],
+        )
+        source_occurrences = [
+            source_id
+            for section in sections
+            for source_id in section["source_ids"]
+        ]
+        self.assertEqual(source_occurrences.count("S1"), 1)
+        self.assertEqual(source_occurrences.count("S2"), 1)
+        content_owners: dict[str, list[str]] = {}
+        delivery_owners: dict[str, list[str]] = {}
+        for section in sections:
+            for aspect in section["aspects"]:
+                target = (
+                    delivery_owners
+                    if aspect["role"] == "delivery"
+                    else content_owners
+                )
+                target.setdefault(aspect["aspect"], []).append(
+                    section["section_id"]
+                )
+        self.assertEqual(content_owners["configuration"], ["E1"])
+        self.assertEqual(content_owners["particle advancement"], ["E2"])
+        self.assertEqual(delivery_owners["mechanism explanation"], ["E1", "E2"])
+        self.assertEqual(delivery_owners["code excerpts"], ["E1", "E2"])
 
     def test_evidence_notebook_assigns_sources_by_aspect_not_round_robin(
         self,
@@ -587,6 +679,32 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("Text-truncated source IDs: S2", instructions)
         self.assertIn("fully and contiguously visible", instructions)
         self.assertIn("never cross the marker", instructions)
+
+    def test_section_prompt_does_not_turn_delivery_facets_into_topics(self) -> None:
+        instructions = api._section_synthesis_instructions(
+            api.CONTEXT_INSTRUCTIONS,
+            {
+                "section_id": "E1",
+                "aspects": [
+                    {
+                        "aspect_id": "A1",
+                        "aspect": "particle advancement",
+                        "role": "content",
+                    },
+                    {
+                        "aspect_id": "A2",
+                        "aspect": "code excerpts",
+                        "role": "delivery",
+                    },
+                ],
+            },
+            position=1,
+            total=1,
+        )
+
+        self.assertIn("role=content", instructions)
+        self.assertIn("role=delivery", instructions)
+        self.assertIn("never create a separate paragraph", instructions)
 
     def test_context_packing_preserves_distinct_paths_before_repeated_chunks(self) -> None:
         packed, _used, _truncated = api._pack_context_results(

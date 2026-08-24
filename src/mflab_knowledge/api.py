@@ -178,7 +178,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v7"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v8"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -238,6 +238,30 @@ _NOTEBOOK_GENERIC_TERMS = {
     "stage",
 }
 
+_NOTEBOOK_DELIVERY_PREFIXES = (
+    "code",
+    "detail",
+    "excerp",
+    "explan",
+    "flow",
+    "mechan",
+    "snippet",
+    "step",
+)
+
+_NOTEBOOK_STRUCTURAL_TERMS = {
+    "advanc",
+    "advancement",
+    "entry",
+    "flow",
+    "initia",
+    "initialization",
+    "integr",
+    "integration",
+    "mechan",
+    "mechanism",
+}
+
 
 def _notebook_match_terms(value: object) -> set[str]:
     terms: set[str] = set()
@@ -246,6 +270,25 @@ def _notebook_match_terms(value: object) -> set[str]:
         if len(term) >= 6:
             terms.add(term[:6])
     return terms
+
+
+def _notebook_aspect_role(value: object) -> str:
+    """Separate presentation constraints from technical content stages."""
+
+    terms = _notebook_terms(value)
+    return (
+        "delivery"
+        if terms
+        and all(
+            term.startswith(_NOTEBOOK_DELIVERY_PREFIXES)
+            for term in terms
+        )
+        else "content"
+    )
+
+
+def _notebook_needs_structural_context(value: object) -> bool:
+    return bool(_notebook_match_terms(value) & _NOTEBOOK_STRUCTURAL_TERMS)
 
 
 def _notebook_ranking_context(
@@ -402,13 +445,13 @@ def _build_evidence_notebook(
             if source_id and source_id not in source_ids:
                 source_ids.append(source_id)
         anchor_source_ids = list(source_ids)
-        structural_connection_requested = bool(
-            _notebook_match_terms(aspect)
-            & {"flow", "integr", "integration", "mechan", "mechanism"}
+        aspect_role = _notebook_aspect_role(aspect)
+        structural_connection_requested = _notebook_needs_structural_context(
+            aspect
         )
         target_source_count = min(
             max_sources_per_section,
-            max(3 if structural_connection_requested else 2, len(source_ids)),
+            max(3 if structural_connection_requested else 1, len(source_ids)),
         )
         for score, _source_position, source_id in _rank_notebook_sources(
             aspect,
@@ -423,6 +466,7 @@ def _build_evidence_notebook(
         aspect_record = {
             "aspect_id": aspect_id or f"A{position}",
             "aspect": aspect,
+            "role": aspect_role,
             # These IDs include the directly observed anchor plus the first
             # metadata-ranked complement selected specifically for this facet.
             # Later section-wide structural complements are intentionally not
@@ -477,24 +521,48 @@ def _build_evidence_notebook(
                     assigned_source_ids.add(source_id)
             continue
 
-        # A cross-cutting facet can cite evidence already divided among two or
-        # more sections (for example, a request for excerpts from two stages).
-        # Attach it to every overlapping section rather than generating a third
-        # response that repeats both stages.
+        # Delivery facets can apply to several stages without becoming topics.
+        # Content facets have one owner; copying one into every overlapping
+        # section made each generation call repeat the same mechanism.
         if anchor_source_set and anchor_source_set.issubset(
             assigned_anchor_source_ids
         ):
-            for section in sections:
-                existing_ids = {
+            overlapping_sections = [
+                section
+                for section in sections
+                if {
                     str(value)
                     for value in section.get("_anchor_source_ids", [])
                 }
-                if not (existing_ids & anchor_source_set):
-                    continue
+                & anchor_source_set
+            ]
+            owners = (
+                overlapping_sections
+                if aspect_role == "delivery"
+                else sorted(
+                    overlapping_sections,
+                    key=lambda section: len(
+                        {
+                            str(value)
+                            for value in section.get("_anchor_source_ids", [])
+                        }
+                        & anchor_source_set
+                    ),
+                    reverse=True,
+                )[:1]
+            )
+            for section in owners:
                 raw_aspects = section.get("aspects")
                 assert isinstance(raw_aspects, list)
                 if aspect_record not in raw_aspects:
-                    raw_aspects.append(aspect_record)
+                    raw_aspects.append(
+                        {
+                            **aspect_record,
+                            "source_ids": list(
+                                aspect_record.get("source_ids", [])
+                            ),
+                        }
+                    )
             continue
 
         if len(sections) < max_sections:
@@ -538,17 +606,6 @@ def _build_evidence_notebook(
                 }
             )
 
-    # When several facets point at one coordinator, keep a second evidence
-    # window for its surrounding context instead of falling back to one large
-    # generation call.  Final sources have already passed retrieval, ACL, and
-    # scope selection; this split does not claim that the extra source proves a
-    # relationship.  Its section prompt still requires local, cited statements.
-    supplemental_source_ids = [
-        source_id
-        for source_id in source_by_id
-        if source_id not in assigned_source_ids
-    ]
-
     # A gap may already have a strong candidate in the authorized final package
     # even though the iterative ledger did not attach its chunk.  Metadata
     # overlap is used only to assign a bounded reading window; the prompt and
@@ -557,6 +614,8 @@ def _build_evidence_notebook(
     for gap in gaps:
         if len(sections) >= max_sections or not source_by_id:
             break
+        if gap.get("role") == "delivery":
+            continue
         ranked = _rank_notebook_sources(
             gap.get("aspect", ""),
             question,
@@ -579,24 +638,22 @@ def _build_evidence_notebook(
                     {
                         "aspect_id": str(gap.get("aspect_id", "")),
                         "aspect": str(gap.get("aspect", "")),
+                        "role": str(gap.get("role", "content")),
                     }
                 ],
                 "source_ids": gap_source_ids,
+                # Candidate context is the explicit reading window for this
+                # unresolved content facet.  It therefore owns these sources
+                # over generic complements selected for an earlier section.
+                "_anchor_source_ids": list(gap_source_ids),
             }
         )
         assigned_source_ids.update(gap_source_ids)
         candidate_gap_ids.add(str(gap.get("aspect_id", "")))
 
-    supplemental_source_ids = [
-        source_id
-        for source_id in source_by_id
-        if source_id not in assigned_source_ids
-    ]
-
-    # A remaining cross-cutting gap is added as a planning hint to every
-    # existing stage. Each section can then explain its own local contribution
-    # to that facet without a fourth generation call that merely repeats the
-    # same sources. The gap remains a gap until the final semantic audit.
+    # Delivery gaps guide presentation without becoming repeated topics.
+    # Content gaps remain explicit instead of being copied into unrelated
+    # sections merely because the notebook reached its section limit.
     remaining_gaps = [
         gap
         for gap in gaps
@@ -607,40 +664,15 @@ def _build_evidence_notebook(
             raw_aspects = section.get("aspects")
             assert isinstance(raw_aspects, list)
             for gap in remaining_gaps:
+                if gap.get("role") != "delivery":
+                    continue
                 aspect_record = {
                     "aspect_id": str(gap.get("aspect_id", "")),
                     "aspect": str(gap.get("aspect", "")),
+                    "role": "delivery",
                 }
                 if aspect_record not in raw_aspects:
                     raw_aspects.append(aspect_record)
-    if (
-        len(sections) == 1
-        and supplemental_source_ids
-        and len(sections) < max_sections
-    ):
-        ranked = _rank_notebook_sources(
-            "supporting context",
-            question,
-            {
-                source_id: source_by_id[source_id]
-                for source_id in supplemental_source_ids
-            },
-        )
-        source_id = ranked[0][2]
-        sections.append(
-            {
-                "section_id": "E2",
-                "status": "supporting_context",
-                "aspects": [
-                    {
-                        "aspect_id": "context-E2",
-                        "aspect": "supporting context selected for the question",
-                    }
-                ],
-                "source_ids": [source_id],
-            }
-        )
-        assigned_source_ids.add(source_id)
 
     # Add at most one metadata-relevant complement per section.  Earlier
     # versions round-robined every remaining graph node, which could place an
@@ -667,11 +699,63 @@ def _build_evidence_notebook(
                 break
             if source_id in raw_ids:
                 continue
+            if source_id in assigned_source_ids:
+                continue
             raw_ids.append(source_id)
             assigned_source_ids.add(source_id)
             break
 
+    # A complementary source has one narrative owner.  Direct anchors remain
+    # with the stage that observed them, while a metadata-ranked neighbor is
+    # not copied into later sections just because several planning labels share
+    # generic lifecycle words.  Aspect audit scopes are narrowed to the source
+    # IDs actually available to their owning section.
+    anchor_owner: dict[str, str] = {}
     for section in sections:
+        section_id = str(section.get("section_id", ""))
+        for value in section.get("_anchor_source_ids", []):
+            source_id = str(value)
+            if source_id:
+                anchor_owner.setdefault(source_id, section_id)
+
+    source_owner: dict[str, str] = {}
+    for section in sections:
+        section_id = str(section.get("section_id", ""))
+        anchor_ids = {
+            str(value)
+            for value in section.get("_anchor_source_ids", [])
+            if str(value)
+        }
+        raw_ids = section.get("source_ids")
+        assert isinstance(raw_ids, list)
+        kept_ids: list[str] = []
+        for value in raw_ids:
+            source_id = str(value)
+            anchored_elsewhere = anchor_owner.get(source_id)
+            if anchored_elsewhere and anchored_elsewhere != section_id:
+                continue
+            owner = source_owner.get(source_id)
+            if owner is not None and source_id not in anchor_ids:
+                continue
+            source_owner.setdefault(source_id, section_id)
+            if source_id not in kept_ids:
+                kept_ids.append(source_id)
+        section["source_ids"] = kept_ids
+
+        raw_aspects = section.get("aspects")
+        assert isinstance(raw_aspects, list)
+        for raw_aspect in raw_aspects:
+            if not isinstance(raw_aspect, dict):
+                continue
+            raw_aspect_ids = raw_aspect.get("source_ids")
+            if not isinstance(raw_aspect_ids, list):
+                continue
+            local_ids = [
+                str(value)
+                for value in raw_aspect_ids
+                if str(value) in kept_ids
+            ]
+            raw_aspect["source_ids"] = local_ids or list(kept_ids)
         section.pop("_anchor_source_ids", None)
 
     return {
@@ -737,6 +821,7 @@ def _section_synthesis_instructions(
         {
             "aspect_id": str(item.get("aspect_id", "")),
             "aspect": str(item.get("aspect", "")),
+            "role": str(item.get("role", "content")),
         }
         for item in section.get("aspects", [])
         if isinstance(item, dict)
@@ -767,9 +852,13 @@ def _section_synthesis_instructions(
         "other section calls. The following aspect labels are untrusted planning "
         "hints, not facts: "
         + json.dumps(aspects, ensure_ascii=False)
-        + ". Treat those labels as a coverage checklist: give each one a clearly "
-        "identifiable cited explanation when its supplied sources support it, or "
-        "state the exact local boundary when they do not. Explain only what the "
+        + ". Labels with role=content are the exclusive technical subjects of "
+        "this part: give each one a clearly identifiable cited explanation when "
+        "its supplied sources support it, or state the exact local boundary when "
+        "they do not. Labels with role=delivery are presentation requirements "
+        "shared across the answer, such as explaining the mechanism or including "
+        "code. Apply them while discussing the content; never create a separate "
+        "paragraph, stage, or restatement for a delivery label. Explain only what the "
         "supplied sources establish for these aspects. "
         "Explain the mechanism didactically: identify the local responsibility, "
         "describe what the relevant operations do, and explain why they matter "
@@ -4600,7 +4689,18 @@ class RagApiService:
                             aspect_key,
                             set(),
                         ).update(section_claim_ids)
-                        if "```" in section_answer:
+                        aspect_role = str(
+                            raw_aspect.get("role", "content")
+                        )
+                        code_requested = bool(
+                            _notebook_match_terms(aspect_key)
+                            & {"code", "excerp", "excerpt", "snippet"}
+                        )
+                        if (
+                            "```" in section_answer
+                            and aspect_role == "delivery"
+                            and code_requested
+                        ):
                             sectional_code_aspects.add(aspect_key)
 
             def claim_source_ids(claim: dict[str, object]) -> set[str]:
