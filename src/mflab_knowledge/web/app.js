@@ -147,6 +147,10 @@ function updateInvestigationToggleLabel() {
 }
 
 const SVG_NS = "http://www.w3.org/2000/svg";
+const GRAPH_VIEW_WIDTH = 1100;
+const GRAPH_VIEW_HEIGHT = 520;
+const GRAPH_MIN_SCALE = 0.35;
+const GRAPH_MAX_SCALE = 2.6;
 
 function svgElement(name, attributes = {}, text = "") {
   const node = document.createElementNS(SVG_NS, name);
@@ -197,9 +201,92 @@ function graphPositions(nodes, edges) {
   });
   return {
     positions,
-    width: Math.max(720, 64 + (Math.max(...level.values(), 0) + 1) * 238),
-    height: Math.max(230, 64 + Math.max(...[...columns.values()].map((items) => items.length), 1) * 102),
+    width: Math.max(820, 64 + (Math.max(...level.values(), 0) + 1) * 258),
+    height: Math.max(300, 64 + Math.max(...[...columns.values()].map((items) => items.length), 1) * 108),
   };
+}
+
+function bindGraphNavigation(canvas, svg, stage, layout) {
+  const transform = { x: 0, y: 0, scale: 1 };
+  let drag = null;
+
+  function applyTransform() {
+    stage.setAttribute(
+      "transform",
+      `translate(${transform.x} ${transform.y}) scale(${transform.scale})`,
+    );
+  }
+
+  function readableView() {
+    transform.scale = Math.min(1, (GRAPH_VIEW_WIDTH - 72) / layout.width);
+    transform.x = Math.max(28, (GRAPH_VIEW_WIDTH - layout.width * transform.scale) / 2);
+    transform.y = 28;
+    applyTransform();
+  }
+
+  function fitView() {
+    transform.scale = Math.max(
+      GRAPH_MIN_SCALE,
+      Math.min(
+        1,
+        (GRAPH_VIEW_WIDTH - 72) / layout.width,
+        (GRAPH_VIEW_HEIGHT - 72) / layout.height,
+      ),
+    );
+    transform.x = (GRAPH_VIEW_WIDTH - layout.width * transform.scale) / 2;
+    transform.y = (GRAPH_VIEW_HEIGHT - layout.height * transform.scale) / 2;
+    applyTransform();
+  }
+
+  function graphPoint(clientX, clientY) {
+    const bounds = svg.getBoundingClientRect();
+    return {
+      x: (clientX - bounds.left) * GRAPH_VIEW_WIDTH / Math.max(bounds.width, 1),
+      y: (clientY - bounds.top) * GRAPH_VIEW_HEIGHT / Math.max(bounds.height, 1),
+    };
+  }
+
+  function zoomAt(factor, point = { x: GRAPH_VIEW_WIDTH / 2, y: GRAPH_VIEW_HEIGHT / 2 }) {
+    const previous = transform.scale;
+    const next = Math.max(GRAPH_MIN_SCALE, Math.min(GRAPH_MAX_SCALE, previous * factor));
+    const ratio = next / previous;
+    transform.x = point.x - (point.x - transform.x) * ratio;
+    transform.y = point.y - (point.y - transform.y) * ratio;
+    transform.scale = next;
+    applyTransform();
+  }
+
+  canvas.onwheel = (event) => {
+    event.preventDefault();
+    zoomAt(event.deltaY < 0 ? 1.14 : 1 / 1.14, graphPoint(event.clientX, event.clientY));
+  };
+  canvas.onpointerdown = (event) => {
+    if (event.target.closest?.(".graph-node")) return;
+    drag = { pointerId: event.pointerId, x: event.clientX, y: event.clientY };
+    canvas.setPointerCapture(event.pointerId);
+    canvas.classList.add("dragging");
+  };
+  canvas.onpointermove = (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const bounds = svg.getBoundingClientRect();
+    transform.x += (event.clientX - drag.x) * GRAPH_VIEW_WIDTH / Math.max(bounds.width, 1);
+    transform.y += (event.clientY - drag.y) * GRAPH_VIEW_HEIGHT / Math.max(bounds.height, 1);
+    drag.x = event.clientX;
+    drag.y = event.clientY;
+    applyTransform();
+  };
+  const stopDragging = (event) => {
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    drag = null;
+    canvas.classList.remove("dragging");
+  };
+  canvas.onpointerup = stopDragging;
+  canvas.onpointercancel = stopDragging;
+
+  byId("answer-graph-zoom-in").onclick = () => zoomAt(1.2);
+  byId("answer-graph-zoom-out").onclick = () => zoomAt(1 / 1.2);
+  byId("answer-graph-fit").onclick = fitView;
+  readableView();
 }
 
 function renderInvestigationGraph(graph) {
@@ -221,9 +308,8 @@ function renderInvestigationGraph(graph) {
   const layout = graphPositions(nodes, visibleEdges);
   const svg = svgElement("svg", {
     class: "investigation-graph",
-    viewBox: `0 0 ${layout.width} ${layout.height}`,
-    width: layout.width,
-    height: layout.height,
+    viewBox: `0 0 ${GRAPH_VIEW_WIDTH} ${GRAPH_VIEW_HEIGHT}`,
+    preserveAspectRatio: "xMidYMid meet",
     role: "img",
     "aria-label": `${nodes.length} nós e ${visibleEdges.length} relações estruturais`,
   });
@@ -240,6 +326,8 @@ function renderInvestigationGraph(graph) {
   marker.append(svgElement("path", { d: "M 0 0 L 10 5 L 0 10 z", fill: "#0011ad" }));
   defs.append(marker);
   svg.append(defs);
+  const stage = svgElement("g", { class: "graph-stage" });
+  svg.append(stage);
 
   const edgeLabels = { calls: "chama", related: "relacionado", neighbor: "vizinhança" };
   visibleEdges.forEach((edge) => {
@@ -255,8 +343,8 @@ function renderInvestigationGraph(graph) {
       class: `graph-edge ${edge.kind || "related"}`,
     });
     if (edge.directed) line.setAttribute("marker-end", "url(#graph-arrow)");
-    svg.append(line);
-    svg.append(svgElement(
+    stage.append(line);
+    stage.append(svgElement(
       "text",
       { x: (x1 + x2) / 2, y: (y1 + y2) / 2 - 5, class: "graph-edge-label" },
       edgeLabels[edge.kind] || edge.kind || "relação",
@@ -295,9 +383,10 @@ function renderInvestigationGraph(graph) {
         if (event.key === "Enter" || event.key === " ") openSource();
       });
     }
-    svg.append(group);
+    stage.append(group);
   });
   canvas.append(svg);
+  bindGraphNavigation(canvas, svg, stage, layout);
   summary.textContent = `${formatNumber(nodes.length)} nós · ${formatNumber(visibleEdges.length)} relações`;
   panel.classList.remove("hidden");
   panel.open = true;
@@ -731,6 +820,36 @@ function populateFilters(repositories) {
   });
 }
 
+function normalizedScopeText(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLocaleLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+function queryMentionsRepository(query, repository) {
+  const normalizedQuery = ` ${normalizedScopeText(query)} `;
+  return [repository.project, ...(repository.aliases || [])].some((value) => {
+    const candidate = normalizedScopeText(value);
+    return candidate.length > 1 && normalizedQuery.includes(` ${candidate} `);
+  });
+}
+
+function explicitProjectConflict(query, selectedProject) {
+  if (!selectedProject) return "";
+  const mentioned = state.repositories.filter((repository) =>
+    queryMentionsRepository(query, repository)
+  );
+  if (!mentioned.length || mentioned.some((repository) => repository.project === selectedProject)) {
+    return "";
+  }
+  const names = mentioned.map((repository) => repository.project).join(", ");
+  return `A consulta menciona ${names}, mas o filtro está em ${selectedProject}. `
+    + "Corrija o projeto ou escolha Todos para usar o roteamento automático.";
+}
+
 function updateBranches(projectSelectId, branchSelectId) {
   const project = byId(projectSelectId).value;
   const select = byId(branchSelectId);
@@ -807,6 +926,14 @@ async function submitSearch(event) {
   const feedback = byId("search-feedback");
   const results = byId("search-results");
   const submit = event.submitter;
+  const conflict = explicitProjectConflict(
+    byId("search-query").value,
+    byId("search-project").value,
+  );
+  if (conflict) {
+    feedback.textContent = conflict;
+    return;
+  }
   feedback.textContent = "Buscando evidências…";
   results.replaceChildren();
   if (submit) submit.disabled = true;
@@ -834,6 +961,14 @@ async function submitAsk(event) {
   const card = byId("answer-card");
   const sources = byId("answer-sources");
   const submit = event.submitter;
+  const conflict = explicitProjectConflict(
+    byId("ask-query").value,
+    byId("ask-project").value,
+  );
+  if (conflict) {
+    feedback.textContent = conflict;
+    return;
+  }
   feedback.textContent = "Recuperando evidências e elaborando a resposta…";
   card.classList.add("hidden");
   card.replaceChildren();
@@ -841,11 +976,13 @@ async function submitAsk(event) {
   renderInvestigation([]);
   renderInvestigationGraph(null);
   if (submit) submit.disabled = true;
+  const responseDepth = byId("ask-response-depth").value;
   const payload = {
     query: byId("ask-query").value.trim(),
     mode: "hybrid",
-    limit: 10,
-    response_depth: byId("ask-response-depth").value,
+    limit: responseDepth === "detailed" ? 14 : 10,
+    temperature: 0,
+    response_depth: responseDepth,
   };
   if (byId("ask-project").value) payload.project = byId("ask-project").value;
   if (byId("ask-branch").value) payload.branch = byId("ask-branch").value;

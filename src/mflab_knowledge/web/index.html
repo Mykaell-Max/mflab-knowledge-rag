@@ -85,7 +85,15 @@
             </span>
             <span id="answer-graph-summary" class="graph-summary"></span>
           </summary>
-          <div id="answer-graph-canvas" class="graph-canvas" aria-label="Grafo de relações da investigação"></div>
+          <div class="graph-toolbar" aria-label="Controles do grafo">
+            <span>Arraste o fundo para navegar e use a roda do mouse para ampliar.</span>
+            <span class="graph-toolbar-actions">
+              <button id="answer-graph-zoom-out" class="graph-control" type="button" aria-label="Reduzir grafo">−</button>
+              <button id="answer-graph-zoom-in" class="graph-control" type="button" aria-label="Ampliar grafo">+</button>
+              <button id="answer-graph-fit" class="graph-control graph-control-fit" type="button">Ajustar</button>
+            </span>
+          </div>
+          <div id="answer-graph-canvas" class="graph-canvas" aria-label="Grafo de relações da investigação" tabindex="0"></div>
           <p class="graph-note">As conexões exibidas vêm de relações estruturais persistidas. Hipóteses do modelo não são apresentadas como fatos.</p>
         </details>
       </section>

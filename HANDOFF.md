@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **22 de agosto de 2026**, na versão candidata **0.45.0**. Antes de
+> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.1**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -253,6 +253,25 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.45.1 torna o subgrafo uma viewport retangular navegável, com pan por
+arraste, zoom pela roda do mouse, controles acessíveis e ajuste integral. O
+layout inicial preserva o tamanho legível dos nós e deixa o excesso vertical
+para navegação, em vez de condensar todo o grafo. A interface também impede
+silenciosamente que um filtro explícito de projeto contradiga um nome ou alias
+inequívoco citado na pergunta: o usuário precisa corrigir o filtro ou selecionar
+`Todos`. A regra deriva projetos e aliases do catálogo, sem nomes científicos no
+cliente.
+Perguntas feitas pela interface usam temperatura zero; o modo `Detalhada`
+reserva quatorze candidatos, aproximando a execução interativa das condições
+das suítes de investigação sem fixar qualquer conhecimento do corpus.
+
+No servidor do laboratório, os caches de repositórios e do modelo local foram
+migrados para o volume de dados dedicado, mantendo os caminhos consumidos pelos
+serviços por links simbólicos. Antes de considerar a migração encerrada, deve ser
+feito um teste de boot que confirme a montagem do volume, a resolução dos links
+e o retorno do modelo, API e timer. Dependências locais de montagem pertencem a
+drop-ins do `systemd`, não aos templates genéricos versionados.
 
 A 0.45.0 expõe na resposta o subgrafo estrutural efetivamente percorrido pela
 investigação. A API registra somente travessias concluídas sobre relações

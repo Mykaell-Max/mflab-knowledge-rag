@@ -155,8 +155,16 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 17, 17
 .graph-heading small,
 .graph-note { color: var(--muted); font-size: 0.72rem; line-height: 1.5; }
 .graph-summary { color: var(--accent); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.67rem; white-space: nowrap; }
-.graph-canvas { margin-top: 1rem; overflow: auto; background: #fafbfe; border: 1px solid var(--line); border-radius: 3px; }
-.investigation-graph { display: block; min-width: 100%; height: auto; }
+.graph-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin-top: 1rem; color: var(--muted); font-size: 0.68rem; }
+.graph-toolbar-actions { display: flex; gap: 0.35rem; flex: 0 0 auto; }
+.graph-control { min-width: 2rem; height: 2rem; padding: 0 0.55rem; color: var(--ink); background: #fff; border: 1px solid var(--line-strong); border-radius: 3px; cursor: pointer; font: inherit; font-weight: 700; }
+.graph-control:hover { color: var(--accent); border-color: var(--accent); }
+.graph-control:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.graph-control-fit { min-width: auto; }
+.graph-canvas { height: clamp(360px, 48vw, 540px); margin-top: 0.6rem; overflow: hidden; background: #fafbfe; border: 1px solid var(--line); border-radius: 3px; cursor: grab; touch-action: none; user-select: none; }
+.graph-canvas.dragging { cursor: grabbing; }
+.graph-canvas:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.investigation-graph { display: block; width: 100%; height: 100%; }
 .graph-edge { fill: none; stroke: #aeb7ca; stroke-width: 1.5; }
 .graph-edge.calls { stroke: var(--accent); }
 .graph-edge-label { fill: var(--muted); font-family: ui-monospace, "Cascadia Code", monospace; font-size: 10px; text-anchor: middle; }
@@ -307,6 +315,8 @@ select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(0, 17, 17
   .page-header h1 { font-size: 1.9rem; }
   .investigation-heading { align-items: flex-start; }
   .investigation-heading-meta { align-items: flex-end; flex-direction: column; gap: 0.25rem; }
+  .graph-toolbar { align-items: flex-start; flex-direction: column; gap: 0.55rem; }
+  .graph-canvas { height: 420px; }
   .filter-row { grid-template-columns: 1fr; }
   .query-control { align-items: stretch; flex-direction: column; }
   .form-footer { align-items: stretch; flex-direction: column; }
