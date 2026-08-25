@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **25 de agosto de 2026**, na versão candidata **0.45.9**. Antes de
+> Estado atualizado em **25 de agosto de 2026**, na versão candidata **0.46.0**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -1533,3 +1533,27 @@ Depois da interface demonstrável, a ordem recomendada é:
 - Evitar trabalho operacional manual recorrente. Configurações locais podem
   exigir uma preparação inicial, mas sincronização, indexação, retomada e
   monitoramento devem ser automatizados.
+
+## 13. Estado da investigação narrativa na versão 0.46.0
+
+A filtragem por assunto da 0.45.9 removeu vizinhos incidentais, mas a validação
+real mostrou que fontes localmente corretas ainda podiam ser apresentadas fora
+do fluxo. A resposta começava por uma operação secundária, omitia o coordenador
+que chamava as implementações e podia associar uma afirmação de inicialização a
+uma fonte que mostrava somente limpeza.
+
+Na 0.46.0, arestas `calls_symbol` realmente percorridas são preservadas entre o
+contexto e o caderno de evidências. Quando um chamador e pelo menos dois filhos
+diretos autorizados chegam ao pacote final, eles formam uma seção de fluxo
+verificado. O chamador abre a explicação como coordenador e os filhos são
+percorridos na ordem observada das chamadas. As mesmas fontes deixam de ser
+espalhadas por seções independentes. Configuração e preparação que não pertencem
+a essa linhagem permanecem em sua própria etapa narrativa.
+
+A auditoria também ganhou uma guarda lexical conservadora para operações comuns
+de software. Uma fonte que apenas repete o nome do assunto não pode sustentar
+uma afirmação sobre configurar, inicializar, criar, avançar, limpar, contar,
+transferir ou outra operação reconhecível se nenhuma operação compatível estiver
+visível em seu título, caminho ou conteúdo. A guarda usa somente vocabulário
+genérico de programação e não contém nomes de projetos, branches, símbolos ou
+mecanismos científicos.

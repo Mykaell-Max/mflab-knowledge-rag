@@ -7,9 +7,9 @@ from collections.abc import Callable
 
 from mflab_knowledge.grounding import citation_ids, factual_units
 
-VERIFICATION_ALGORITHM = "claim_evidence_audit_v8"
+VERIFICATION_ALGORITHM = "claim_evidence_audit_v9"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v29"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v30"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -37,6 +37,33 @@ _CODE_FORMATS = {
     "fortran",
     "python",
 }
+
+_OPERATION_FAMILIES = {
+    "configure": ("config",),
+    "initialize": ("initial", "inicial", "setup"),
+    "create": ("creat", "cria", "add", "adicion", "alloc", "aloc"),
+    "advance": ("advanc", "avan", "move", "mov", "step", "passo"),
+    "cleanup": ("cleanup", "clean", "limp", "remove", "remov"),
+    "count": ("count", "contag", "contador"),
+    "transfer": ("transfer", "migr", "send", "envi"),
+    "output": ("output", "write", "save", "grav", "saída"),
+    "load": ("load", "read", "carreg", "leit"),
+    "solve": ("solv", "resolv", "calcul", "comput"),
+    "update": ("updat", "atualiz"),
+}
+
+
+def _operation_families(value: object) -> set[str]:
+    normalized = "".join(
+        character.casefold() if character.isalnum() else " "
+        for character in str(value)
+    )
+    terms = normalized.split()
+    return {
+        family
+        for family, prefixes in _OPERATION_FAMILIES.items()
+        if any(term.startswith(prefix) for term in terms for prefix in prefixes)
+    }
 
 
 def _atomic_factual_units(unit: str) -> list[str]:
@@ -451,6 +478,72 @@ def downgrade_unanchored_subject_claims(
                 "As fontes citadas não vinculam esta afirmação ao assunto "
                 + ", ".join(label for label, _signature in identifiers)
                 + "."
+            )
+        findings.append(finding)
+    counts = {
+        verdict: sum(item.get("verdict") == verdict for item in findings)
+        for verdict in ("supported", "unsupported", "uncertain")
+    }
+    return {
+        **verification,
+        "algorithm": VERIFICATION_ALGORITHM,
+        "claims": findings,
+        "counts": counts,
+        "passed": bool(findings)
+        and counts["unsupported"] == 0
+        and counts["uncertain"] == 0,
+    }
+
+
+def downgrade_operation_mismatch_claims(
+    verification: dict[str, object],
+    *,
+    sources: list[dict[str, object]],
+) -> dict[str, object]:
+    """Reject lifecycle claims supported only by a differently scoped operation.
+
+    A named subsystem appearing in both claim and source is not sufficient when
+    the claim asserts configuration, creation, movement, cleanup, or another
+    concrete software operation. This language-agnostic-ish lexical guard uses
+    generic programming verbs only; it contains no repository, branch, symbol,
+    or scientific vocabulary. The semantic verifier remains authoritative for
+    claims that do not expose a recognizable operation.
+    """
+
+    raw_findings = verification.get("claims")
+    if not isinstance(raw_findings, list):
+        return verification
+    source_by_id = {
+        str(source.get("source_id", "")): source
+        for source in sources
+        if str(source.get("source_id", ""))
+    }
+    findings: list[dict[str, object]] = []
+    for raw_finding in raw_findings:
+        if not isinstance(raw_finding, dict):
+            continue
+        finding = dict(raw_finding)
+        if finding.get("verdict") != "supported":
+            findings.append(finding)
+            continue
+        claim_families = _operation_families(finding.get("claim", ""))
+        if not claim_families:
+            findings.append(finding)
+            continue
+        cited_text = " ".join(
+            " ".join(
+                str(source.get(field, ""))
+                for field in ("path", "title", "text")
+            )
+            for source_id in finding.get("source_ids", [])
+            if (source := source_by_id.get(str(source_id))) is not None
+        )
+        source_families = _operation_families(cited_text)
+        if not (claim_families & source_families):
+            finding["verdict"] = "uncertain"
+            finding["finding"] = (
+                "A afirmação descreve uma operação de software diferente "
+                "das operações visíveis nas fontes citadas."
             )
         findings.append(finding)
     counts = {

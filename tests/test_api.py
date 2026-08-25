@@ -375,7 +375,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v11")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v12")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -706,6 +706,124 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("S1", selected)
         self.assertIn("S2", selected)
         self.assertNotIn("S3", selected)
+
+    def test_evidence_notebook_groups_verified_caller_and_callees_as_flow(self) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "configuration",
+                    "status": "partial",
+                    "chunk_ids": ["configure"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "runtime flow",
+                    "status": "partial",
+                    "chunk_ids": ["move"],
+                },
+                {
+                    "aspect_id": "A3",
+                    "aspect": "item creation",
+                    "status": "partial",
+                    "chunk_ids": ["create"],
+                },
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "configure",
+                    "path": "src/engine.cpp",
+                    "title": "Engine::configure",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "move",
+                    "path": "src/engine.cpp",
+                    "title": "Engine::moveItems",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "create",
+                    "path": "src/engine.cpp",
+                    "title": "Engine::createItems",
+                },
+                {
+                    "source_id": "S4",
+                    "chunk_id": "step",
+                    "path": "src/engine.cpp",
+                    "title": "Engine::step",
+                },
+            ],
+            question="Explain Engine configuration and runtime flow",
+            subject_identifiers=["Engine"],
+            related_chunk_ids=["move", "create"],
+            lineage_edges=[
+                {
+                    "origin_chunk_id": "step",
+                    "target_chunk_id": "create",
+                },
+                {
+                    "origin_chunk_id": "step",
+                    "target_chunk_id": "move",
+                },
+            ],
+        )
+
+        flow = next(
+            section
+            for section in notebook["sections"]
+            if section.get("status") == "verified_flow"
+        )
+        self.assertEqual(flow["source_ids"], ["S4", "S3", "S2"])
+        self.assertEqual(
+            flow["verified_relations"],
+            [
+                {
+                    "origin_source_id": "S4",
+                    "target_source_ids": ["S3", "S2"],
+                    "kind": "calls_symbol",
+                }
+            ],
+        )
+        configuration = next(
+            section
+            for section in notebook["sections"]
+            if any(
+                aspect.get("aspect") == "configuration"
+                for aspect in section["aspects"]
+            )
+        )
+        self.assertEqual(configuration["source_ids"], ["S1"])
+
+    def test_section_prompt_uses_verified_execution_spine(self) -> None:
+        instructions = api._section_synthesis_instructions(
+            "Base instructions.",
+            {
+                "section_id": "E2",
+                "aspects": [
+                    {
+                        "aspect_id": "A2",
+                        "aspect": "runtime flow",
+                        "role": "content",
+                    }
+                ],
+                "verified_relations": [
+                    {
+                        "origin_source_id": "S4",
+                        "target_source_ids": ["S3", "S2"],
+                        "kind": "calls_symbol",
+                    }
+                ],
+            },
+            position=2,
+            total=2,
+            sources=[],
+        )
+
+        self.assertIn("VERIFIED EXECUTION SPINE", instructions)
+        self.assertIn('"origin_source_id": "S4"', instructions)
+        self.assertIn('"target_source_ids": ["S3", "S2"]', instructions)
 
     def test_evidence_notebook_assigns_gap_to_matching_authorized_context(
         self,
@@ -1923,6 +2041,14 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(
             context["agent_investigation"]["lineage_graph_chunk_ids"],
             ["callee"],
+        )
+        self.assertIn(
+            {
+                "origin_chunk_id": "observed",
+                "target_chunk_id": "callee",
+                "kind": "calls_symbol",
+            },
+            context["agent_investigation"]["lineage_edges"],
         )
         self.assertEqual(
             [
@@ -3213,12 +3339,12 @@ class ApiServiceTests(unittest.TestCase):
         generator = _CoverageVerifyingGenerator(
             answers=[
                 "## Configuration\n\nThe runtime configures state [S1].",
-                "## Advancement\n\nThe runtime advances state [S1].",
+                "## Advancement\n\nThe runtime advances state [S2].",
             ],
             audits=[
                 '{"claims":['
                 '{"claim_id":"C1","verdict":"supported","source_ids":["S1"]},'
-                '{"claim_id":"C2","verdict":"supported","source_ids":["S1"]}]}'
+                '{"claim_id":"C2","verdict":"supported","source_ids":["S2"]}]}'
             ],
             coverage_audits=[
                 '{"coverage":[{"aspect_id":"A1","status":"covered",'

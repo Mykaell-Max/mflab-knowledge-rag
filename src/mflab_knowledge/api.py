@@ -104,6 +104,7 @@ from mflab_knowledge.verification import (
     attach_discovered_citations,
     claims_for_verification,
     downgrade_callsite_only_claims,
+    downgrade_operation_mismatch_claims,
     downgrade_unanchored_subject_claims,
     emit_progress,
     normalize_support_discovery,
@@ -183,11 +184,11 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v11"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v12"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
-MAX_SECTION_SOURCES = 4
+MAX_SECTION_SOURCES = 5
 MAX_SECTION_CONTINUATIONS = 2
 MAX_COMPOSITION_DRAFT_CHARACTERS = 1600
 
@@ -420,6 +421,7 @@ def _build_evidence_notebook(
     question: str = "",
     subject_identifiers: list[str] | None = None,
     related_chunk_ids: list[str] | None = None,
+    lineage_edges: list[dict[str, object]] | None = None,
     max_sections: int = MAX_EVIDENCE_SECTIONS,
     max_sources_per_section: int = MAX_SECTION_SOURCES,
 ) -> dict[str, object]:
@@ -466,6 +468,27 @@ def _build_evidence_notebook(
         source_by_id[source_id] = source
         if chunk_id and chunk_id not in source_by_chunk:
             source_by_chunk[chunk_id] = source_id
+
+    verified_lineages: list[dict[str, object]] = []
+    lineage_targets: dict[str, list[str]] = {}
+    for raw_edge in lineage_edges or []:
+        if not isinstance(raw_edge, dict):
+            continue
+        origin_id = source_by_chunk.get(str(raw_edge.get("origin_chunk_id", "")))
+        target_id = source_by_chunk.get(str(raw_edge.get("target_chunk_id", "")))
+        if not origin_id or not target_id or origin_id == target_id:
+            continue
+        targets = lineage_targets.setdefault(origin_id, [])
+        if target_id not in targets:
+            targets.append(target_id)
+    for origin_id, target_ids in lineage_targets.items():
+        if target_ids:
+            verified_lineages.append(
+                {
+                    "origin_source_id": origin_id,
+                    "target_source_ids": target_ids,
+                }
+            )
 
     sections: list[dict[str, object]] = []
     gaps: list[dict[str, object]] = []
@@ -822,11 +845,107 @@ def _build_evidence_notebook(
             raw_aspect["source_ids"] = local_ids or list(kept_ids)
         section.pop("_anchor_source_ids", None)
 
+    # A verified caller with several direct callees is the execution spine, not
+    # another metadata complement. Keep the caller and its observed children in
+    # one bounded section, in call order, and remove those children from other
+    # sections. This follows proven structure without corpus-specific names.
+    claimed_flow_sources: set[str] = set()
+    for lineage in sorted(
+        verified_lineages,
+        key=lambda value: len(value.get("target_source_ids", [])),
+        reverse=True,
+    ):
+        origin_id = str(lineage.get("origin_source_id", ""))
+        target_ids = [
+            str(value)
+            for value in lineage.get("target_source_ids", [])
+            if str(value)
+        ]
+        spine_ids = [origin_id, *target_ids][:max_sources_per_section]
+        if len(spine_ids) < 3 or claimed_flow_sources & set(spine_ids):
+            continue
+        claimed_flow_sources.update(spine_ids)
+        owner = next(
+            (
+                section
+                for section in sections
+                if any(
+                    origin_id
+                    in (
+                        aspect.get("source_ids", [])
+                        if isinstance(aspect, dict)
+                        else []
+                    )
+                    for aspect in section.get("aspects", [])
+                )
+            ),
+            None,
+        )
+        if owner is None:
+            owner = {
+                "section_id": f"E{len(sections) + 1}",
+                "status": "verified_flow",
+                "aspects": [],
+                "source_ids": [],
+            }
+            sections.append(owner)
+        owner["status"] = "verified_flow"
+        owner["source_ids"] = spine_ids
+        owner["verified_relations"] = [
+            {
+                "origin_source_id": origin_id,
+                "target_source_ids": spine_ids[1:],
+                "kind": "calls_symbol",
+            }
+        ]
+        owner_aspects = owner.get("aspects")
+        assert isinstance(owner_aspects, list)
+        for section in sections:
+            if section is owner:
+                continue
+            raw_ids = section.get("source_ids")
+            raw_aspects = section.get("aspects")
+            assert isinstance(raw_ids, list)
+            assert isinstance(raw_aspects, list)
+            moved = set(raw_ids) & set(spine_ids)
+            if not moved:
+                continue
+            section["source_ids"] = [
+                source_id for source_id in raw_ids if source_id not in moved
+            ]
+            kept_aspects: list[dict[str, object]] = []
+            for aspect in raw_aspects:
+                if not isinstance(aspect, dict):
+                    continue
+                aspect_ids = {
+                    str(value) for value in aspect.get("source_ids", [])
+                }
+                if aspect_ids and aspect_ids.issubset(set(spine_ids)):
+                    if aspect not in owner_aspects:
+                        owner_aspects.append(aspect)
+                    continue
+                aspect["source_ids"] = [
+                    source_id
+                    for source_id in aspect.get("source_ids", [])
+                    if str(source_id) not in moved
+                ]
+                kept_aspects.append(aspect)
+            section["aspects"] = kept_aspects
+
+    sections = [
+        section
+        for section in sections
+        if section.get("source_ids") and section.get("aspects")
+    ]
+    for position, section in enumerate(sections, start=1):
+        section["section_id"] = f"E{position}"
+
     return {
         "algorithm": EVIDENCE_NOTEBOOK_ALGORITHM,
         "subject_identifiers": list(subject_identifiers or []),
         "eligible_source_ids": list(source_by_id),
         "excluded_sources": len(sources) - len(source_by_id),
+        "verified_lineages": verified_lineages,
         "sections": sections,
         "gaps": gaps,
         "ready_sections": len(sections),
@@ -898,6 +1017,17 @@ def _section_synthesis_instructions(
         for source in sources or []
         if source.get("text_truncated") is True
     ]
+    verified_relations = [
+        {
+            "origin_source_id": str(item.get("origin_source_id", "")),
+            "target_source_ids": [
+                str(value) for value in item.get("target_source_ids", [])
+            ],
+            "kind": str(item.get("kind", "")),
+        }
+        for item in section.get("verified_relations", [])
+        if isinstance(item, dict)
+    ]
     truncation_contract = (
         " Sources marked as text-truncated contain an explicit omission. A fenced "
         "code excerpt is allowed only when every quoted line is fully and "
@@ -956,6 +1086,18 @@ def _section_synthesis_instructions(
         "by interpreting the shown lines. Never collect excerpts in a code appendix. "
         "Keep every factual prose paragraph or bullet cited with the supplied "
         "global source IDs."
+        + (
+            " VERIFIED EXECUTION SPINE: The following relations come from the "
+            "persisted structural graph, not from model inference: "
+            + json.dumps(verified_relations, ensure_ascii=False)
+            + ". Start this part with the origin source as the coordinator, then "
+            "explain the target sources in the listed call order. Cite the origin "
+            "for the orchestration statement and each target for its local "
+            "behavior. Do not begin with a target excerpt, omit the coordinator, "
+            "or claim relationships beyond those listed."
+            if verified_relations
+            else ""
+        )
         + truncation_contract
     )
 
@@ -2404,6 +2546,7 @@ class RagApiService:
         baseline_chunk_ids: list[str] = []
         graph_frontier_chunk_ids: list[str] = []
         lineage_graph_chunk_ids: list[str] = []
+        lineage_edges: list[dict[str, object]] = []
         terminal_graph_chunk_ids: list[str] = []
         final_reserved_context_chunk_ids: list[str] = []
         graph_frontier_results: list[dict[str, object]] = []
@@ -3216,6 +3359,35 @@ class RagApiService:
                 for result in selected_lineage_evidence
                 if result.get("chunk_id")
             ]
+            selected_lineage_ids = set(lineage_graph_chunk_ids)
+            seen_lineage_edges: set[tuple[str, str]] = set()
+            for lineage in callee_lineages:
+                origin = lineage.get("origin")
+                children = lineage.get("results")
+                if not isinstance(origin, dict) or not isinstance(children, list):
+                    continue
+                origin_id = str(origin.get("chunk_id", ""))
+                if not origin_id:
+                    continue
+                for child in children:
+                    if not isinstance(child, dict):
+                        continue
+                    target_id = str(child.get("chunk_id", ""))
+                    edge = (origin_id, target_id)
+                    if (
+                        target_id == origin_id
+                        or target_id not in selected_lineage_ids
+                        or edge in seen_lineage_edges
+                    ):
+                        continue
+                    seen_lineage_edges.add(edge)
+                    lineage_edges.append(
+                        {
+                            "origin_chunk_id": origin_id,
+                            "target_chunk_id": target_id,
+                            "kind": "calls_symbol",
+                        }
+                    )
             if lineage_graph_chunk_ids:
                 record(
                     "agent",
@@ -3546,6 +3718,7 @@ class RagApiService:
                 "initial_baseline_chunk_ids": initial_baseline_chunk_ids,
                 "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
                 "lineage_graph_chunk_ids": lineage_graph_chunk_ids,
+                "lineage_edges": lineage_edges,
                 "lineage_algorithm": CALL_LINEAGE_ALGORITHM,
                 "terminal_graph_chunk_ids": terminal_graph_chunk_ids,
                 "graph_frontier": [
@@ -3743,6 +3916,15 @@ class RagApiService:
             )
             if str(value)
         ]
+        lineage_edges = [
+            dict(value)
+            for value in (
+                raw_agent_context.get("lineage_edges", [])
+                if isinstance(raw_agent_context, dict)
+                else []
+            )
+            if isinstance(value, dict)
+        ]
         evidence_notebook = _build_evidence_notebook(
             (
                 raw_agent_context.get("coverage", [])
@@ -3756,6 +3938,7 @@ class RagApiService:
             ),
             subject_identifiers=subject_identifiers,
             related_chunk_ids=lineage_graph_chunk_ids,
+            lineage_edges=lineage_edges,
         )
         if not raw_sources:
             record(
@@ -4525,6 +4708,10 @@ class RagApiService:
                     sources=evidence,
                     subject_identifiers=subject_identifiers,
                     related_chunk_ids=lineage_graph_chunk_ids,
+                )
+                normalized = downgrade_operation_mismatch_claims(
+                    normalized,
+                    sources=evidence,
                 )
                 raw_findings = normalized.get("claims")
                 if not isinstance(raw_findings, list):

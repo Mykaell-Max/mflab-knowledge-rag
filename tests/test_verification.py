@@ -6,6 +6,7 @@ from mflab_knowledge.verification import (
     attach_discovered_citations,
     claims_for_verification,
     downgrade_callsite_only_claims,
+    downgrade_operation_mismatch_claims,
     downgrade_unanchored_subject_claims,
     emit_progress,
     normalize_support_discovery,
@@ -17,6 +18,66 @@ from mflab_knowledge.verification import (
 
 
 class VerificationTests(unittest.TestCase):
+    def test_downgrades_initialization_claim_citing_only_cleanup_code(self) -> None:
+        result = downgrade_operation_mismatch_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": (
+                            "A inicialização configura e cria os elementos [S1]."
+                        ),
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "A fonte foi aceita pelo modelo.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "path": "src/engine.cpp",
+                    "title": "Engine::mustRunCleanup",
+                    "text": "return cleanup_counter >= cleanup_interval;",
+                }
+            ],
+        )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "uncertain")
+
+    def test_keeps_operation_claim_when_cited_implementation_matches(self) -> None:
+        result = downgrade_operation_mismatch_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "O coordenador cria os elementos [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "A operação está visível.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "path": "src/engine.cpp",
+                    "title": "Engine::createItems",
+                    "text": "items.push_back(createItem());",
+                }
+            ],
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "supported")
+
     def test_selects_named_subjects_and_excludes_scope_or_generic_words(self) -> None:
         result = select_query_subject_identifiers(
             "Explique o DPM no MFSim-NG e sua inicialização",
