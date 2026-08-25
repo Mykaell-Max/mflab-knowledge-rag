@@ -1579,3 +1579,14 @@ aspectos continuam preenchendo as vagas restantes. O pacote também expõe
 `lineage_origin_chunk_ids` e `lineage_flow_chunk_ids` para tornar a decisão
 diagnosticável. Não há nomes de mecanismos, arquivos, símbolos, projetos ou
 branches nessa política.
+
+Na 0.46.2, a espinha finalmente chegou ao caderno na validação real, mas a
+resposta ainda passou pela síntese única. O planejador havia mantido todas as
+facetas como lacunas; por isso, a seção criada somente pela relação estrutural
+não recebeu uma faceta e foi eliminada pelo filtro final. A 0.46.3 preserva
+essa seção com uma faceta interna e neutra de fluxo verificado. Ela também
+ativa a síntese estrutural quando existe uma única seção `verified_flow`, sem
+exigir uma segunda seção artificial. A faceta interna orienta a narrativa, mas
+não declara cobertura de um aspecto científico solicitado pelo usuário. Assim,
+o chamador e seus filhos usam o contrato específico de execução mesmo quando o
+planejamento do modelo é conservador, vazio ou malformado.

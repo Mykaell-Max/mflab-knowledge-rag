@@ -184,7 +184,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v12"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v13"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -957,6 +957,21 @@ def _build_evidence_notebook(
         ]
         owner_aspects = owner.get("aspects")
         assert isinstance(owner_aspects, list)
+        if not owner_aspects:
+            # A persisted caller-to-callee relation is evidence even when the
+            # model-authored coverage ledger did not attach an aspect to either
+            # endpoint. Keep an internal, corpus-neutral narrative facet so the
+            # verified spine cannot be discarded merely because planning was
+            # conservative or malformed. This label is guidance for synthesis,
+            # not a claim of coverage for a user-requested scientific aspect.
+            owner_aspects.append(
+                {
+                    "aspect_id": f"VF{len(verified_lineages)}",
+                    "aspect": "verified execution flow",
+                    "role": "content",
+                    "source_ids": list(spine_ids),
+                }
+            )
         for section in sections:
             if section is owner:
                 continue
@@ -1050,6 +1065,29 @@ def _notebook_source_ids_by_aspect(
                 )
                 result.setdefault(aspect, set()).update(aspect_source_ids)
     return result
+
+
+def _should_use_sectional_synthesis(
+    sections: object,
+    *,
+    response_depth: str,
+    exploration_intent: str,
+) -> bool:
+    """Use the structural prompt whenever a verified execution spine exists."""
+
+    if not isinstance(sections, list) or not sections:
+        return False
+    detailed_request = (
+        response_depth == "detailed"
+        or exploration_intent in {"location", "mechanism"}
+    )
+    if not detailed_request:
+        return False
+    return len(sections) >= 2 or any(
+        isinstance(section, dict)
+        and section.get("status") == "verified_flow"
+        for section in sections
+    )
 
 
 def _section_synthesis_instructions(
@@ -4159,12 +4197,10 @@ class RagApiService:
         )
         notebook_sections = evidence_notebook.get("sections", [])
         assert isinstance(notebook_sections, list)
-        use_sectional_synthesis = bool(
-            len(notebook_sections) >= 2
-            and (
-                response_depth == "detailed"
-                or exploration_intent in {"location", "mechanism"}
-            )
+        use_sectional_synthesis = _should_use_sectional_synthesis(
+            notebook_sections,
+            response_depth=response_depth,
+            exploration_intent=exploration_intent,
         )
         sectional_synthesis = False
         section_composition = False

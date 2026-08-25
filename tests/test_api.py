@@ -436,7 +436,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v12")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v13")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -885,6 +885,74 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("VERIFIED EXECUTION SPINE", instructions)
         self.assertIn('"origin_source_id": "S4"', instructions)
         self.assertIn('"target_source_ids": ["S3", "S2"]', instructions)
+
+    def test_verified_flow_survives_without_model_authored_coverage(self) -> None:
+        notebook = api._build_evidence_notebook(
+            [],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "step",
+                    "path": "src/engine.cpp",
+                    "title": "Engine::step",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "create",
+                    "path": "src/engine.cpp",
+                    "title": "Engine::createItems",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "move",
+                    "path": "src/engine.cpp",
+                    "title": "Engine::moveItems",
+                },
+            ],
+            question="Explain the Engine execution flow",
+            subject_identifiers=["Engine"],
+            related_chunk_ids=["step", "create", "move"],
+            lineage_edges=[
+                {
+                    "origin_chunk_id": "step",
+                    "target_chunk_id": "create",
+                },
+                {
+                    "origin_chunk_id": "step",
+                    "target_chunk_id": "move",
+                },
+            ],
+        )
+
+        self.assertEqual(notebook["ready_sections"], 1)
+        flow = notebook["sections"][0]
+        self.assertEqual(flow["status"], "verified_flow")
+        self.assertEqual(flow["source_ids"], ["S1", "S2", "S3"])
+        self.assertEqual(
+            flow["aspects"],
+            [
+                {
+                    "aspect_id": "VF1",
+                    "aspect": "verified execution flow",
+                    "role": "content",
+                    "source_ids": ["S1", "S2", "S3"],
+                }
+            ],
+        )
+        self.assertTrue(
+            api._should_use_sectional_synthesis(
+                notebook["sections"],
+                response_depth="detailed",
+                exploration_intent="mechanism",
+            )
+        )
+        self.assertFalse(
+            api._should_use_sectional_synthesis(
+                notebook["sections"],
+                response_depth="standard",
+                exploration_intent="overview",
+            )
+        )
 
     def test_evidence_notebook_assigns_gap_to_matching_authorized_context(
         self,
