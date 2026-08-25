@@ -184,13 +184,14 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v13"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v14"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
 MAX_SECTION_SOURCES = 5
 MAX_LINEAGE_IMPLEMENTATIONS = 8
 MAX_LINEAGE_FLOW_SOURCES = 10
+CONTEXT_RESERVATION_ALGORITHM = "balanced_evidence_channels_v1"
 MAX_SECTION_CONTINUATIONS = 2
 MAX_COMPOSITION_DRAFT_CHARACTERS = 1600
 
@@ -1408,6 +1409,52 @@ def _pack_context_results(
         used += len(text)
         truncated = truncated or bool(value["text_truncated"])
     return packed, used, truncated or len(packed) < len(results)
+
+
+def _balanced_context_chunk_ids(
+    *,
+    aspect_chunk_ids: list[str],
+    lineage_targets_by_origin: dict[str, list[str]],
+    graph_frontier_chunk_ids: list[str],
+    baseline_chunk_ids: list[str],
+    remaining_groups: list[list[str]],
+    limit: int,
+) -> list[str]:
+    """Reserve bounded evidence across independent retrieval channels.
+
+    Coverage observations come first. Each verified lineage then receives one
+    origin/child pair, followed by alternating graph-frontier and baseline
+    entries. Additional descendants fill only the remaining capacity. This
+    prevents either a large call tree or a noisy search result from consuming
+    the complete evidence window.
+    """
+
+    if limit < 1:
+        return []
+    selected: list[str] = []
+
+    def append(chunk_id: object) -> None:
+        value = str(chunk_id)
+        if value and value not in selected and len(selected) < limit:
+            selected.append(value)
+
+    for chunk_id in aspect_chunk_ids:
+        append(chunk_id)
+    for origin_id, target_ids in lineage_targets_by_origin.items():
+        append(origin_id)
+        if target_ids:
+            append(target_ids[0])
+    for position in range(
+        max(len(graph_frontier_chunk_ids), len(baseline_chunk_ids))
+    ):
+        if position < len(graph_frontier_chunk_ids):
+            append(graph_frontier_chunk_ids[position])
+        if position < len(baseline_chunk_ids):
+            append(baseline_chunk_ids[position])
+    for group in remaining_groups:
+        for chunk_id in group:
+            append(chunk_id)
+    return selected
 
 
 def _match_repository_definition(
@@ -3650,71 +3697,25 @@ class RagApiService:
                     [*initial_baseline_chunk_ids, *ranked_baseline_chunk_ids]
                 )
             )[:4]
-            # Initial hybrid evidence is an independent retrieval channel, not
-            # disposable scaffolding for graph exploration. Reserve it alongside
-            # aspect evidence and the complete selected frontier so a later tool
-            # walk cannot evict the original entry point or a lifecycle tail.
-            final_reserved_context_chunk_ids = list(
-                dict.fromkeys(
-                    [
-                        *lineage_flow_chunk_ids,
-                        *reserved_context_chunk_ids,
-                        *lineage_origin_chunk_ids,
-                        *lineage_graph_chunk_ids,
-                        *terminal_graph_chunk_ids,
-                        *baseline_chunk_ids,
-                        *graph_frontier_chunk_ids,
-                    ]
-                )
-            )
-            # Evidence explicitly retained for distinct coverage aspects owns
-            # the first positions. Baseline retrieval and graph frontiers fill
-            # the remainder, instead of displacing later requested stages.
-            selected_chunk_ids: list[str] = list(lineage_flow_chunk_ids)
-            selected_chunk_ids.extend(
-                chunk_id
-                for chunk_id in reserved_context_chunk_ids
-                if chunk_id not in selected_chunk_ids
-            )
-            selected_chunk_ids.extend(
-                chunk_id
-                for chunk_id in lineage_origin_chunk_ids
-                if chunk_id not in selected_chunk_ids
-            )
-            selected_chunk_ids.extend(
-                chunk_id
-                for chunk_id in lineage_graph_chunk_ids
-                if chunk_id not in selected_chunk_ids
-            )
-            selected_chunk_ids.extend(
-                chunk_id
-                for chunk_id in terminal_graph_chunk_ids
-                if chunk_id not in selected_chunk_ids
-            )
             deferred_kept_chunk_ids = [
                 chunk_id
                 for chunk_id in prioritized_kept_chunk_ids
-                if chunk_id not in selected_chunk_ids
+                if chunk_id not in reserved_context_chunk_ids
             ]
-            for position in range(
-                max(
-                    len(graph_frontier_chunk_ids),
-                    len(baseline_chunk_ids),
-                )
-            ):
-                candidates: list[str] = []
-                if position < len(baseline_chunk_ids):
-                    candidates.append(baseline_chunk_ids[position])
-                if position < len(graph_frontier_chunk_ids):
-                    candidates.append(graph_frontier_chunk_ids[position])
-                for chunk_id in candidates:
-                    if chunk_id not in selected_chunk_ids:
-                        selected_chunk_ids.append(chunk_id)
-            selected_chunk_ids.extend(
-                chunk_id
-                for chunk_id in deferred_kept_chunk_ids
-                if chunk_id not in selected_chunk_ids
+            final_reserved_context_chunk_ids = _balanced_context_chunk_ids(
+                aspect_chunk_ids=reserved_context_chunk_ids,
+                lineage_targets_by_origin=lineage_targets_by_origin,
+                graph_frontier_chunk_ids=graph_frontier_chunk_ids,
+                baseline_chunk_ids=baseline_chunk_ids,
+                remaining_groups=[
+                    lineage_flow_chunk_ids,
+                    terminal_graph_chunk_ids,
+                    lineage_graph_chunk_ids,
+                    deferred_kept_chunk_ids,
+                ],
+                limit=min(AGENT_CONTEXT_DIVERSITY_TARGET, max(1, limit)),
             )
+            selected_chunk_ids = list(final_reserved_context_chunk_ids)
             if selected_chunk_ids:
                 selected_results: list[dict[str, object]] = []
                 selected_by_chunk: dict[str, dict[str, object]] = {}
@@ -3967,6 +3968,12 @@ class RagApiService:
                 "lineage_graph_chunk_ids": lineage_graph_chunk_ids,
                 "lineage_edges": lineage_edges,
                 "lineage_algorithm": CALL_LINEAGE_ALGORITHM,
+                "context_reservation_algorithm": (
+                    CONTEXT_RESERVATION_ALGORITHM
+                ),
+                "reserved_context_chunk_ids": (
+                    final_reserved_context_chunk_ids
+                ),
                 "terminal_graph_chunk_ids": terminal_graph_chunk_ids,
                 "graph_frontier": [
                     {

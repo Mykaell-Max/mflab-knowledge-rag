@@ -9,7 +9,7 @@ from typing import Iterable
 
 AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v28"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v6"
-CALL_LINEAGE_ALGORITHM = "direct_callee_lineage_v2"
+CALL_LINEAGE_ALGORITHM = "direct_callee_lineage_v3"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -676,6 +676,9 @@ def select_lineage_callee_results(
     query_terms = _structural_search_terms(
         " ".join([question, *(str(hint) for hint in search_hints)])
     )
+    specific_query_terms = _search_terms(
+        " ".join([question, *(str(hint) for hint in search_hints)])
+    )
     anchored = {str(value) for value in anchor_chunk_ids if str(value)}
     merged: dict[str, dict[str, object]] = {}
     order: list[str] = []
@@ -724,7 +727,9 @@ def select_lineage_callee_results(
         origin_score = 6.0 * len(query_terms & origin_terms)
         if origin_id in anchored:
             origin_score += 12.0
-        ranked_children: list[tuple[float, int, dict[str, object]]] = []
+        ranked_children: list[
+            tuple[float, int, bool, dict[str, object]]
+        ] = []
         origin_title = str(origin.get("title", ""))
         origin_owner = (
             origin_title.rsplit("::", 1)[0] if "::" in origin_title else ""
@@ -742,21 +747,43 @@ def select_lineage_callee_results(
                 f"{child_path} {child_title}"
             )
             text_terms = _structural_search_terms(result.get("text", ""))
+            specific_metadata_terms = _search_terms(
+                f"{child_path} {child_title}"
+            )
+            specific_text_terms = _search_terms(result.get("text", ""))
             child_score = 4.0 * len(query_terms & metadata_terms)
             child_score += float(len(query_terms & text_terms))
-            if origin_owner and child_owner == origin_owner:
+            same_owner = bool(origin_owner and child_owner == origin_owner)
+            same_family = bool(origin_family and child_family == origin_family)
+            if same_owner:
                 child_score += 10.0
-            if origin_family and child_family == origin_family:
+            if same_family:
                 child_score += 5.0
-            ranked_children.append((child_score, -child_position, result))
+            specifically_relevant = (
+                same_owner
+                or same_family
+                or bool(specific_query_terms & specific_metadata_terms)
+                or len(specific_query_terms & specific_text_terms) >= 2
+            )
+            ranked_children.append(
+                (child_score, -child_position, specifically_relevant, result)
+            )
         ranked_children.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        relevant_children = [item for item in ranked_children if item[2]]
+        # When the query names a relevant descendant, unrelated siblings of a
+        # broad coordinator are discarded. If no child carries any specific
+        # signal, retain the ordered call edge as a conservative fallback.
+        if relevant_children:
+            ranked_children = relevant_children
+        if not ranked_children:
+            continue
         ranked_lineages.append(
             (
                 origin_score,
                 -int(lineage["position"]),
                 origin_id,
                 origin,
-                [item[2] for item in ranked_children],
+                [item[3] for item in ranked_children],
             )
         )
     ranked_lineages.sort(key=lambda item: (item[0], item[1]), reverse=True)
@@ -802,6 +829,8 @@ def select_lineage_callee_results(
         child_position += 1
     for lineage in ranked_lineages:
         if lineage in allocation_lineages:
+            continue
+        if lineage[0] <= 0:
             continue
         for result in lineage[4]:
             if append(result) and len(selected) >= limit:

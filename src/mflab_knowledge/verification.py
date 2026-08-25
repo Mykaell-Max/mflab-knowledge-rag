@@ -598,7 +598,17 @@ def select_query_subject_identifiers(
         selected.append(label)
         selected_signatures.add(signature)
 
-    for raw_value in candidates:
+    # Distinctive identifiers written by the user remain available even when
+    # the local planner expands only derived names such as ``DPMConfig`` and
+    # omits the literal acronym. Generic lowercase words are still rejected by
+    # the syntactic checks below.
+    direct_question_candidates = re.findall(
+        r"[\w\u00c0-\u024f]+(?:(?:::|->|[-./_])[\w\u00c0-\u024f]+)+"
+        r"|[\w\u00c0-\u024f]+",
+        question,
+        flags=re.UNICODE,
+    )
+    for raw_value in [*candidates, *direct_question_candidates]:
         label = " ".join(str(raw_value).split()).strip()
         if not label or _identifier_signature(label) in excluded:
             continue

@@ -101,6 +101,16 @@ class VerificationTests(unittest.TestCase):
             ["Navier-Stokes", "MeshFactory::createMesh", "MeshFactory", "createMesh"],
         )
 
+    def test_selects_literal_acronym_when_planner_omits_it(self) -> None:
+        self.assertEqual(
+            select_query_subject_identifiers(
+                "Explique como o DPM funciona no Solver-NG",
+                ["DPMConfig", "ParticleManager"],
+                excluded_labels=["Solver-NG"],
+            ),
+            ["DPM"],
+        )
+
     def test_downgrades_subject_relationship_absent_from_cited_source(self) -> None:
         result = downgrade_unanchored_subject_claims(
             {

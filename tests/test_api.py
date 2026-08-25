@@ -436,7 +436,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v13")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v14")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -1150,6 +1150,34 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(len(packed), api.AGENT_CONTEXT_DIVERSITY_TARGET)
         self.assertEqual(used, 8000)
         self.assertTrue(truncated)
+
+    def test_context_reservation_balances_aspects_lineages_and_frontier(self) -> None:
+        selected = api._balanced_context_chunk_ids(
+            aspect_chunk_ids=["aspect-a", "aspect-b"],
+            lineage_targets_by_origin={
+                "configure": ["allocate", "reset"],
+                "advance": ["move", "cleanup"],
+            },
+            graph_frontier_chunk_ids=["inner-step", "domain-entry"],
+            baseline_chunk_ids=["baseline", "configure"],
+            remaining_groups=[["reset", "cleanup", "tail"]],
+            limit=9,
+        )
+
+        self.assertEqual(
+            selected,
+            [
+                "aspect-a",
+                "aspect-b",
+                "configure",
+                "allocate",
+                "advance",
+                "move",
+                "inner-step",
+                "baseline",
+                "domain-entry",
+            ],
+        )
 
     def test_context_packing_keeps_room_for_repeated_lifecycle_methods(self) -> None:
         packed, _used, _truncated = api._pack_context_results(

@@ -1627,3 +1627,22 @@ a reserva estrutural consome no máximo dez, mantendo vagas para entradas,
 configuração e integração externas às cadeias. A seleção continua limitada,
 somente leitura, baseada em relações persistidas e sem vocabulário científico
 ou nomes de repositórios no motor.
+
+A validação real da 0.46.6 mostrou que a distribuição entre linhagens funcionou
+para a resposta longa: o caso de fluxo terminou completo, com 8.619 caracteres
+e implementação direta de configuração, criação e movimento. Porém, a reserva
+estrutural ainda era aplicada antes dos outros canais e ocupava dez das doze
+vagas. Entradas já encontradas na fronteira, inclusive coordenadores de domínio
+e inicialização, podiam ficar fora do pacote final. A avaliação de malha
+adaptativa expôs essa regressão, enquanto o caso longo perdeu apenas uma
+implementação interna que permanecia visível na fronteira.
+
+A 0.46.7 substitui essa prioridade linear por
+`balanced_evidence_channels_v1`. O empacotamento preserva primeiro as evidências
+dos aspectos solicitados, depois um par origem e filho de cada linhagem, em
+seguida intercala fronteira navegada e busca inicial; expansões adicionais usam
+somente as vagas restantes. Descendentes incidentais de um coordenador amplo
+são descartados quando existem filhos com correspondência específica ao tema.
+Identificadores distintivos escritos literalmente pelo usuário, como siglas,
+também são recuperados de forma determinística quando o planejador só propõe
+nomes derivados. As regras continuam genéricas e independentes dos gabaritos.

@@ -658,7 +658,7 @@ class InvestigatorTests(unittest.TestCase):
 
         self.assertEqual(
             [item["chunk_id"] for item in selected],
-            ["add", "move", "cleanup", "timer"],
+            ["add", "move", "cleanup"],
         )
 
     def test_lineage_prefers_an_anchored_origin_over_later_expansion(self) -> None:
@@ -761,6 +761,37 @@ class InvestigatorTests(unittest.TestCase):
             [item["chunk_id"] for item in selected],
             ["allocate", "create", "reset", "move"],
         )
+
+    def test_lineage_drops_incidental_children_of_a_broad_coordinator(self) -> None:
+        selected = select_lineage_callee_results(
+            question="Explain DPM advancement",
+            search_hints=[],
+            anchor_chunk_ids=["domain"],
+            lineages=[
+                {
+                    "origin": {
+                        "chunk_id": "domain",
+                        "path": "src/domain.cpp",
+                        "title": "Domain::setup",
+                    },
+                    "results": [
+                        {
+                            "chunk_id": "dpm",
+                            "path": "src/dpm_manager.cpp",
+                            "title": "DPMManager::advance",
+                        },
+                        {
+                            "chunk_id": "grid",
+                            "path": "src/grid_manager.cpp",
+                            "title": "GridManager::rebuild",
+                        },
+                    ],
+                }
+            ],
+            limit=4,
+        )
+
+        self.assertEqual([item["chunk_id"] for item in selected], ["dpm"])
 
     def test_call_frontier_preserves_distinct_paths_before_siblings(self) -> None:
         selected = select_graph_frontier_results(
