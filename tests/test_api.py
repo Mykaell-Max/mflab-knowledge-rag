@@ -319,6 +319,11 @@ class ApiServiceTests(unittest.TestCase):
                         "chunk_id": "neighbor",
                         "source_id": None,
                     },
+                    {
+                        "id": "chunk:entry",
+                        "chunk_id": "entry",
+                        "source_id": "S3",
+                    },
                 ],
                 "edges": [
                     {
@@ -345,9 +350,25 @@ class ApiServiceTests(unittest.TestCase):
                         "directed": False,
                         "evidence": "persisted_structure",
                     },
+                    {
+                        "source": "chunk:entry",
+                        "target": "chunk:driver",
+                        "kind": "calls",
+                        "tool": "find_callers",
+                        "directed": True,
+                        "evidence": "persisted_structure",
+                    },
+                    {
+                        "source": "chunk:driver",
+                        "target": "chunk:create",
+                        "kind": "calls",
+                        "tool": "find_callers",
+                        "directed": True,
+                        "evidence": "persisted_structure",
+                    },
                 ],
             },
-            target_chunk_ids=["create", "neighbor"],
+            selected_chunk_ids=["create", "driver"],
         )
 
         self.assertEqual(
@@ -357,6 +378,13 @@ class ApiServiceTests(unittest.TestCase):
                     "origin_chunk_id": "driver",
                     "target_chunk_id": "create",
                     "kind": "calls_symbol",
+                    "observed_via": "find_callers",
+                },
+                {
+                    "origin_chunk_id": "entry",
+                    "target_chunk_id": "driver",
+                    "kind": "calls_symbol",
+                    "observed_via": "find_callers",
                 }
             ],
         )
@@ -436,7 +464,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v14")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v15")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -856,6 +884,90 @@ class ApiServiceTests(unittest.TestCase):
             )
         )
         self.assertEqual(configuration["source_ids"], ["S1"])
+
+    def test_evidence_notebook_prepends_verified_upstream_caller(self) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "configuration details",
+                    "status": "partial",
+                    "chunk_ids": ["entry", "options"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "initialization flow",
+                    "status": "partial",
+                    "chunk_ids": ["factory", "implementation"],
+                },
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "options",
+                    "path": "src/options.cpp",
+                    "title": "Options::load",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "factory",
+                    "path": "src/factory.cpp",
+                    "title": "Factory::create",
+                    "source_kind": "agent_callers_evidence",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "implementation",
+                    "path": "src/implementation.cpp",
+                    "title": "Implementation::initialize",
+                },
+                {
+                    "source_id": "S4",
+                    "chunk_id": "entry",
+                    "path": "src/domain.cpp",
+                    "title": "Domain::configure",
+                    "source_kind": "agent_callers_evidence",
+                },
+            ],
+            question="Explain initialization flow",
+            related_chunk_ids=["entry", "factory", "implementation"],
+            lineage_edges=[
+                {
+                    "origin_chunk_id": "entry",
+                    "target_chunk_id": "options",
+                    "observed_via": "find_callees",
+                },
+                {
+                    "origin_chunk_id": "entry",
+                    "target_chunk_id": "factory",
+                    "observed_via": "find_callers",
+                }
+            ],
+        )
+
+        flow = next(
+            section
+            for section in notebook["sections"]
+            if "S2" in section["source_ids"]
+        )
+        self.assertEqual(flow["source_ids"][:2], ["S4", "S2"])
+        self.assertEqual(flow["status"], "verified_flow")
+        self.assertIn(
+            {
+                "origin_source_id": "S4",
+                "target_source_ids": ["S2"],
+                "kind": "calls_symbol",
+                "observed_via": "find_callers",
+            },
+            flow["verified_relations"],
+        )
+        self.assertEqual(
+            sum(
+                "S4" in section["source_ids"]
+                for section in notebook["sections"]
+            ),
+            1,
+        )
 
     def test_section_prompt_uses_verified_execution_spine(self) -> None:
         instructions = api._section_synthesis_instructions(

@@ -184,7 +184,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v14"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v15"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -330,13 +330,13 @@ def _notebook_ranking_context(
 def _lineage_edges_from_investigation_graph(
     graph: object,
     *,
-    target_chunk_ids: list[str],
+    selected_chunk_ids: list[str],
 ) -> list[dict[str, object]]:
     """Recover selected direct-call edges from the public structural trace.
 
     The graph is built only from completed read-only traversals. Re-reading its
-    persisted ``find_callees`` edges avoids losing a verified relation when an
-    intermediate lineage list is deduplicated during context packing.
+    persisted caller and callee edges avoids losing a verified relation when
+    an intermediate lineage list is deduplicated during context packing.
     """
 
     if not isinstance(graph, dict):
@@ -345,7 +345,11 @@ def _lineage_edges_from_investigation_graph(
     raw_edges = graph.get("edges")
     if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
         return []
-    selected_targets = {str(value) for value in target_chunk_ids if str(value)}
+    selected_chunks = {
+        str(value) for value in selected_chunk_ids if str(value)
+    }
+    if not selected_chunks:
+        return []
     source_chunks = {
         str(node.get("chunk_id", ""))
         for node in raw_nodes
@@ -354,7 +358,7 @@ def _lineage_edges_from_investigation_graph(
         and node.get("source_id")
     }
     result: list[dict[str, object]] = []
-    seen: set[tuple[str, str]] = set()
+    result_by_identity: dict[tuple[str, str], dict[str, object]] = {}
     for edge in raw_edges:
         if not isinstance(edge, dict):
             continue
@@ -363,24 +367,31 @@ def _lineage_edges_from_investigation_graph(
         identity = (origin, target)
         if (
             edge.get("kind") != "calls"
-            or edge.get("tool") != "find_callees"
+            or edge.get("tool") not in {"find_callers", "find_callees"}
             or edge.get("evidence") != "persisted_structure"
             or edge.get("directed") is not True
-            or target not in selected_targets
             or origin not in source_chunks
             or target not in source_chunks
+            or (origin not in selected_chunks and target not in selected_chunks)
             or origin == target
-            or identity in seen
         ):
             continue
-        seen.add(identity)
-        result.append(
-            {
-                "origin_chunk_id": origin,
-                "target_chunk_id": target,
-                "kind": "calls_symbol",
-            }
-        )
+        tool = str(edge.get("tool", ""))
+        existing = result_by_identity.get(identity)
+        if existing is not None:
+            # Seeing the same persisted call while expanding callers is the
+            # stronger signal for upstream narrative placement.
+            if tool == "find_callers":
+                existing["observed_via"] = tool
+            continue
+        recovered = {
+            "origin_chunk_id": origin,
+            "target_chunk_id": target,
+            "kind": "calls_symbol",
+            "observed_via": tool,
+        }
+        result_by_identity[identity] = recovered
+        result.append(recovered)
     return result
 
 
@@ -531,6 +542,8 @@ def _build_evidence_notebook(
 
     verified_lineages: list[dict[str, object]] = []
     lineage_targets: dict[str, list[str]] = {}
+    lineage_observations: dict[str, set[str]] = {}
+    upstream_targets: dict[str, list[str]] = {}
     for raw_edge in lineage_edges or []:
         if not isinstance(raw_edge, dict):
             continue
@@ -541,14 +554,27 @@ def _build_evidence_notebook(
         targets = lineage_targets.setdefault(origin_id, [])
         if target_id not in targets:
             targets.append(target_id)
+        observed_via = str(raw_edge.get("observed_via", "")).strip()
+        if observed_via:
+            lineage_observations.setdefault(origin_id, set()).add(observed_via)
+        if observed_via == "find_callers":
+            observed_targets = upstream_targets.setdefault(origin_id, [])
+            if target_id not in observed_targets:
+                observed_targets.append(target_id)
     for origin_id, target_ids in lineage_targets.items():
         if target_ids:
-            verified_lineages.append(
-                {
-                    "origin_source_id": origin_id,
-                    "target_source_ids": target_ids,
-                }
-            )
+            lineage: dict[str, object] = {
+                "origin_source_id": origin_id,
+                "target_source_ids": target_ids,
+            }
+            observations = sorted(lineage_observations.get(origin_id, set()))
+            if observations:
+                lineage["observed_via"] = observations
+            if upstream_targets.get(origin_id):
+                lineage["upstream_target_source_ids"] = list(
+                    upstream_targets[origin_id]
+                )
+            verified_lineages.append(lineage)
 
     sections: list[dict[str, object]] = []
     gaps: list[dict[str, object]] = []
@@ -1006,6 +1032,113 @@ def _build_evidence_notebook(
                 ]
                 kept_aspects.append(aspect)
             section["aspects"] = kept_aspects
+
+    # A direct caller discovered while navigating toward an already selected
+    # implementation is its verified upstream entry point.  Keep that caller
+    # immediately before the called source in the same structural section.
+    # This is intentionally independent from symbol names and repository
+    # layouts: only a persisted, directed ``find_callers`` observation may
+    # promote the source.  The relation improves narrative continuity without
+    # asserting that either endpoint alone proves the complete user question.
+    for lineage in verified_lineages:
+        origin_id = str(lineage.get("origin_source_id", ""))
+        target_ids = [
+            str(value)
+            for value in lineage.get("upstream_target_source_ids", [])
+            if str(value)
+        ]
+        if not origin_id or not target_ids:
+            continue
+        target_owner = next(
+            (
+                (target_id, section)
+                for target_id in target_ids
+                for section in sections
+                if target_id in section.get("source_ids", [])
+                and (
+                    section.get("status") == "verified_flow"
+                    or any(
+                        isinstance(aspect, dict)
+                        and aspect.get("role") != "delivery"
+                        and _notebook_needs_structural_context(
+                            str(aspect.get("aspect", ""))
+                        )
+                        for aspect in section.get("aspects", [])
+                    )
+                )
+            ),
+            None,
+        )
+        if target_owner is None:
+            continue
+        target_id, owner = target_owner
+
+        # Give one verified entry point a single narrative owner.  Leaving it
+        # duplicated in an earlier configuration section caused the final
+        # composer to omit the actual transition between the two sections.
+        for section in sections:
+            if section is owner:
+                continue
+            raw_ids = section.get("source_ids")
+            raw_aspects = section.get("aspects")
+            assert isinstance(raw_ids, list)
+            assert isinstance(raw_aspects, list)
+            if origin_id not in raw_ids:
+                continue
+            section["source_ids"] = [
+                source_id for source_id in raw_ids if source_id != origin_id
+            ]
+            for aspect in raw_aspects:
+                if not isinstance(aspect, dict):
+                    continue
+                raw_aspect_ids = aspect.get("source_ids")
+                if isinstance(raw_aspect_ids, list):
+                    aspect["source_ids"] = [
+                        source_id
+                        for source_id in raw_aspect_ids
+                        if source_id != origin_id
+                    ]
+
+        owner_ids = [
+            str(value)
+            for value in owner.get("source_ids", [])
+            if str(value) not in {origin_id, target_id}
+        ]
+        owner["source_ids"] = [
+            origin_id,
+            target_id,
+            *owner_ids,
+        ][:max_sources_per_section]
+        owner_source_ids = [str(value) for value in owner["source_ids"]]
+        owner["status"] = "verified_flow"
+        raw_relations = owner.setdefault("verified_relations", [])
+        assert isinstance(raw_relations, list)
+        relation = {
+            "origin_source_id": origin_id,
+            "target_source_ids": [target_id],
+            "kind": "calls_symbol",
+            "observed_via": "find_callers",
+        }
+        if relation not in raw_relations:
+            raw_relations.insert(0, relation)
+        for aspect in owner.get("aspects", []):
+            if not isinstance(aspect, dict) or aspect.get("role") == "delivery":
+                continue
+            if not _notebook_needs_structural_context(
+                str(aspect.get("aspect", ""))
+            ):
+                continue
+            aspect_ids = [
+                str(value)
+                for value in aspect.get("source_ids", [])
+                if str(value) not in {origin_id, target_id}
+                and str(value) in owner_source_ids
+            ]
+            aspect["source_ids"] = [
+                origin_id,
+                target_id,
+                *aspect_ids,
+            ][:max_sources_per_section]
 
     sections = [
         section
@@ -4179,15 +4312,24 @@ class RagApiService:
             )
             if isinstance(value, dict)
         ]
+        selected_structural_chunk_ids = [
+            str(value)
+            for value in (
+                raw_agent_context.get("reserved_context_chunk_ids", [])
+                if isinstance(raw_agent_context, dict)
+                else []
+            )
+            if str(value)
+        ] or lineage_graph_chunk_ids
         graph_lineage_edges = _lineage_edges_from_investigation_graph(
             context.get("investigation_graph"),
-            target_chunk_ids=lineage_graph_chunk_ids,
+            selected_chunk_ids=selected_structural_chunk_ids,
         )
-        lineage_edge_keys = {
+        lineage_edges_by_key = {
             (
                 str(value.get("origin_chunk_id", "")),
                 str(value.get("target_chunk_id", "")),
-            )
+            ): value
             for value in lineage_edges
         }
         for value in graph_lineage_edges:
@@ -4195,9 +4337,15 @@ class RagApiService:
                 str(value.get("origin_chunk_id", "")),
                 str(value.get("target_chunk_id", "")),
             )
-            if identity not in lineage_edge_keys:
+            existing = lineage_edges_by_key.get(identity)
+            if existing is None:
                 lineage_edges.append(value)
-                lineage_edge_keys.add(identity)
+                lineage_edges_by_key[identity] = value
+            elif (
+                value.get("observed_via") == "find_callers"
+                or not existing.get("observed_via")
+            ):
+                existing["observed_via"] = value.get("observed_via")
         evidence_notebook = _build_evidence_notebook(
             (
                 raw_agent_context.get("coverage", [])

@@ -1646,3 +1646,23 @@ são descartados quando existem filhos com correspondência específica ao tema.
 Identificadores distintivos escritos literalmente pelo usuário, como siglas,
 também são recuperados de forma determinística quando o planejador só propõe
 nomes derivados. As regras continuam genéricas e independentes dos gabaritos.
+
+A validação real da 0.46.7 confirmou o balanceamento. O caso de fluxo do
+subsistema passou integralmente, incluindo as implementações internas antes
+ausentes. O caso de inicialização também terminou completo, citado e com as
+implementações de fábrica, gerência e construção da malha. Restou uma única
+falha formal: o ponto de entrada no domínio estava no pacote final e no caderno,
+mas a composição o deixou em uma seção anterior e iniciou a narrativa no
+gerenciador. Portanto, a lacuna já não era de recuperação nem de grafo.
+
+A 0.46.8 preserva pontos de entrada ascendentes verificados. A recuperação de
+linhagens aceita arestas dirigidas e persistidas observadas por `find_callers`
+ou `find_callees`, desde que ambos os extremos estejam entre as fontes finais
+autorizadas e ao menos um deles tenha sido selecionado pelo empacotamento. A
+direção de observação é mantida por aresta, evitando confundir uma expansão
+descendente com um ponto de entrada. No caderno, um chamador descoberto por
+`find_callers` é colocado imediatamente antes do método chamado na mesma seção
+de fluxo e deixa de competir como complemento de outra seção. A relação entra
+no contrato estrutural entregue ao gerador. A regra depende apenas do grafo
+persistido, do escopo autorizado e dos aspectos da pergunta; não contém nomes
+de projetos, branches, arquivos, classes ou mecanismos científicos.
