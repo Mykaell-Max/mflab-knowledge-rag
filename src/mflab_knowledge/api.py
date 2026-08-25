@@ -56,6 +56,7 @@ from mflab_knowledge.grounding import citation_coverage, citation_ids
 from mflab_knowledge.investigator import (
     AGENT_INVESTIGATION_ALGORITHM,
     ANSWER_COVERAGE_ALGORITHM,
+    CALL_LINEAGE_ALGORITHM,
     MAX_ACTIONS_PER_ITERATION,
     MAX_AGENT_ITERATIONS,
     bounded_action_batch,
@@ -74,6 +75,7 @@ from mflab_knowledge.investigator import (
     reserve_chunk_ids_by_aspect,
     resolve_verified_answer_contract,
     select_graph_frontier_results,
+    select_lineage_callee_results,
     successful_graph_traversal,
     synthesis_guidance,
 )
@@ -2367,9 +2369,11 @@ class RagApiService:
         kept_chunk_ids: list[str] = []
         baseline_chunk_ids: list[str] = []
         graph_frontier_chunk_ids: list[str] = []
+        lineage_graph_chunk_ids: list[str] = []
         terminal_graph_chunk_ids: list[str] = []
         final_reserved_context_chunk_ids: list[str] = []
         graph_frontier_results: list[dict[str, object]] = []
+        callee_lineages: list[dict[str, object]] = []
         selected_graph_frontier: list[dict[str, object]] = []
         raw_initial_hints = exploration.get("queries")
         initial_hints = (
@@ -2825,6 +2829,16 @@ class RagApiService:
                                     result["source_kind"] = (
                                         f"agent_{direction}_evidence"
                                     )
+                                if direction == "callees" and fetched:
+                                    callee_lineages.append(
+                                        {
+                                            "origin": dict(observation),
+                                            "results": [
+                                                dict(result) for result in fetched
+                                            ],
+                                            "iteration": iteration,
+                                        }
+                                    )
                                 record_traversal(
                                     tool,
                                     str(action["chunk_id"]),
@@ -3000,6 +3014,15 @@ class RagApiService:
                         continue
                     for result in fetched:
                         result["source_kind"] = source_kind
+                    if action["tool"] == "find_callees" and fetched:
+                        callee_lineages.append(
+                            {
+                                "origin": dict(frontier),
+                                "results": [dict(result) for result in fetched],
+                                "iteration": MAX_AGENT_ITERATIONS
+                                + terminal_round,
+                            }
+                        )
                     record_traversal(
                         str(action["tool"]),
                         str(action["chunk_id"]),
@@ -3143,6 +3166,36 @@ class RagApiService:
             reserved_context_chunk_ids = reserve_chunk_ids_by_aspect(
                 agent_coverage
             )
+            selected_lineage_evidence = select_lineage_callee_results(
+                question=query,
+                search_hints=frontier_hints,
+                lineages=callee_lineages,
+                anchor_chunk_ids=[
+                    *reserved_context_chunk_ids,
+                    *prioritized_kept_chunk_ids,
+                    *initial_baseline_chunk_ids,
+                ],
+                limit=4,
+            )
+            lineage_graph_chunk_ids = [
+                str(result.get("chunk_id", ""))
+                for result in selected_lineage_evidence
+                if result.get("chunk_id")
+            ]
+            if lineage_graph_chunk_ids:
+                record(
+                    "agent",
+                    "Implementações diretas priorizadas",
+                    "Filhos de chamadas verificadas receberam vagas antes "
+                    "de expansões posteriores.",
+                    {
+                        "algorithm": CALL_LINEAGE_ALGORITHM,
+                        "lineages": len(callee_lineages),
+                        "reserved_definitions": len(
+                            lineage_graph_chunk_ids
+                        ),
+                    },
+                )
             baseline_candidates: list[dict[str, object]] = []
             baseline_seen: set[str] = set()
             for retrieval_item in retrievals:
@@ -3183,6 +3236,7 @@ class RagApiService:
                 dict.fromkeys(
                     [
                         *reserved_context_chunk_ids,
+                        *lineage_graph_chunk_ids,
                         *terminal_graph_chunk_ids,
                         *baseline_chunk_ids,
                         *graph_frontier_chunk_ids,
@@ -3193,6 +3247,11 @@ class RagApiService:
             # the first positions. Baseline retrieval and graph frontiers fill
             # the remainder, instead of displacing later requested stages.
             selected_chunk_ids: list[str] = list(reserved_context_chunk_ids)
+            selected_chunk_ids.extend(
+                chunk_id
+                for chunk_id in lineage_graph_chunk_ids
+                if chunk_id not in selected_chunk_ids
+            )
             selected_chunk_ids.extend(
                 chunk_id
                 for chunk_id in terminal_graph_chunk_ids
@@ -3452,6 +3511,8 @@ class RagApiService:
                 "baseline_chunk_ids": baseline_chunk_ids,
                 "initial_baseline_chunk_ids": initial_baseline_chunk_ids,
                 "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
+                "lineage_graph_chunk_ids": lineage_graph_chunk_ids,
+                "lineage_algorithm": CALL_LINEAGE_ALGORITHM,
                 "terminal_graph_chunk_ids": terminal_graph_chunk_ids,
                 "graph_frontier": [
                     {

@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.6**. Antes de
+> Estado atualizado em **25 de agosto de 2026**, na versão candidata **0.45.7**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -253,6 +253,27 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.45.7 corrige a perda de linhagem observada na validação terminal da 0.45.6.
+O grafo havia encontrado implementações diretas úteis na primeira travessia,
+mas a reserva final considerava principalmente expansões terminais posteriores.
+Com isso, filhos diretos do coordenador podiam ser substituídos por operações de
+subsistemas apenas alcançáveis mais tarde.
+
+Cada `find_callees` agora registra a origem da aresta junto ao conjunto de
+definições retornadas. A reserva `direct_callee_lineage_v1` combina relevância
+da pergunta, âncoras já preservadas, identidade do proprietário do símbolo e
+unidade de implementação. A linhagem mais forte recebe a maior parte do pequeno
+orçamento antes que outra entrada independente ocupe uma vaga. O mecanismo é
+sintático, limitado e genérico; não contém nomes de projetos, branches,
+arquivos, classes ou mecanismos científicos.
+
+A interface e os relatórios expõem o algoritmo e os IDs opacos reservados para
+permitir auditoria do empacotamento. Esta versão não altera inventários,
+documentos, embeddings nem o mapa semântico v3. No servidor, basta instalar o
+pacote e reiniciar a API. A validação seguinte deve conferir se as definições
+diretas observadas durante a exploração permanecem nas fontes finais e se o
+caderno deixa de montar uma explicação a partir de vizinhos incidentais.
 
 A 0.45.6 corrige a passagem entre a navegação estrutural e a montagem final do
 contexto. As definições descendentes encontradas nas últimas rodadas do grafo

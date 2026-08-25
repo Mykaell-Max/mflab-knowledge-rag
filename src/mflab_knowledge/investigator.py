@@ -7,8 +7,9 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v26"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v27"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v6"
+CALL_LINEAGE_ALGORITHM = "direct_callee_lineage_v1"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -651,6 +652,155 @@ def select_graph_frontier_results(
             continue
         if len(selected) >= limit:
             return selected
+    return selected
+
+
+def select_lineage_callee_results(
+    *,
+    question: str,
+    search_hints: Iterable[str],
+    lineages: Iterable[dict[str, object]],
+    anchor_chunk_ids: Iterable[str] = (),
+    limit: int = 4,
+) -> list[dict[str, object]]:
+    """Reserve direct implementations without losing their call ancestry.
+
+    Each lineage contains one observed origin and the definitions returned by
+    a verified ``find_callees`` traversal. The strongest origin receives most
+    of the bounded capacity before later graph expansions are considered. This
+    prevents a useful coordinator's direct implementations from being evicted
+    by descendants discovered several rounds later.
+    """
+
+    if limit < 1:
+        return []
+    query_terms = _structural_search_terms(
+        " ".join([question, *(str(hint) for hint in search_hints)])
+    )
+    anchored = {str(value) for value in anchor_chunk_ids if str(value)}
+    merged: dict[str, dict[str, object]] = {}
+    order: list[str] = []
+    for position, lineage in enumerate(lineages):
+        origin = lineage.get("origin")
+        results = lineage.get("results")
+        if not isinstance(origin, dict) or not isinstance(results, list):
+            continue
+        origin_id = str(origin.get("chunk_id", ""))
+        if not origin_id:
+            continue
+        if origin_id not in merged:
+            merged[origin_id] = {
+                "origin": origin,
+                "results": [],
+                "position": position,
+            }
+            order.append(origin_id)
+        bucket = merged[origin_id]["results"]
+        assert isinstance(bucket, list)
+        known = {str(item.get("chunk_id", "")) for item in bucket}
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            chunk_id = str(result.get("chunk_id", ""))
+            if chunk_id and chunk_id != origin_id and chunk_id not in known:
+                bucket.append(result)
+                known.add(chunk_id)
+
+    ranked_lineages: list[
+        tuple[float, int, str, dict[str, object], list[dict[str, object]]]
+    ] = []
+    for origin_id in order:
+        lineage = merged[origin_id]
+        origin = lineage["origin"]
+        results = lineage["results"]
+        assert isinstance(origin, dict)
+        assert isinstance(results, list)
+        if not results:
+            continue
+        origin_metadata = (
+            f"{origin.get('path', '')} {origin.get('title', '')} "
+            f"{origin.get('preview', '')}"
+        )
+        origin_terms = _structural_search_terms(origin_metadata)
+        origin_score = 6.0 * len(query_terms & origin_terms)
+        if origin_id in anchored:
+            origin_score += 12.0
+        ranked_children: list[tuple[float, int, dict[str, object]]] = []
+        origin_title = str(origin.get("title", ""))
+        origin_owner = (
+            origin_title.rsplit("::", 1)[0] if "::" in origin_title else ""
+        )
+        origin_path = str(origin.get("path", ""))
+        origin_family = str(PurePosixPath(origin_path).with_suffix(""))
+        for child_position, result in enumerate(results):
+            child_title = str(result.get("title", ""))
+            child_owner = (
+                child_title.rsplit("::", 1)[0] if "::" in child_title else ""
+            )
+            child_path = str(result.get("path", ""))
+            child_family = str(PurePosixPath(child_path).with_suffix(""))
+            metadata_terms = _structural_search_terms(
+                f"{child_path} {child_title}"
+            )
+            text_terms = _structural_search_terms(result.get("text", ""))
+            child_score = 4.0 * len(query_terms & metadata_terms)
+            child_score += float(len(query_terms & text_terms))
+            if origin_owner and child_owner == origin_owner:
+                child_score += 10.0
+            if origin_family and child_family == origin_family:
+                child_score += 5.0
+            ranked_children.append((child_score, -child_position, result))
+        ranked_children.sort(key=lambda item: (item[0], item[1]), reverse=True)
+        ranked_lineages.append(
+            (
+                origin_score,
+                -int(lineage["position"]),
+                origin_id,
+                origin,
+                [item[2] for item in ranked_children],
+            )
+        )
+    ranked_lineages.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    if not ranked_lineages:
+        return []
+
+    selected: list[dict[str, object]] = []
+    selected_ids: set[str] = set()
+
+    def append(result: dict[str, object]) -> bool:
+        chunk_id = str(result.get("chunk_id", ""))
+        if not chunk_id or chunk_id in selected_ids or len(selected) >= limit:
+            return False
+        selected.append(result)
+        selected_ids.add(chunk_id)
+        return True
+
+    # Most of the small reservation belongs to the strongest direct lineage.
+    # One remaining slot lets another independently relevant entry point retain
+    # representation without diluting the coordinator's internal flow.
+    primary_children = ranked_lineages[0][4]
+    primary_origin_is_anchored = ranked_lineages[0][2] in anchored
+    primary_quota = min(
+        len(primary_children),
+        (
+            limit
+            if primary_origin_is_anchored and limit <= 2
+            else max(1, limit - 1)
+        ),
+    )
+    for result in primary_children[:primary_quota]:
+        append(result)
+    for _score, _position, _origin_id, _origin, children in ranked_lineages[1:]:
+        if len(selected) >= limit:
+            break
+        for result in children:
+            if append(result):
+                break
+    for _score, _position, _origin_id, _origin, children in ranked_lineages:
+        for result in children:
+            append(result)
+            if len(selected) >= limit:
+                return selected
     return selected
 
 

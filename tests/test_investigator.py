@@ -18,6 +18,7 @@ from mflab_knowledge.investigator import (
     reserve_chunk_ids_by_aspect,
     resolve_verified_answer_contract,
     select_graph_frontier_results,
+    select_lineage_callee_results,
     successful_graph_traversal,
 )
 
@@ -601,6 +602,112 @@ class InvestigatorTests(unittest.TestCase):
         )
 
         self.assertEqual(selected[0]["chunk_id"], "grid")
+
+    def test_lineage_reserves_direct_same_owner_implementations(self) -> None:
+        selected = select_lineage_callee_results(
+            question="Explain the particle coordinator advancement flow",
+            search_hints=["particle lifecycle"],
+            anchor_chunk_ids=["coordinator"],
+            lineages=[
+                {
+                    "origin": {
+                        "chunk_id": "coordinator",
+                        "path": "src/particle/coordinator.cpp",
+                        "title": "ParticleCoordinator::advance",
+                    },
+                    "results": [
+                        {
+                            "chunk_id": "timer",
+                            "path": "src/runtime/timer.cpp",
+                            "title": "Timer::begin",
+                        },
+                        {
+                            "chunk_id": "add",
+                            "path": "src/particle/coordinator.cpp",
+                            "title": "ParticleCoordinator::addItems",
+                        },
+                        {
+                            "chunk_id": "move",
+                            "path": "src/particle/coordinator.cpp",
+                            "title": "ParticleCoordinator::moveItems",
+                        },
+                        {
+                            "chunk_id": "cleanup",
+                            "path": "src/particle/coordinator.cpp",
+                            "title": "ParticleCoordinator::cleanup",
+                        },
+                    ],
+                },
+                {
+                    "origin": {
+                        "chunk_id": "later",
+                        "path": "src/grid/manager.cpp",
+                        "title": "GridManager::initialize",
+                    },
+                    "results": [
+                        {
+                            "chunk_id": "refine",
+                            "path": "src/grid/refine.cpp",
+                            "title": "GridRefiner::refine",
+                        }
+                    ],
+                },
+            ],
+            limit=4,
+        )
+
+        self.assertEqual(
+            [item["chunk_id"] for item in selected[:3]],
+            ["add", "move", "cleanup"],
+        )
+
+    def test_lineage_prefers_an_anchored_origin_over_later_expansion(self) -> None:
+        selected = select_lineage_callee_results(
+            question="Explain the complete runtime flow",
+            search_hints=[],
+            anchor_chunk_ids=["entry"],
+            lineages=[
+                {
+                    "origin": {
+                        "chunk_id": "entry",
+                        "path": "src/engine.cpp",
+                        "title": "Engine::run",
+                    },
+                    "results": [
+                        {
+                            "chunk_id": "step",
+                            "path": "src/engine.cpp",
+                            "title": "Engine::step",
+                        },
+                        {
+                            "chunk_id": "finish",
+                            "path": "src/engine.cpp",
+                            "title": "Engine::finish",
+                        },
+                    ],
+                },
+                {
+                    "origin": {
+                        "chunk_id": "later",
+                        "path": "src/runtime_flow.cpp",
+                        "title": "RuntimeFlow::run",
+                    },
+                    "results": [
+                        {
+                            "chunk_id": "incidental",
+                            "path": "src/runtime_flow.cpp",
+                            "title": "RuntimeFlow::trace",
+                        }
+                    ],
+                },
+            ],
+            limit=2,
+        )
+
+        self.assertEqual(
+            [item["chunk_id"] for item in selected],
+            ["step", "finish"],
+        )
 
     def test_call_frontier_preserves_distinct_paths_before_siblings(self) -> None:
         selected = select_graph_frontier_results(
