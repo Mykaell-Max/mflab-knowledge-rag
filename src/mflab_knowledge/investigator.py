@@ -7,7 +7,7 @@ import unicodedata
 from pathlib import PurePosixPath
 from typing import Iterable
 
-AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v27"
+AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v28"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v6"
 CALL_LINEAGE_ALGORITHM = "direct_callee_lineage_v1"
 MAX_AGENT_ITERATIONS = 5
@@ -775,18 +775,15 @@ def select_lineage_callee_results(
         selected_ids.add(chunk_id)
         return True
 
-    # Most of the small reservation belongs to the strongest direct lineage.
-    # One remaining slot lets another independently relevant entry point retain
-    # representation without diluting the coordinator's internal flow.
+    # An explicitly preserved origin owns the complete small reservation.  A
+    # merely inferred primary origin leaves one slot for another entry point.
+    # This keeps a verified coordinator's direct flow intact while preserving
+    # diversity when no lineage was anchored by the investigation itself.
     primary_children = ranked_lineages[0][4]
     primary_origin_is_anchored = ranked_lineages[0][2] in anchored
     primary_quota = min(
         len(primary_children),
-        (
-            limit
-            if primary_origin_is_anchored and limit <= 2
-            else max(1, limit - 1)
-        ),
+        limit if primary_origin_is_anchored else max(1, limit - 1),
     )
     for result in primary_children[:primary_quota]:
         append(result)

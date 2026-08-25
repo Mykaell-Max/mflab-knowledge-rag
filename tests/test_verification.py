@@ -6,6 +6,7 @@ from mflab_knowledge.verification import (
     attach_discovered_citations,
     claims_for_verification,
     downgrade_callsite_only_claims,
+    downgrade_unanchored_subject_claims,
     emit_progress,
     normalize_support_discovery,
     normalize_verification,
@@ -15,6 +16,68 @@ from mflab_knowledge.verification import (
 
 
 class VerificationTests(unittest.TestCase):
+    def test_downgrades_subject_relationship_absent_from_cited_source(self) -> None:
+        result = downgrade_unanchored_subject_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "O ParticleEngine é integrado por exportStep [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "A função foi descrita.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "project": "Solver",
+                    "path": "src/output.cpp",
+                    "title": "Domain::exportStep",
+                    "text": "void Domain::exportStep() { writeOutput(); }",
+                }
+            ],
+            subject_identifiers=["ParticleEngine"],
+        )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "uncertain")
+
+    def test_keeps_subject_relationship_visible_in_cited_source(self) -> None:
+        result = downgrade_unanchored_subject_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "O ParticleEngine avança por advance [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "A relação está visível.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "project": "Solver",
+                    "path": "src/particle_engine.cpp",
+                    "title": "ParticleEngine::advance",
+                    "text": "void ParticleEngine::advance() { moveItems(); }",
+                }
+            ],
+            subject_identifiers=["ParticleEngine"],
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "supported")
+
     def test_downgrades_behavior_inferred_from_callsite_only(self) -> None:
         result = downgrade_callsite_only_claims(
             {

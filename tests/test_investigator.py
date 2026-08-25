@@ -657,8 +657,8 @@ class InvestigatorTests(unittest.TestCase):
         )
 
         self.assertEqual(
-            [item["chunk_id"] for item in selected[:3]],
-            ["add", "move", "cleanup"],
+            [item["chunk_id"] for item in selected],
+            ["add", "move", "cleanup", "timer"],
         )
 
     def test_lineage_prefers_an_anchored_origin_over_later_expansion(self) -> None:

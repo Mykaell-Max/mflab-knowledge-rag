@@ -7,9 +7,9 @@ from collections.abc import Callable
 
 from mflab_knowledge.grounding import citation_ids, factual_units
 
-VERIFICATION_ALGORITHM = "claim_evidence_audit_v6"
+VERIFICATION_ALGORITHM = "claim_evidence_audit_v7"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v27"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v28"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -361,6 +361,100 @@ def downgrade_callsite_only_claims(
             finding["finding"] = (
                 f"A fonte citada mostra apenas a chamada de {unsupported_callable}(), "
                 "não sua implementação."
+            )
+        findings.append(finding)
+    counts = {
+        verdict: sum(item.get("verdict") == verdict for item in findings)
+        for verdict in ("supported", "unsupported", "uncertain")
+    }
+    return {
+        **verification,
+        "algorithm": VERIFICATION_ALGORITHM,
+        "claims": findings,
+        "counts": counts,
+        "passed": bool(findings)
+        and counts["unsupported"] == 0
+        and counts["uncertain"] == 0,
+    }
+
+
+def downgrade_unanchored_subject_claims(
+    verification: dict[str, object],
+    *,
+    sources: list[dict[str, object]],
+    subject_identifiers: list[str],
+) -> dict[str, object]:
+    """Require a cited source to mention subjects asserted by a claim.
+
+    Planner identifiers are used only as conservative lexical guards. They do
+    not establish a fact. When a supported claim itself repeats an identifier,
+    at least one of its cited sources must visibly contain that identifier in
+    its provenance or authorized text. This blocks a locally correct function
+    description from being promoted into an unrelated subsystem relationship.
+    """
+
+    raw_findings = verification.get("claims")
+    if not isinstance(raw_findings, list):
+        return verification
+    identifiers: list[tuple[str, str]] = []
+    for value in subject_identifiers:
+        label = " ".join(str(value).split()).strip()
+        signature = _identifier_signature(label)
+        if len(signature) >= 3 and signature not in {
+            item[1] for item in identifiers
+        }:
+            identifiers.append((label, signature))
+    if not identifiers:
+        return verification
+    source_by_id = {
+        str(source.get("source_id", "")): source
+        for source in sources
+        if str(source.get("source_id", ""))
+    }
+    findings: list[dict[str, object]] = []
+    for raw_finding in raw_findings:
+        if not isinstance(raw_finding, dict):
+            continue
+        finding = dict(raw_finding)
+        if finding.get("verdict") != "supported":
+            findings.append(finding)
+            continue
+        claim_signature = _identifier_signature(
+            str(finding.get("claim", ""))
+        )
+        mentioned = [
+            (label, signature)
+            for label, signature in identifiers
+            if signature in claim_signature
+        ]
+        if not mentioned:
+            findings.append(finding)
+            continue
+        cited_sources = [
+            source_by_id[str(source_id)]
+            for source_id in finding.get("source_ids", [])
+            if str(source_id) in source_by_id
+        ]
+        cited_signatures = [
+            _identifier_signature(
+                " ".join(
+                    str(source.get(field, ""))
+                    for field in ("project", "path", "title", "text")
+                )
+            )
+            for source in cited_sources
+        ]
+        missing = [
+            label
+            for label, signature in mentioned
+            if not any(signature in source for source in cited_signatures)
+        ]
+        if missing:
+            finding["verdict"] = "uncertain"
+            finding["finding"] = (
+                "A relação com "
+                + ", ".join(missing)
+                + " não aparece nas fontes citadas."
             )
         findings.append(finding)
     counts = {

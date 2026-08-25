@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **25 de agosto de 2026**, na versão candidata **0.45.7**. Antes de
+> Estado atualizado em **25 de agosto de 2026**, na versão candidata **0.45.8**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -253,6 +253,34 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.45.8 trata dois problemas separados observados na execução real da 0.45.7.
+A reserva de linhagem preservou três implementações diretas do coordenador, mas
+cedeu a quarta vaga a uma entrada independente alcançada depois. A resposta
+também atribuiu ao assunto perguntado comportamentos de remalhamento e saída que
+eram corretos localmente nas funções citadas, porém não possuíam relação
+comprovada com aquele assunto.
+
+Quando a linhagem mais forte nasce de uma âncora explicitamente preservada pela
+investigação, ela passa a receber toda a pequena reserva de descendentes diretos.
+Quando a origem é apenas inferida, uma vaga continua disponível para outra
+entrada, mantendo diversidade em perguntas menos determinadas. A regra usa
+somente a proveniência da travessia, identidade estrutural e relevância textual.
+
+A auditoria também aplica uma guarda lexical conservadora aos identificadores
+propostos pelo planejador para a pergunta atual. Se uma afirmação sustentada
+repete um desses identificadores, pelo menos uma de suas próprias fontes citadas
+precisa exibi-lo no projeto, caminho, título ou texto autorizado. Caso contrário,
+a relação é rebaixada para incerta e segue o fluxo normal de revisão. A guarda
+não transforma identificadores em fatos, ignora os rótulos de projeto e branch
+já resolvidos como escopo e não contém nomes de repositórios, mecanismos,
+arquivos ou símbolos científicos.
+
+Esta versão altera apenas seleção de contexto e verificação; não modifica
+inventários, corpus, embeddings ou mapa estrutural. No servidor, basta instalar
+o pacote e reiniciar a API. A validação seguinte deve conferir se as quatro vagas
+reservadas pertencem à linhagem direta ancorada e se relações incidentais com
+subsistemas sem menção ao assunto são removidas ou assumidas como limitação.
 
 A 0.45.7 corrige a perda de linhagem observada na validação terminal da 0.45.6.
 O grafo havia encontrado implementações diretas úteis na primeira travessia,

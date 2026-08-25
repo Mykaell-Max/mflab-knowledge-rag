@@ -104,6 +104,7 @@ from mflab_knowledge.verification import (
     attach_discovered_citations,
     claims_for_verification,
     downgrade_callsite_only_claims,
+    downgrade_unanchored_subject_claims,
     emit_progress,
     normalize_support_discovery,
     normalize_verification,
@@ -4348,6 +4349,49 @@ class RagApiService:
         verification_cache: dict[
             tuple[str, tuple[str, ...]], dict[str, object]
         ] = {}
+        scope_labels = {
+            str(value)
+            for value in (project, branch)
+            if value is not None and str(value).strip()
+        }
+        scope_resolution = context.get("scope_resolution")
+        raw_scopes = (
+            scope_resolution.get("scopes")
+            if isinstance(scope_resolution, dict)
+            else None
+        )
+        if isinstance(raw_scopes, list):
+            for scope in raw_scopes:
+                if not isinstance(scope, dict):
+                    continue
+                scope_labels.update(
+                    str(scope.get(field, ""))
+                    for field in ("project", "branch")
+                    if str(scope.get(field, "")).strip()
+                )
+
+        def identifier_signature(value: object) -> str:
+            return "".join(
+                character.casefold()
+                for character in str(value)
+                if character.isalnum()
+            )
+
+        scope_signatures = {
+            identifier_signature(value) for value in scope_labels
+        }
+        raw_subject_identifiers = (
+            query_plan.get("identifiers")
+            if isinstance(query_plan, dict)
+            else None
+        )
+        subject_identifiers = [
+            str(value)
+            for value in raw_subject_identifiers or []
+            if isinstance(value, str)
+            and identifier_signature(value)
+            and identifier_signature(value) not in scope_signatures
+        ]
 
         def claim_cache_key(
             claim: dict[str, object],
@@ -4435,6 +4479,11 @@ class RagApiService:
                 normalized = downgrade_callsite_only_claims(
                     normalized,
                     sources=evidence,
+                )
+                normalized = downgrade_unanchored_subject_claims(
+                    normalized,
+                    sources=evidence,
+                    subject_identifiers=subject_identifiers,
                 )
                 raw_findings = normalized.get("claims")
                 if not isinstance(raw_findings, list):
