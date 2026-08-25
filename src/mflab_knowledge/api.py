@@ -4262,6 +4262,7 @@ class RagApiService:
         section_output_limit: int | None = None
         generated_sections: list[dict[str, object]] = []
         generated_section_plans: list[dict[str, object]] = []
+        section_claim_source_candidates: dict[str, set[str]] = {}
         generated: dict[str, object] | None = None
         if use_sectional_synthesis:
             record(
@@ -4394,6 +4395,22 @@ class RagApiService:
                         section,
                         position=position,
                     )
+                    section_source_ids = {
+                        str(source.get("source_id", ""))
+                        for source in section_sources
+                        if str(source.get("source_id", ""))
+                    }
+                    for section_claim in claims_for_verification(
+                        str(generated_section["answer"])
+                    ):
+                        claim_text = str(
+                            section_claim.get("text", "")
+                        ).strip()
+                        if claim_text:
+                            section_claim_source_candidates.setdefault(
+                                claim_text,
+                                set(),
+                            ).update(section_source_ids)
                     generated_sections.append(generated_section)
                     generated_section_plans.append(section)
                     section_generation_count += 1
@@ -4830,6 +4847,7 @@ class RagApiService:
 
         verification = unavailable_verification("disabled")
         initial_verification: dict[str, object] | None = None
+        verified_provenance_attached = 0
         evidence_repair = False
         supported_subset_only = False
         verifier = getattr(self.generator, "verify", None)
@@ -4853,7 +4871,18 @@ class RagApiService:
             )
 
         def audit(candidate_answer: str) -> dict[str, object]:
-            claims = claims_for_verification(candidate_answer)
+            claims: list[dict[str, object]] = []
+            for raw_claim in claims_for_verification(candidate_answer):
+                claim = dict(raw_claim)
+                if not claim.get("cited_source_ids"):
+                    candidates = section_claim_source_candidates.get(
+                        str(claim.get("text", "")).strip(),
+                        set(),
+                    )
+                    if candidates:
+                        claim["cited_source_ids"] = sorted(candidates)
+                        claim["provenance_mode"] = "section_candidates"
+                claims.append(claim)
             valid_source_ids = {
                 str(source.get("source_id", ""))
                 for source in raw_sources
@@ -5022,6 +5051,29 @@ class RagApiService:
             initial_verification = _verification_diagnostic_snapshot(
                 verification
             )
+
+            if verification.get("performed") is True:
+                answer, attached = attach_discovered_citations(
+                    answer,
+                    verification,
+                )
+                verified_provenance_attached += attached
+                if attached:
+                    assessment = _grounding_assessment(
+                        answer,
+                        raw_sources,
+                        require_scope_coverage=require_scope_coverage,
+                    )
+                    quality_issues = overview_quality_issues(
+                        answer,
+                        exploration if isinstance(exploration, dict) else {},
+                    )
+                    record(
+                        "verification",
+                        "Proveniência aprovada associada ao texto",
+                        "Somente associações confirmadas pela auditoria foram materializadas como citações.",
+                        {"citations_attached": attached},
+                    )
 
             audit_counts = verification.get("counts")
             if verification.get("performed") is True and isinstance(
@@ -5679,6 +5731,7 @@ class RagApiService:
                 "quality_retry": quality_retry,
                 "evidence_repair": evidence_repair,
                 "verification_initial": initial_verification,
+                "verified_provenance_attached": verified_provenance_attached,
                 "citation_discovery": citation_discovery,
                 "code_blocks_removed": removed_code_blocks,
                 "code_citations_attached": code_citations_attached,

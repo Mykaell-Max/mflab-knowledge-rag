@@ -2526,6 +2526,105 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["context"]["generation_attempts"], 2)
         self.assertEqual(result["usage"]["total_tokens"], 30)
 
+    def test_section_provenance_is_audited_before_becoming_a_citation(
+        self,
+    ) -> None:
+        generator = _VerifyingGenerator(
+            answers=[
+                "The coordinator invokes the runtime stage.",
+                "The runtime stage updates the local state.",
+            ],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"]},'
+                '{"claim_id":"C2","verdict":"supported",'
+                '"source_ids":["S2"]}]}'
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "entry",
+                "project": "Solver",
+                "path": "src/entry.cpp",
+                "text": "coordinator invokes runtime stage",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "runtime",
+                "project": "Solver",
+                "path": "src/runtime.cpp",
+                "text": "runtime stage updates local state",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "Explain the entry and runtime stages",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "exploration": {"intent": "mechanism"},
+                "agent_investigation": {
+                    "coverage": [
+                        {
+                            "aspect_id": "A1",
+                            "aspect": "entry",
+                            "status": "covered",
+                            "chunk_ids": ["entry"],
+                        },
+                        {
+                            "aspect_id": "A2",
+                            "aspect": "runtime",
+                            "status": "covered",
+                            "chunk_ids": ["runtime"],
+                        },
+                    ]
+                },
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 80,
+                "truncated": False,
+                "sources": sources,
+                "investigation": {"steps": []},
+            },
+        ):
+            result = service.ask(
+                query="Explain the entry and runtime stages",
+                response_depth="detailed",
+            )
+
+        self.assertFalse(result["abstained"])
+        self.assertIn("stage. [S1]", result["answer"])
+        self.assertIn("state. [S2]", result["answer"])
+        self.assertEqual(len(generator.verify_calls), 1)
+        audited_claims = generator.verify_calls[0]["claims"]
+        self.assertEqual(audited_claims[0]["cited_source_ids"], ["S1"])
+        self.assertEqual(audited_claims[1]["cited_source_ids"], ["S2"])
+        self.assertEqual(
+            result["context"]["verified_provenance_attached"],
+            2,
+        )
+
     def test_ask_uses_local_query_planner_for_location_questions(self) -> None:
         generator = _PlanningGenerator()
         service = api.RagApiService(

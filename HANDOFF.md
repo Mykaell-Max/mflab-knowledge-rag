@@ -1600,3 +1600,13 @@ cópia limitada e sanitizada dessa primeira auditoria antes de qualquer recorte.
 O registro contém apenas afirmação, veredito, identificadores de fontes e motivo,
 sem texto das evidências, prompts ou credenciais. Esse dado é diagnóstico e não
 participa de ranking, geração, verificação ou decisão de entrega da resposta.
+
+A auditoria real da 0.46.4 identificou que 30 das 34 afirmações descartadas
+chegaram sem qualquer fonte, embora tivessem sido produzidas dentro de uma seção
+com proveniência delimitada. As citações das implementações haviam sido emitidas
+como uma unidade isolada no final da seção. A 0.46.5 preserva a associação entre
+cada afirmação gerada e as fontes autorizadas de sua seção. Essas fontes entram
+somente como candidatas da auditoria semântica. Apenas os identificadores que o
+verificador aprovar são materializados como citações na resposta; afirmações
+rejeitadas continuam sujeitas ao mesmo recorte determinístico. A política é
+genérica e não contém nomes de projetos, branches, arquivos ou mecanismos.

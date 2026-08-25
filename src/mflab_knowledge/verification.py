@@ -928,8 +928,16 @@ def supported_claim_subset(
         if not claim or not isinstance(source_ids, list) or not source_ids:
             continue
         allowed_source_ids.update(str(value) for value in source_ids)
-        if claim not in selected:
-            selected.append(claim)
+        selected_claim = claim
+        if not citation_ids(claim):
+            selected_claim = (
+                claim
+                + " ["
+                + ", ".join(str(value) for value in source_ids)
+                + "]"
+            )
+        if selected_claim not in selected:
+            selected.append(selected_claim)
     if not selected:
         return None
     if answer is not None and sources:

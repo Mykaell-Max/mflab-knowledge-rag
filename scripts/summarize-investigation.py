@@ -20,6 +20,12 @@ def show_response(label: str, response: dict[str, object]) -> None:
     agent = agent if isinstance(agent, dict) else {}
     verification = response.get("verification")
     verification = verification if isinstance(verification, dict) else {}
+    initial_verification = context.get("verification_initial")
+    initial_verification = (
+        initial_verification
+        if isinstance(initial_verification, dict)
+        else {}
+    )
     answer_coverage = response.get("answer_coverage")
     answer_coverage = answer_coverage if isinstance(answer_coverage, dict) else {}
     actions = agent.get("actions")
@@ -114,6 +120,26 @@ def show_response(label: str, response: dict[str, object]) -> None:
         f" | incertas={counts.get('uncertain', 0)}"
         f" | não sustentadas={counts.get('unsupported', 0)}"
     )
+    initial_counts = initial_verification.get("counts")
+    initial_counts = initial_counts if isinstance(initial_counts, dict) else {}
+    if initial_verification.get("performed") is True:
+        initial_claims = initial_verification.get("claims")
+        initial_claims = initial_claims if isinstance(initial_claims, list) else []
+        claims_with_sources = sum(
+            bool(claim.get("source_ids"))
+            for claim in initial_claims
+            if isinstance(claim, dict)
+        )
+        print(
+            "  primeira auditoria:"
+            f" afirmações={initial_verification.get('claims_total', len(initial_claims))}"
+            f" | com proveniência={claims_with_sources}"
+            f" | sustentadas={initial_counts.get('supported', 0)}"
+            f" | incertas={initial_counts.get('uncertain', 0)}"
+            f" | não sustentadas={initial_counts.get('unsupported', 0)}"
+            f" | citações aprovadas anexadas="
+            f"{context.get('verified_provenance_attached', 0)}"
+        )
     audited_aspects = answer_coverage.get("coverage")
     audited_aspects = audited_aspects if isinstance(audited_aspects, list) else []
     if audited_aspects:
