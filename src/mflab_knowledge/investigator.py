@@ -9,7 +9,7 @@ from typing import Iterable
 
 AGENT_INVESTIGATION_ALGORITHM = "bounded_tool_investigation_v28"
 ANSWER_COVERAGE_ALGORITHM = "audited_answer_coverage_v6"
-CALL_LINEAGE_ALGORITHM = "direct_callee_lineage_v1"
+CALL_LINEAGE_ALGORITHM = "direct_callee_lineage_v2"
 MAX_AGENT_ITERATIONS = 5
 MAX_ACTIONS_PER_ITERATION = 3
 MAX_OBSERVATIONS = 18
@@ -666,10 +666,9 @@ def select_lineage_callee_results(
     """Reserve direct implementations without losing their call ancestry.
 
     Each lineage contains one observed origin and the definitions returned by
-    a verified ``find_callees`` traversal. The strongest origin receives most
-    of the bounded capacity before later graph expansions are considered. This
-    prevents a useful coordinator's direct implementations from being evicted
-    by descendants discovered several rounds later.
+    a verified ``find_callees`` traversal. Anchored origins share the bounded
+    capacity before later graph expansions are considered. This prevents one
+    useful coordinator from evicting another independently observed stage.
     """
 
     if limit < 1:
@@ -775,28 +774,37 @@ def select_lineage_callee_results(
         selected_ids.add(chunk_id)
         return True
 
-    # An explicitly preserved origin owns the complete small reservation.  A
-    # merely inferred primary origin leaves one slot for another entry point.
-    # This keeps a verified coordinator's direct flow intact while preserving
-    # diversity when no lineage was anchored by the investigation itself.
-    primary_children = ranked_lineages[0][4]
-    primary_origin_is_anchored = ranked_lineages[0][2] in anchored
-    primary_quota = min(
-        len(primary_children),
-        limit if primary_origin_is_anchored else max(1, limit - 1),
-    )
-    for result in primary_children[:primary_quota]:
-        append(result)
-    for _score, _position, _origin_id, _origin, children in ranked_lineages[1:]:
-        if len(selected) >= limit:
-            break
-        for result in children:
-            if append(result):
-                break
-    for _score, _position, _origin_id, _origin, children in ranked_lineages:
-        for result in children:
-            append(result)
+    anchored_lineages = [
+        lineage for lineage in ranked_lineages if lineage[2] in anchored
+    ]
+    allocation_lineages = (anchored_lineages or ranked_lineages[:1])[:3]
+    # Reserve one direct implementation from every independently anchored
+    # coordinator, then grow their flows in round-robin order. Unanchored
+    # lineages remain fallback material and cannot displace a proved stage.
+    child_position = 0
+    while len(selected) < limit:
+        had_candidate = False
+        for (
+            _score,
+            _position,
+            _origin_id,
+            _origin,
+            children,
+        ) in allocation_lineages:
+            if child_position >= len(children):
+                continue
+            had_candidate = True
+            append(children[child_position])
             if len(selected) >= limit:
+                return selected
+        if not had_candidate:
+            break
+        child_position += 1
+    for lineage in ranked_lineages:
+        if lineage in allocation_lineages:
+            continue
+        for result in lineage[4]:
+            if append(result) and len(selected) >= limit:
                 return selected
     return selected
 

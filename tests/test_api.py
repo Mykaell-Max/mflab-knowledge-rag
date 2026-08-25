@@ -1141,7 +1141,7 @@ class ApiServiceTests(unittest.TestCase):
                     "path": f"src/unit_{position}.cpp",
                     "text": "x" * 2000,
                 }
-                for position in range(10)
+                for position in range(api.AGENT_CONTEXT_DIVERSITY_TARGET)
             ],
             max_context_characters=8000,
             source_limit=api.AGENT_CONTEXT_DIVERSITY_TARGET,

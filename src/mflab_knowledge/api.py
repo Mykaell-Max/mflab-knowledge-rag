@@ -179,7 +179,7 @@ def _response_depth_instructions(response_depth: str) -> str:
         ) from exc
 
 CONTEXT_DIVERSITY_TARGET = 6
-AGENT_CONTEXT_DIVERSITY_TARGET = 10
+AGENT_CONTEXT_DIVERSITY_TARGET = 12
 CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
@@ -189,6 +189,8 @@ SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
 MAX_SECTION_SOURCES = 5
+MAX_LINEAGE_IMPLEMENTATIONS = 8
+MAX_LINEAGE_FLOW_SOURCES = 10
 MAX_SECTION_CONTINUATIONS = 2
 MAX_COMPOSITION_DRAFT_CHARACTERS = 1600
 
@@ -3498,7 +3500,7 @@ class RagApiService:
                     *prioritized_kept_chunk_ids,
                     *initial_baseline_chunk_ids,
                 ],
-                limit=4,
+                limit=min(MAX_LINEAGE_IMPLEMENTATIONS, max(4, limit - 2)),
             )
             lineage_graph_chunk_ids = [
                 str(result.get("chunk_id", ""))
@@ -3507,6 +3509,9 @@ class RagApiService:
             ]
             selected_lineage_ids = set(lineage_graph_chunk_ids)
             seen_lineage_edges: set[tuple[str, str]] = set()
+            lineage_candidates_by_target: dict[
+                str, list[tuple[str, str]]
+            ] = {}
             for lineage in callee_lineages:
                 origin = lineage.get("origin")
                 children = lineage.get("results")
@@ -3519,18 +3524,33 @@ class RagApiService:
                     if not isinstance(child, dict):
                         continue
                     target_id = str(child.get("chunk_id", ""))
-                    edge = (origin_id, target_id)
                     if (
                         target_id == origin_id
                         or target_id not in selected_lineage_ids
-                        or edge in seen_lineage_edges
                     ):
+                        continue
+                    candidates = lineage_candidates_by_target.setdefault(
+                        target_id, []
+                    )
+                    identity = (origin_id, target_id)
+                    if identity not in candidates:
+                        candidates.append(identity)
+            # The selector ranks implementations globally. Preserve that order
+            # while reconstructing their verified call ancestry so a later,
+            # equally relevant coordinator is not displaced merely because its
+            # traversal happened after the first one.
+            for target_id in lineage_graph_chunk_ids:
+                for origin_id, candidate_target_id in (
+                    lineage_candidates_by_target.get(target_id, [])
+                ):
+                    edge = (origin_id, candidate_target_id)
+                    if edge in seen_lineage_edges:
                         continue
                     seen_lineage_edges.add(edge)
                     lineage_edges.append(
                         {
                             "origin_chunk_id": origin_id,
-                            "target_chunk_id": target_id,
+                            "target_chunk_id": candidate_target_id,
                             "kind": "calls_symbol",
                         }
                     )
@@ -3550,18 +3570,40 @@ class RagApiService:
                 targets = lineage_targets_by_origin.setdefault(origin_id, [])
                 if target_id not in targets:
                     targets.append(target_id)
-            for origin_id, target_ids in sorted(
-                lineage_targets_by_origin.items(),
-                key=lambda value: len(value[1]),
-                reverse=True,
-            ):
-                for chunk_id in (origin_id, *target_ids):
+            ordered_lineages = list(lineage_targets_by_origin.items())
+            # First retain both sides of one edge for every selected lineage.
+            # Remaining children are then interleaved. This represents several
+            # independently observed stages without allowing one large caller
+            # to consume the entire context window.
+            for origin_id, target_ids in ordered_lineages:
+                for chunk_id in (origin_id, target_ids[0]):
                     if chunk_id not in lineage_flow_chunk_ids:
                         lineage_flow_chunk_ids.append(chunk_id)
-                    if len(lineage_flow_chunk_ids) >= MAX_SECTION_SOURCES:
+                    if (
+                        len(lineage_flow_chunk_ids)
+                        >= MAX_LINEAGE_FLOW_SOURCES
+                    ):
                         break
-                if len(lineage_flow_chunk_ids) >= MAX_SECTION_SOURCES:
+                if len(lineage_flow_chunk_ids) >= MAX_LINEAGE_FLOW_SOURCES:
                     break
+            child_position = 1
+            while len(lineage_flow_chunk_ids) < MAX_LINEAGE_FLOW_SOURCES:
+                added = False
+                for _origin_id, target_ids in ordered_lineages:
+                    if child_position >= len(target_ids):
+                        continue
+                    chunk_id = target_ids[child_position]
+                    if chunk_id not in lineage_flow_chunk_ids:
+                        lineage_flow_chunk_ids.append(chunk_id)
+                        added = True
+                    if (
+                        len(lineage_flow_chunk_ids)
+                        >= MAX_LINEAGE_FLOW_SOURCES
+                    ):
+                        break
+                if not added:
+                    break
+                child_position += 1
             if lineage_graph_chunk_ids:
                 record(
                     "agent",

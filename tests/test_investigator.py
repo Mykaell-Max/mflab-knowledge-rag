@@ -709,6 +709,59 @@ class InvestigatorTests(unittest.TestCase):
             ["step", "finish"],
         )
 
+    def test_lineage_interleaves_multiple_anchored_coordinators(self) -> None:
+        selected = select_lineage_callee_results(
+            question="Explain configuration and runtime flow",
+            search_hints=[],
+            anchor_chunk_ids=["configure", "advance"],
+            lineages=[
+                {
+                    "origin": {
+                        "chunk_id": "configure",
+                        "path": "src/engine.cpp",
+                        "title": "Engine::configure",
+                    },
+                    "results": [
+                        {
+                            "chunk_id": "allocate",
+                            "path": "src/engine.cpp",
+                            "title": "Engine::allocate",
+                        },
+                        {
+                            "chunk_id": "reset",
+                            "path": "src/engine.cpp",
+                            "title": "Engine::reset",
+                        },
+                    ],
+                },
+                {
+                    "origin": {
+                        "chunk_id": "advance",
+                        "path": "src/engine.cpp",
+                        "title": "Engine::advance",
+                    },
+                    "results": [
+                        {
+                            "chunk_id": "create",
+                            "path": "src/engine.cpp",
+                            "title": "Engine::createItems",
+                        },
+                        {
+                            "chunk_id": "move",
+                            "path": "src/engine.cpp",
+                            "title": "Engine::moveItems",
+                        },
+                    ],
+                },
+            ],
+            limit=4,
+        )
+
+        self.assertEqual(
+            [item["chunk_id"] for item in selected],
+            ["allocate", "create", "reset", "move"],
+        )
+
     def test_call_frontier_preserves_distinct_paths_before_siblings(self) -> None:
         selected = select_graph_frontier_results(
             question="Explain the worker lifecycle",

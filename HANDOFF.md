@@ -1610,3 +1610,20 @@ somente como candidatas da auditoria semântica. Apenas os identificadores que o
 verificador aprovar são materializados como citações na resposta; afirmações
 rejeitadas continuam sujeitas ao mesmo recorte determinístico. A política é
 genérica e não contém nomes de projetos, branches, arquivos ou mecanismos.
+
+A validação real da 0.46.5 confirmou a correção da proveniência: a resposta do
+fluxo mais longo terminou com todas as afirmações finais sustentadas. Ela
+também mostrou que o empacotamento ainda favorecia uma única cadeia de
+chamadas. Um coordenador de configuração podia ocupar todas as vagas
+estruturais, deixando no pacote apenas o ponto de chamada de etapas de execução
+e não suas implementações. O verificador recusava corretamente qualquer
+explicação dessas etapas, mas a resposta resultante permanecia incompleta.
+
+A 0.46.6 distribui a reserva de implementações entre coordenadores observados
+independentemente e ligados aos aspectos investigados. Primeiro é preservado um
+par origem e filho de cada cadeia; os demais filhos são intercalados dentro de
+um limite global. O contexto investigativo detalhado aceita até doze fontes e
+a reserva estrutural consome no máximo dez, mantendo vagas para entradas,
+configuração e integração externas às cadeias. A seleção continua limitada,
+somente leitura, baseada em relações persistidas e sem vocabulário científico
+ou nomes de repositórios no motor.
