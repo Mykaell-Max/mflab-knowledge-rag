@@ -179,7 +179,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v9"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v10"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -1253,6 +1253,7 @@ def _merge_exploration_results(
     *,
     limit: int,
     overview: bool,
+    reserved_chunk_ids: list[str] | None = None,
 ) -> list[dict[str, object]]:
     candidates: dict[tuple[str, str, str], dict[str, object]] = {}
     for retrieval in retrievals:
@@ -1281,7 +1282,24 @@ def _merge_exploration_results(
                 enriched["source_kind"] = "primary_structure_anchor"
                 candidates[key] = enriched
     if not overview:
-        return list(candidates.values())[:limit]
+        values = list(candidates.values())
+        if not reserved_chunk_ids:
+            return values[:limit]
+        by_chunk_id = {
+            str(result.get("chunk_id", "")): result
+            for result in values
+            if result.get("chunk_id")
+        }
+        reserved = [
+            by_chunk_id[chunk_id]
+            for chunk_id in dict.fromkeys(str(value) for value in reserved_chunk_ids)
+            if chunk_id in by_chunk_id
+        ]
+        reserved_objects = {id(result) for result in reserved}
+        return [
+            *reserved,
+            *(result for result in values if id(result) not in reserved_objects),
+        ][:limit]
 
     by_scope: dict[tuple[str, str], list[dict[str, object]]] = {}
     for result in candidates.values():
@@ -2349,6 +2367,7 @@ class RagApiService:
         kept_chunk_ids: list[str] = []
         baseline_chunk_ids: list[str] = []
         graph_frontier_chunk_ids: list[str] = []
+        terminal_graph_chunk_ids: list[str] = []
         final_reserved_context_chunk_ids: list[str] = []
         graph_frontier_results: list[dict[str, object]] = []
         selected_graph_frontier: list[dict[str, object]] = []
@@ -3031,6 +3050,22 @@ class RagApiService:
                     limit=8,
                 )
             if terminal_results:
+                terminal_callee_results = [
+                    result
+                    for result in terminal_results
+                    if "callees" in str(result.get("source_kind", ""))
+                ]
+                selected_terminal_evidence = select_graph_frontier_results(
+                    question=query,
+                    search_hints=frontier_hints,
+                    results=terminal_callee_results or terminal_results,
+                    limit=4,
+                )
+                terminal_graph_chunk_ids = [
+                    str(result.get("chunk_id", ""))
+                    for result in selected_terminal_evidence
+                    if result.get("chunk_id")
+                ]
                 record(
                     "agent",
                     "Fronteira estrutural concluída",
@@ -3039,6 +3074,7 @@ class RagApiService:
                         "actions": terminal_actions,
                         "new_evidence": len(terminal_results),
                         "rounds": terminal_rounds_completed,
+                        "reserved_definitions": len(terminal_graph_chunk_ids),
                     },
                 )
             # The last bounded tool batch has not yet been seen by the model.
@@ -3147,6 +3183,7 @@ class RagApiService:
                 dict.fromkeys(
                     [
                         *reserved_context_chunk_ids,
+                        *terminal_graph_chunk_ids,
                         *baseline_chunk_ids,
                         *graph_frontier_chunk_ids,
                     ]
@@ -3156,6 +3193,11 @@ class RagApiService:
             # the first positions. Baseline retrieval and graph frontiers fill
             # the remainder, instead of displacing later requested stages.
             selected_chunk_ids: list[str] = list(reserved_context_chunk_ids)
+            selected_chunk_ids.extend(
+                chunk_id
+                for chunk_id in terminal_graph_chunk_ids
+                if chunk_id not in selected_chunk_ids
+            )
             deferred_kept_chunk_ids = [
                 chunk_id
                 for chunk_id in prioritized_kept_chunk_ids
@@ -3288,6 +3330,11 @@ class RagApiService:
             retrievals,
             limit=limit,
             overview=exploration["intent"] == "overview",
+            reserved_chunk_ids=(
+                final_reserved_context_chunk_ids
+                if agent_coverage
+                else None
+            ),
         )
         assert isinstance(raw_results, list)
         retrieved_identities: set[tuple[str, str, str]] = set()
@@ -3405,6 +3452,7 @@ class RagApiService:
                 "baseline_chunk_ids": baseline_chunk_ids,
                 "initial_baseline_chunk_ids": initial_baseline_chunk_ids,
                 "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
+                "terminal_graph_chunk_ids": terminal_graph_chunk_ids,
                 "graph_frontier": [
                     {
                         "chunk_id": result.get("chunk_id"),

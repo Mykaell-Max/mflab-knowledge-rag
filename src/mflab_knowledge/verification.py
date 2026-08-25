@@ -7,9 +7,9 @@ from collections.abc import Callable
 
 from mflab_knowledge.grounding import citation_ids, factual_units
 
-VERIFICATION_ALGORITHM = "claim_evidence_audit_v5"
+VERIFICATION_ALGORITHM = "claim_evidence_audit_v6"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v25"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v26"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -228,12 +228,60 @@ def normalize_verification(
     }
 
 
-def _source_defines_callable(source: dict[str, object], name: str) -> bool:
+def _identifier_signature(value: str) -> str:
+    return re.sub(r"[^A-Za-z0-9]+", "", value).casefold()
+
+
+def _claim_callable_owner(claim: str, name: str) -> str:
+    escaped = re.escape(name)
+    explicit = re.search(
+        rf"\b([A-Za-z_]\w*(?:::\w+)*)\s*(?:::|->|\.)\s*{escaped}\s*\(",
+        claim,
+    )
+    if explicit:
+        return explicit.group(1).rsplit("::", 1)[-1]
+    possessive = re.search(
+        rf"\b{escaped}\s*\(\s*\)\s+"
+        rf"(?:do|da|de|of)\s+(?:the\s+)?([A-Za-z_]\w*)",
+        claim,
+        re.IGNORECASE,
+    )
+    return possessive.group(1) if possessive else ""
+
+
+def _source_defines_callable(
+    source: dict[str, object],
+    name: str,
+    *,
+    owner: str = "",
+) -> bool:
     title = str(source.get("title", ""))
-    if re.search(rf"(?:^|::|\.){re.escape(name)}$", title.strip()):
+    title_match = re.search(
+        rf"(?:(?P<owner>[A-Za-z_]\w*)::)?{re.escape(name)}$",
+        title.strip(),
+    )
+    expected_owner = _identifier_signature(owner)
+    if title_match and (
+        not expected_owner
+        or _identifier_signature(title_match.group("owner") or "")
+        == expected_owner
+    ):
         return True
     text = str(source.get("text", ""))
     escaped = re.escape(name)
+    if expected_owner:
+        qualified_definition = re.search(
+            rf"(?ms)^\s*(?!if\b|for\b|while\b|switch\b|return\b)"
+            rf"(?:[A-Za-z_]\w*(?:::\w+)*(?:\s*[*&]+)?\s+)+"
+            rf"(?P<owner>(?:[A-Za-z_]\w*::)*[A-Za-z_]\w*)::"
+            rf"{escaped}\s*\([^;{{}}]*\)"
+            rf"\s*(?:const\s*)?(?:noexcept\s*)?\{{",
+            text,
+        )
+        if qualified_definition:
+            actual_owner = qualified_definition.group("owner").rsplit("::", 1)[-1]
+            return _identifier_signature(actual_owner) == expected_owner
+        return False
     definitions = (
         rf"(?mi)^\s*(?:def|function|subroutine)\s+{escaped}\s*\(",
         rf"(?ms)^\s*(?!if\b|for\b|while\b|switch\b|return\b)"
@@ -298,7 +346,11 @@ def downgrade_callsite_only_claims(
                     for source in cited_sources
                 )
                 and not any(
-                    _source_defines_callable(source, name)
+                    _source_defines_callable(
+                        source,
+                        name,
+                        owner=_claim_callable_owner(claim, name),
+                    )
                     for source in cited_sources
                 )
             ),

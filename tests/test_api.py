@@ -375,7 +375,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v9")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v10")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -2280,6 +2280,33 @@ class ApiServiceTests(unittest.TestCase):
         )
 
         self.assertEqual(merged[0]["source_kind"], "primary_structure_anchor")
+
+    def test_reserved_graph_result_survives_merge_limit(self) -> None:
+        retrievals = [
+            {
+                "results": [
+                    {
+                        "chunk_id": str(position),
+                        "project": "Solver",
+                        "path": f"src/unit_{position}.cpp",
+                        "selected_occurrence": {"branch": "trunk"},
+                    }
+                    for position in range(20)
+                ]
+            }
+        ]
+
+        merged = api._merge_exploration_results(
+            retrievals,
+            limit=4,
+            overview=False,
+            reserved_chunk_ids=["17", "3"],
+        )
+
+        self.assertEqual(
+            [result["chunk_id"] for result in merged],
+            ["17", "3", "0", "1"],
+        )
 
     def test_ask_validates_citations_and_reports_distinct_scopes(self) -> None:
         generator = _Generator("Compare [S1] with [S2]; ignore [S99].")

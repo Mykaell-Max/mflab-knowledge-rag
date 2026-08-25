@@ -84,6 +84,72 @@ class VerificationTests(unittest.TestCase):
         self.assertTrue(result["passed"])
         self.assertEqual(result["claims"][0]["verdict"], "supported")
 
+    def test_downgrades_other_receivers_method_from_same_named_caller(self) -> None:
+        result = downgrade_callsite_only_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": (
+                            "O método advance() do worker atualiza as posições [S1]."
+                        ),
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "A chamada está presente.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "format": "cpp",
+                    "title": "Domain::advance",
+                    "text": (
+                        "void Domain::advance() {\n"
+                        "    worker.advance();\n"
+                        "}"
+                    ),
+                }
+            ],
+        )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "uncertain")
+
+    def test_keeps_behavior_for_matching_qualified_owner(self) -> None:
+        result = downgrade_callsite_only_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": (
+                            "O método advance() do worker atualiza as posições [S1]."
+                        ),
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "Definição observada.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "format": "cpp",
+                    "title": "Worker::advance",
+                    "text": "void Worker::advance() { updatePositions(); }",
+                }
+            ],
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "supported")
+
     def test_progress_callback_failure_does_not_change_the_event(self) -> None:
         def disconnected(_event: dict[str, object]) -> None:
             raise RuntimeError("client disconnected")

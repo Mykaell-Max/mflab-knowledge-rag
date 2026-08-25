@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.5**. Antes de
+> Estado atualizado em **24 de agosto de 2026**, na versão candidata **0.45.6**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -253,6 +253,28 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A 0.45.6 corrige a passagem entre a navegação estrutural e a montagem final do
+contexto. As definições descendentes encontradas nas últimas rodadas do grafo
+agora recebem vagas reservadas antes do corte global de candidatos. Antes dessa
+mudança, a investigação podia resolver corretamente operações chamadas por um
+coordenador e ainda perdê-las no limite anterior ao empacotamento, produzindo
+uma resposta segura, porém superficial. A seleção continua genérica e limitada:
+ela usa a pergunta, as pistas observadas e relações estruturais verificadas, sem
+nomes de projetos, branches, arquivos, classes ou mecanismos científicos.
+
+A auditoria de afirmações sobre métodos também passou a considerar o
+proprietário da função. Uma fonte com `Domain::advance` que apenas contém a
+chamada `worker.advance()` prova a invocação, mas não é mais aceita como a
+definição de `Worker::advance`. A normalização de proprietário tolera diferenças
+de caixa e sublinhado, mantendo compatibilidade entre nomes de objetos e classes
+sem codificar identificadores específicos.
+
+Esta versão não altera inventários, corpus, embeddings nem o mapa semântico v3.
+No servidor, basta atualizar o pacote e reiniciar a API; uma nova execução de
+`index-all` não é necessária. A próxima validação manual deve repetir a pergunta
+detalhada de fluxo e conferir se implementações descendentes aparecem entre as
+fontes e são usadas na explicação, sem atribuir seu comportamento ao chamador.
 
 A 0.45.5 trata a regressão manual em que a resposta permaneceu segura, mas ficou
 mais simples e não abriu as implementações chamadas pelo coordenador. A
