@@ -300,6 +300,67 @@ class ApiServiceTests(unittest.TestCase):
 
         self.assertEqual(ranked[0][2], "S2")
 
+    def test_recovers_selected_lineage_from_persisted_public_graph(self) -> None:
+        edges = api._lineage_edges_from_investigation_graph(
+            {
+                "nodes": [
+                    {
+                        "id": "chunk:driver",
+                        "chunk_id": "driver",
+                        "source_id": "S1",
+                    },
+                    {
+                        "id": "chunk:create",
+                        "chunk_id": "create",
+                        "source_id": "S2",
+                    },
+                    {
+                        "id": "chunk:neighbor",
+                        "chunk_id": "neighbor",
+                        "source_id": None,
+                    },
+                ],
+                "edges": [
+                    {
+                        "source": "chunk:driver",
+                        "target": "chunk:create",
+                        "kind": "calls",
+                        "tool": "find_callees",
+                        "directed": True,
+                        "evidence": "persisted_structure",
+                    },
+                    {
+                        "source": "chunk:driver",
+                        "target": "chunk:neighbor",
+                        "kind": "calls",
+                        "tool": "find_callees",
+                        "directed": True,
+                        "evidence": "persisted_structure",
+                    },
+                    {
+                        "source": "chunk:create",
+                        "target": "chunk:driver",
+                        "kind": "neighbor",
+                        "tool": "open_neighborhood",
+                        "directed": False,
+                        "evidence": "persisted_structure",
+                    },
+                ],
+            },
+            target_chunk_ids=["create", "neighbor"],
+        )
+
+        self.assertEqual(
+            edges,
+            [
+                {
+                    "origin_chunk_id": "driver",
+                    "target_chunk_id": "create",
+                    "kind": "calls_symbol",
+                }
+            ],
+        )
+
     def test_section_formatter_replaces_headings_but_keeps_code_directives(
         self,
     ) -> None:

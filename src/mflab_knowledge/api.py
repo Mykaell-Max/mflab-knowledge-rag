@@ -324,6 +324,63 @@ def _notebook_ranking_context(
     return " ".join(dict.fromkeys(values))[:limit]
 
 
+def _lineage_edges_from_investigation_graph(
+    graph: object,
+    *,
+    target_chunk_ids: list[str],
+) -> list[dict[str, object]]:
+    """Recover selected direct-call edges from the public structural trace.
+
+    The graph is built only from completed read-only traversals. Re-reading its
+    persisted ``find_callees`` edges avoids losing a verified relation when an
+    intermediate lineage list is deduplicated during context packing.
+    """
+
+    if not isinstance(graph, dict):
+        return []
+    raw_nodes = graph.get("nodes")
+    raw_edges = graph.get("edges")
+    if not isinstance(raw_nodes, list) or not isinstance(raw_edges, list):
+        return []
+    selected_targets = {str(value) for value in target_chunk_ids if str(value)}
+    source_chunks = {
+        str(node.get("chunk_id", ""))
+        for node in raw_nodes
+        if isinstance(node, dict)
+        and str(node.get("chunk_id", ""))
+        and node.get("source_id")
+    }
+    result: list[dict[str, object]] = []
+    seen: set[tuple[str, str]] = set()
+    for edge in raw_edges:
+        if not isinstance(edge, dict):
+            continue
+        origin = str(edge.get("source", "")).removeprefix("chunk:")
+        target = str(edge.get("target", "")).removeprefix("chunk:")
+        identity = (origin, target)
+        if (
+            edge.get("kind") != "calls"
+            or edge.get("tool") != "find_callees"
+            or edge.get("evidence") != "persisted_structure"
+            or edge.get("directed") is not True
+            or target not in selected_targets
+            or origin not in source_chunks
+            or target not in source_chunks
+            or origin == target
+            or identity in seen
+        ):
+            continue
+        seen.add(identity)
+        result.append(
+            {
+                "origin_chunk_id": origin,
+                "target_chunk_id": target,
+                "kind": "calls_symbol",
+            }
+        )
+    return result
+
+
 def _rank_notebook_sources(
     aspect: object,
     question: str,
@@ -3925,6 +3982,25 @@ class RagApiService:
             )
             if isinstance(value, dict)
         ]
+        graph_lineage_edges = _lineage_edges_from_investigation_graph(
+            context.get("investigation_graph"),
+            target_chunk_ids=lineage_graph_chunk_ids,
+        )
+        lineage_edge_keys = {
+            (
+                str(value.get("origin_chunk_id", "")),
+                str(value.get("target_chunk_id", "")),
+            )
+            for value in lineage_edges
+        }
+        for value in graph_lineage_edges:
+            identity = (
+                str(value.get("origin_chunk_id", "")),
+                str(value.get("target_chunk_id", "")),
+            )
+            if identity not in lineage_edge_keys:
+                lineage_edges.append(value)
+                lineage_edge_keys.add(identity)
         evidence_notebook = _build_evidence_notebook(
             (
                 raw_agent_context.get("coverage", [])

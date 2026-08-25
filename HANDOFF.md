@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **25 de agosto de 2026**, na versão candidata **0.46.0**. Antes de
+> Estado atualizado em **25 de agosto de 2026**, na versão candidata **0.46.1**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -1557,3 +1557,13 @@ transferir ou outra operação reconhecível se nenhuma operação compatível e
 visível em seu título, caminho ou conteúdo. A guarda usa somente vocabulário
 genérico de programação e não contém nomes de projetos, branches, símbolos ou
 mecanismos científicos.
+
+A primeira validação integrada da 0.46.0 revelou uma perda de transporte: as
+quatro implementações diretas foram reservadas, e o grafo público continha as
+relações observadas, mas a lista intermediária de linhagens chegou vazia ao
+caderno. A 0.46.1 recupera essas arestas diretamente do
+`investigation_graph`, aceitando somente relações dirigidas `find_callees` com
+evidência `persisted_structure`, cujos dois extremos estejam no pacote final e
+cujo alvo tenha sido reservado pela seleção de linhagem. Assim, a representação
+pública auditável também funciona como caminho de recuperação determinístico,
+sem aceitar relações propostas pelo modelo.
