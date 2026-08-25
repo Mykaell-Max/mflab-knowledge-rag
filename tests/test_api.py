@@ -375,7 +375,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v10")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v11")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -654,6 +654,58 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("S1", selected)
         self.assertIn("S2", selected)
         self.assertNotIn("S4", selected)
+
+    def test_evidence_notebook_excludes_unrelated_graph_neighbors_for_named_subject(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "initialization",
+                    "status": "partial",
+                    "chunk_ids": ["subject-setup", "neighbor-setup"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "runtime advancement",
+                    "status": "partial",
+                    "chunk_ids": ["direct-child"],
+                },
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "subject-setup",
+                    "path": "src/particle_engine.cpp",
+                    "title": "ParticleEngine::setup",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "direct-child",
+                    "path": "src/items.cpp",
+                    "title": "Items::move",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "neighbor-setup",
+                    "path": "src/grid.cpp",
+                    "title": "Grid::initialize",
+                },
+            ],
+            question="Explain ParticleEngine initialization and runtime advancement",
+            subject_identifiers=["ParticleEngine"],
+            related_chunk_ids=["direct-child"],
+        )
+
+        selected = {
+            str(source_id)
+            for section in notebook["sections"]
+            for source_id in section["source_ids"]
+        }
+        self.assertIn("S1", selected)
+        self.assertIn("S2", selected)
+        self.assertNotIn("S3", selected)
 
     def test_evidence_notebook_assigns_gap_to_matching_authorized_context(
         self,
@@ -2369,6 +2421,60 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(len(result["scopes"]), 2)
         self.assertNotIn("text", result["sources"][0])
         self.assertEqual(len(generator.calls), 1)
+
+    def test_ask_returns_only_sources_used_by_the_final_answer(self) -> None:
+        generator = _Generator("The selected implementation is shown [S1].")
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "project": "Solver",
+                "selected_occurrence": {
+                    "branch": "trunk",
+                    "commit_sha": "a" * 40,
+                },
+                "path": "src/selected.cpp",
+                "text": "selected implementation",
+            },
+            {
+                "source_id": "S2",
+                "project": "Solver",
+                "selected_occurrence": {
+                    "branch": "trunk",
+                    "commit_sha": "a" * 40,
+                },
+                "path": "src/incidental.cpp",
+                "text": "incidental implementation",
+            },
+        ]
+        with mock.patch.object(
+            service,
+            "context",
+            return_value={
+                "query": "selected implementation",
+                "mode": "hybrid",
+                "instructions": api.CONTEXT_INSTRUCTIONS,
+                "retrieved_count": 2,
+                "source_count": 2,
+                "context_characters": 48,
+                "truncated": False,
+                "sources": sources,
+            },
+        ):
+            result = service.ask(query="selected implementation")
+
+        self.assertEqual(
+            [source["source_id"] for source in result["sources"]],
+            ["S1"],
+        )
 
     def test_ask_abstains_without_calling_generator_when_no_sources(self) -> None:
         generator = _Generator()

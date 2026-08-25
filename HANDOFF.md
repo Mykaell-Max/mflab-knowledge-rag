@@ -2,7 +2,7 @@
 
 > Fonte de continuidade para novas conversas e colaboradores.
 >
-> Estado atualizado em **25 de agosto de 2026**, na versão candidata **0.45.8**. Antes de
+> Estado atualizado em **25 de agosto de 2026**, na versão candidata **0.45.9**. Antes de
 > agir, confirme o estado atual com `git status` e `git log -1 --oneline`, pois o
 > repositório pode ter avançado.
 
@@ -253,6 +253,42 @@ Caminhos usados durante o piloto:
   artefatos de teste versionados e precisam representar evidência verificada.
 
 ## 11. Próxima ação recomendada
+
+A execução real da 0.45.8 confirmou que a reserva de linhagem foi corrigida: as
+quatro vagas passaram a conter descendentes diretos do coordenador ancorado. A
+resposta, porém, ainda incluiu duas funções vizinhas de outros subsistemas. As
+descrições locais dessas funções eram verdadeiras, e por isso o verificador do
+modelo as aprovou, mas elas não demonstravam participação no assunto perguntado.
+A guarda inicial só alcançava frases que repetiam literalmente o identificador
+principal e não protegia parágrafos que omitiam essa repetição.
+
+A 0.45.9 transforma esse teste em um contrato de tópico para perguntas sobre uma
+entidade nomeada. O vocabulário do planejador é reduzido a nomes visíveis na
+pergunta com forma sintaticamente distintiva, como siglas, nomes qualificados,
+identificadores em CamelCase, nomes hifenizados, números ou nomes próprios
+compostos. Palavras genéricas de busca não ativam a guarda, e rótulos de projeto
+ou branch usados como escopo são excluídos.
+
+Quando existe esse assunto nomeado, uma fonte só pode formar uma seção se ela
+mencionar o assunto em sua proveniência ou texto autorizado, ou se seu chunk for
+um descendente direto da linhagem estrutural ancorada. A mesma condição é
+reaplicada depois da auditoria do modelo a cada afirmação aprovada. Assim, um
+helper interno pode ser explicado mesmo sem repetir o nome do coordenador, mas
+um vizinho alcançado por expansão lateral não se torna uma etapa da resposta.
+O mecanismo é genérico e não contém nomes de repositórios, branches, arquivos,
+classes ou conceitos científicos.
+
+A API também passa a devolver na lista pública apenas as fontes efetivamente
+citadas pela resposta final. Evidências lidas durante a investigação continuam
+registradas no grafo e no caderno para auditoria, mas deixam de aparecer como se
+tivessem sustentado o texto entregue. O caderno expõe os identificadores de
+assunto selecionados, as fontes elegíveis e a quantidade excluída para facilitar
+o diagnóstico.
+
+Esta versão não requer reindexação. No servidor, basta instalar o pacote,
+reiniciar a API e repetir a pergunta detalhada. A validação deve confirmar que
+as fontes incidentais não formaram seções, que a resposta usa os descendentes
+diretos preservados e que a lista pública contém somente os IDs citados.
 
 A 0.45.8 trata dois problemas separados observados na execução real da 0.45.7.
 A reserva de linhagem preservou três implementações diretas do coordenador, mas

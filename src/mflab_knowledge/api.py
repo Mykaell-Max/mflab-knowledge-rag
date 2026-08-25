@@ -109,6 +109,7 @@ from mflab_knowledge.verification import (
     normalize_support_discovery,
     normalize_verification,
     sanitize_fenced_code_blocks,
+    select_query_subject_identifiers,
     supported_claim_subset,
     unavailable_verification,
 )
@@ -182,7 +183,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v10"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v11"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -417,6 +418,8 @@ def _build_evidence_notebook(
     sources: list[dict[str, object]],
     *,
     question: str = "",
+    subject_identifiers: list[str] | None = None,
+    related_chunk_ids: list[str] | None = None,
     max_sections: int = MAX_EVIDENCE_SECTIONS,
     max_sources_per_section: int = MAX_SECTION_SOURCES,
 ) -> dict[str, object]:
@@ -428,12 +431,37 @@ def _build_evidence_notebook(
     """
 
     raw_coverage = coverage if isinstance(coverage, list) else []
+    subject_signatures = {
+        "".join(character.casefold() for character in value if character.isalnum())
+        for value in subject_identifiers or []
+        if value
+    }
+    structurally_related = {
+        str(value) for value in related_chunk_ids or [] if str(value)
+    }
+
+    def source_is_subject_anchored(source: dict[str, object]) -> bool:
+        if not subject_signatures:
+            return True
+        source_signature = "".join(
+            character.casefold()
+            for character in " ".join(
+                str(source.get(field, ""))
+                for field in ("project", "path", "title", "text")
+            )
+            if character.isalnum()
+        )
+        return (
+            any(signature in source_signature for signature in subject_signatures)
+            or str(source.get("chunk_id", "")) in structurally_related
+        )
+
     source_by_chunk: dict[str, str] = {}
     source_by_id: dict[str, dict[str, object]] = {}
     for source in sources:
         source_id = str(source.get("source_id", "")).strip()
         chunk_id = str(source.get("chunk_id", "")).strip()
-        if not source_id:
+        if not source_id or not source_is_subject_anchored(source):
             continue
         source_by_id[source_id] = source
         if chunk_id and chunk_id not in source_by_chunk:
@@ -476,6 +504,8 @@ def _build_evidence_notebook(
                     source_id
                     for source_id in source_ids
                     if scores_by_source.get(source_id, 0) == best_score
+                    or str(source_by_id[source_id].get("chunk_id", ""))
+                    in structurally_related
                 ]
         anchor_source_ids = list(source_ids)
         structural_connection_requested = _notebook_needs_structural_context(
@@ -794,6 +824,9 @@ def _build_evidence_notebook(
 
     return {
         "algorithm": EVIDENCE_NOTEBOOK_ALGORITHM,
+        "subject_identifiers": list(subject_identifiers or []),
+        "eligible_source_ids": list(source_by_id),
+        "excluded_sources": len(sources) - len(source_by_id),
         "sections": sections,
         "gaps": gaps,
         "ready_sections": len(sections),
@@ -3661,6 +3694,55 @@ class RagApiService:
         raw_sources = context["sources"]
         assert isinstance(raw_sources, list)
         raw_agent_context = context.get("agent_investigation")
+        raw_exploration_context = context.get("exploration")
+        raw_query_plan = (
+            raw_exploration_context.get("query_plan")
+            if isinstance(raw_exploration_context, dict)
+            else None
+        )
+        scope_labels = [
+            str(value)
+            for value in (project, branch)
+            if value is not None and str(value).strip()
+        ]
+        scope_resolution = context.get("scope_resolution")
+        raw_scopes = (
+            scope_resolution.get("scopes")
+            if isinstance(scope_resolution, dict)
+            else None
+        )
+        if isinstance(raw_scopes, list):
+            for scope in raw_scopes:
+                if not isinstance(scope, dict):
+                    continue
+                scope_labels.extend(
+                    str(scope.get(field, ""))
+                    for field in ("project", "branch")
+                    if str(scope.get(field, "")).strip()
+                )
+        raw_subject_candidates = (
+            raw_query_plan.get("identifiers")
+            if isinstance(raw_query_plan, dict)
+            else None
+        )
+        subject_identifiers = select_query_subject_identifiers(
+            str(context["query"]),
+            [
+                str(value)
+                for value in raw_subject_candidates or []
+                if isinstance(value, str)
+            ],
+            excluded_labels=scope_labels,
+        )
+        lineage_graph_chunk_ids = [
+            str(value)
+            for value in (
+                raw_agent_context.get("lineage_graph_chunk_ids", [])
+                if isinstance(raw_agent_context, dict)
+                else []
+            )
+            if str(value)
+        ]
         evidence_notebook = _build_evidence_notebook(
             (
                 raw_agent_context.get("coverage", [])
@@ -3672,6 +3754,8 @@ class RagApiService:
                 str(context["query"]),
                 context.get("exploration"),
             ),
+            subject_identifiers=subject_identifiers,
+            related_chunk_ids=lineage_graph_chunk_ids,
         )
         if not raw_sources:
             record(
@@ -4349,50 +4433,6 @@ class RagApiService:
         verification_cache: dict[
             tuple[str, tuple[str, ...]], dict[str, object]
         ] = {}
-        scope_labels = {
-            str(value)
-            for value in (project, branch)
-            if value is not None and str(value).strip()
-        }
-        scope_resolution = context.get("scope_resolution")
-        raw_scopes = (
-            scope_resolution.get("scopes")
-            if isinstance(scope_resolution, dict)
-            else None
-        )
-        if isinstance(raw_scopes, list):
-            for scope in raw_scopes:
-                if not isinstance(scope, dict):
-                    continue
-                scope_labels.update(
-                    str(scope.get(field, ""))
-                    for field in ("project", "branch")
-                    if str(scope.get(field, "")).strip()
-                )
-
-        def identifier_signature(value: object) -> str:
-            return "".join(
-                character.casefold()
-                for character in str(value)
-                if character.isalnum()
-            )
-
-        scope_signatures = {
-            identifier_signature(value) for value in scope_labels
-        }
-        raw_subject_identifiers = (
-            query_plan.get("identifiers")
-            if isinstance(query_plan, dict)
-            else None
-        )
-        subject_identifiers = [
-            str(value)
-            for value in raw_subject_identifiers or []
-            if isinstance(value, str)
-            and identifier_signature(value)
-            and identifier_signature(value) not in scope_signatures
-        ]
-
         def claim_cache_key(
             claim: dict[str, object],
         ) -> tuple[str, tuple[str, ...]]:
@@ -4484,6 +4524,7 @@ class RagApiService:
                     normalized,
                     sources=evidence,
                     subject_identifiers=subject_identifiers,
+                    related_chunk_ids=lineage_graph_chunk_ids,
                 )
                 raw_findings = normalized.get("claims")
                 if not isinstance(raw_findings, list):
@@ -5152,13 +5193,14 @@ class RagApiService:
                     str(occurrence.get("commit_sha", "?")),
                 )
             )
-            public_sources.append(
-                {
-                    key: value
-                    for key, value in source.items()
-                    if key != "text"
-                }
-            )
+            if str(source.get("source_id", "")) in valid_citations:
+                public_sources.append(
+                    {
+                        key: value
+                        for key, value in source.items()
+                        if key != "text"
+                    }
+                )
         scope_values = [
             {"project": item[0], "branch": item[1], "commit_sha": item[2]}
             for item in sorted(scopes)

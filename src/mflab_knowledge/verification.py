@@ -7,9 +7,9 @@ from collections.abc import Callable
 
 from mflab_knowledge.grounding import citation_ids, factual_units
 
-VERIFICATION_ALGORITHM = "claim_evidence_audit_v7"
+VERIFICATION_ALGORITHM = "claim_evidence_audit_v8"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
-INVESTIGATION_ALGORITHM = "bounded_investigation_v28"
+INVESTIGATION_ALGORITHM = "bounded_investigation_v29"
 
 ProgressCallback = Callable[[dict[str, object]], None]
 
@@ -383,14 +383,16 @@ def downgrade_unanchored_subject_claims(
     *,
     sources: list[dict[str, object]],
     subject_identifiers: list[str],
+    related_chunk_ids: list[str] | None = None,
 ) -> dict[str, object]:
     """Require a cited source to mention subjects asserted by a claim.
 
     Planner identifiers are used only as conservative lexical guards. They do
-    not establish a fact. When a supported claim itself repeats an identifier,
-    at least one of its cited sources must visibly contain that identifier in
-    its provenance or authorized text. This blocks a locally correct function
-    description from being promoted into an unrelated subsystem relationship.
+    not establish a fact. In an answer scoped to a named subject, each supported
+    claim must cite either a source that visibly contains that subject or a
+    definition reached directly from an anchored structural lineage. This
+    blocks a locally correct neighboring function from becoming an unrelated
+    subsystem stage merely because it was reachable in the broader graph.
     """
 
     raw_findings = verification.get("claims")
@@ -411,23 +413,13 @@ def downgrade_unanchored_subject_claims(
         for source in sources
         if str(source.get("source_id", ""))
     }
+    related = {str(value) for value in related_chunk_ids or [] if str(value)}
     findings: list[dict[str, object]] = []
     for raw_finding in raw_findings:
         if not isinstance(raw_finding, dict):
             continue
         finding = dict(raw_finding)
         if finding.get("verdict") != "supported":
-            findings.append(finding)
-            continue
-        claim_signature = _identifier_signature(
-            str(finding.get("claim", ""))
-        )
-        mentioned = [
-            (label, signature)
-            for label, signature in identifiers
-            if signature in claim_signature
-        ]
-        if not mentioned:
             findings.append(finding)
             continue
         cited_sources = [
@@ -444,17 +436,21 @@ def downgrade_unanchored_subject_claims(
             )
             for source in cited_sources
         ]
-        missing = [
-            label
-            for label, signature in mentioned
-            if not any(signature in source for source in cited_signatures)
-        ]
-        if missing:
+        visibly_anchored = any(
+            signature in source_signature
+            for _label, signature in identifiers
+            for source_signature in cited_signatures
+        )
+        structurally_anchored = any(
+            str(source.get("chunk_id", "")) in related
+            for source in cited_sources
+        )
+        if not visibly_anchored and not structurally_anchored:
             finding["verdict"] = "uncertain"
             finding["finding"] = (
-                "A relação com "
-                + ", ".join(missing)
-                + " não aparece nas fontes citadas."
+                "As fontes citadas não vinculam esta afirmação ao assunto "
+                + ", ".join(label for label, _signature in identifiers)
+                + "."
             )
         findings.append(finding)
     counts = {
@@ -470,6 +466,79 @@ def downgrade_unanchored_subject_claims(
         and counts["unsupported"] == 0
         and counts["uncertain"] == 0,
     }
+
+
+def select_query_subject_identifiers(
+    question: str,
+    candidates: list[str],
+    *,
+    excluded_labels: list[str] | None = None,
+) -> list[str]:
+    """Select named entities from planner vocabulary without domain lists.
+
+    The planner may mix entity names with generic retrieval words. Only values
+    visibly present in the question and shaped like acronyms, code identifiers,
+    qualified names, hyphenated names, numbers, or multiword proper names are
+    retained. Scope labels are excluded separately because repository and
+    branch names select provenance but do not define the scientific subject.
+    """
+
+    question_signature = _identifier_signature(question)
+    excluded = {
+        _identifier_signature(value)
+        for value in excluded_labels or []
+        if _identifier_signature(value)
+    }
+    selected: list[str] = []
+    selected_signatures: set[str] = set()
+
+    def append(value: str) -> None:
+        label = " ".join(value.split()).strip()
+        signature = _identifier_signature(label)
+        if (
+            len(signature) < 3
+            or signature in excluded
+            or signature in selected_signatures
+            or signature not in question_signature
+        ):
+            return
+        selected.append(label)
+        selected_signatures.add(signature)
+
+    for raw_value in candidates:
+        label = " ".join(str(raw_value).split()).strip()
+        if not label or _identifier_signature(label) in excluded:
+            continue
+        letters = "".join(character for character in label if character.isalpha())
+        acronym = len(letters) >= 2 and letters == letters.upper()
+        qualified = any(marker in label for marker in ("::", "->", ".", "/", "_"))
+        hyphenated = "-" in label
+        numbered = any(character.isdigit() for character in label)
+        camel_case = bool(re.search(r"[a-zà-öø-ÿ][A-ZÀ-ÖØ-Þ]", label))
+        words = re.findall(r"[^\W\d_]+", label, flags=re.UNICODE)
+        proper_phrase = (
+            len(words) >= 2
+            and sum(word[:1].isupper() for word in words) >= 2
+        )
+        if acronym or qualified or hyphenated or numbered or camel_case or proper_phrase:
+            append(label)
+
+        # A planner can return an entity together with an adjacent retrieval
+        # word, for example an acronym followed by "initialization". Preserve
+        # only the syntactically distinctive token in that case.
+        for token in re.findall(r"[\w]+", label, flags=re.UNICODE):
+            token_letters = "".join(
+                character for character in token if character.isalpha()
+            )
+            token_acronym = (
+                len(token_letters) >= 2 and token_letters == token_letters.upper()
+            )
+            token_camel = bool(
+                re.search(r"[a-zà-öø-ÿ][A-ZÀ-ÖØ-Þ]", token)
+            )
+            if token_acronym or token_camel or any(char.isdigit() for char in token):
+                append(token)
+    return selected
 
 
 def normalize_support_discovery(

@@ -11,11 +11,35 @@ from mflab_knowledge.verification import (
     normalize_support_discovery,
     normalize_verification,
     sanitize_fenced_code_blocks,
+    select_query_subject_identifiers,
     supported_claim_subset,
 )
 
 
 class VerificationTests(unittest.TestCase):
+    def test_selects_named_subjects_and_excludes_scope_or_generic_words(self) -> None:
+        result = select_query_subject_identifiers(
+            "Explique o DPM no MFSim-NG e sua inicialização",
+            [
+                "DPM initialization",
+                "MFSim-NG",
+                "configuration",
+                "initialize",
+            ],
+            excluded_labels=["MFSim-NG", "base"],
+        )
+
+        self.assertEqual(result, ["DPM"])
+
+    def test_selects_qualified_and_multiword_named_subjects(self) -> None:
+        self.assertEqual(
+            select_query_subject_identifiers(
+                "Compare Navier-Stokes com MeshFactory::createMesh",
+                ["Navier-Stokes", "MeshFactory::createMesh"],
+            ),
+            ["Navier-Stokes", "MeshFactory::createMesh", "MeshFactory", "createMesh"],
+        )
+
     def test_downgrades_subject_relationship_absent_from_cited_source(self) -> None:
         result = downgrade_unanchored_subject_claims(
             {
@@ -73,6 +97,69 @@ class VerificationTests(unittest.TestCase):
                 }
             ],
             subject_identifiers=["ParticleEngine"],
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "supported")
+
+    def test_downgrades_locally_true_neighbor_without_repeating_subject(self) -> None:
+        result = downgrade_unanchored_subject_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "O método exportStep grava os dados [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "O comportamento local está visível.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "chunk_id": "output",
+                    "path": "src/output.cpp",
+                    "title": "Domain::exportStep",
+                    "text": "void Domain::exportStep() { writeOutput(); }",
+                }
+            ],
+            subject_identifiers=["ParticleEngine"],
+        )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "uncertain")
+
+    def test_keeps_direct_structural_descendant_without_subject_name(self) -> None:
+        result = downgrade_unanchored_subject_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "A etapa moveItems atualiza os itens [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "A implementação está visível.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "chunk_id": "move",
+                    "path": "src/items.cpp",
+                    "title": "Items::moveItems",
+                    "text": "void Items::moveItems() { update(); }",
+                }
+            ],
+            subject_identifiers=["ParticleEngine"],
+            related_chunk_ids=["move"],
         )
 
         self.assertTrue(result["passed"])
