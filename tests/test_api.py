@@ -3757,6 +3757,17 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["answer"], "First fact [S1].\n\nSecond fact [S1].")
         self.assertEqual(result["answer_completeness"], "supported_subset")
         self.assertEqual(len(generator.verify_calls), 1)
+        initial = result["context"]["verification_initial"]
+        self.assertFalse(initial["passed"])
+        self.assertEqual(initial["counts"]["supported"], 2)
+        self.assertEqual(initial["counts"]["unsupported"], 1)
+        self.assertEqual(initial["claims_total"], 3)
+        self.assertTrue(initial["untrusted_draft_claims"])
+        self.assertEqual(
+            initial["claims"][2]["claim"],
+            "Broad claim [S1].",
+        )
+        self.assertTrue(result["verification"]["passed"])
 
     def test_unresolved_coverage_is_not_reported_as_complete(self) -> None:
         generator = _Generator("The observed step advances state [S1].")

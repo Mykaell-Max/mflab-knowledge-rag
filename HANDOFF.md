@@ -1590,3 +1590,13 @@ exigir uma segunda seção artificial. A faceta interna orienta a narrativa, mas
 não declara cobertura de um aspecto científico solicitado pelo usuário. Assim,
 o chamador e seus filhos usam o contrato específico de execução mesmo quando o
 planejamento do modelo é conservador, vazio ou malformado.
+
+Na validação real da 0.46.3, a seção de fluxo passou a conter o coordenador e
+suas implementações diretas na ordem estrutural correta. O primeiro verificador,
+porém, rejeitou a maior parte da síntese e o recorte determinístico preservou
+somente seis afirmações, ocultando no relatório final os diagnósticos das
+afirmações removidas. A 0.46.4 mantém em `context.verification_initial` uma
+cópia limitada e sanitizada dessa primeira auditoria antes de qualquer recorte.
+O registro contém apenas afirmação, veredito, identificadores de fontes e motivo,
+sem texto das evidências, prompts ou credenciais. Esse dado é diagnóstico e não
+participa de ranking, geração, verificação ou decisão de entrega da resposta.

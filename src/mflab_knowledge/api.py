@@ -1704,6 +1704,55 @@ def _quality_retry_instructions(
     )
 
 
+def _verification_diagnostic_snapshot(
+    verification: dict[str, object],
+    *,
+    maximum_claims: int = 80,
+) -> dict[str, object]:
+    """Return a bounded audit trace without evidence text or model prompts."""
+
+    raw_counts = verification.get("counts")
+    counts = raw_counts if isinstance(raw_counts, dict) else {}
+    claims: list[dict[str, object]] = []
+    raw_claims = verification.get("claims")
+    if isinstance(raw_claims, list):
+        for raw_claim in raw_claims[:maximum_claims]:
+            if not isinstance(raw_claim, dict):
+                continue
+            raw_source_ids = raw_claim.get("source_ids")
+            source_ids = (
+                [str(value)[:80] for value in raw_source_ids[:20]]
+                if isinstance(raw_source_ids, list)
+                else []
+            )
+            claims.append(
+                {
+                    "claim_id": str(raw_claim.get("claim_id", ""))[:80],
+                    "claim": str(raw_claim.get("claim", ""))[:600],
+                    "verdict": str(raw_claim.get("verdict", "uncertain"))[:40],
+                    "source_ids": source_ids,
+                    "finding": str(raw_claim.get("finding", ""))[:300],
+                }
+            )
+    return {
+        "algorithm": str(verification.get("algorithm", ""))[:120],
+        "performed": verification.get("performed") is True,
+        "passed": verification.get("passed") is True,
+        "counts": {
+            verdict: int(counts.get(verdict, 0))
+            for verdict in ("supported", "unsupported", "uncertain")
+        },
+        "batches": int(verification.get("batches", 0)),
+        "cache_hits": int(verification.get("cache_hits", 0)),
+        "claims": claims,
+        "claims_total": len(raw_claims) if isinstance(raw_claims, list) else 0,
+        "claims_truncated": (
+            isinstance(raw_claims, list) and len(raw_claims) > maximum_claims
+        ),
+        "untrusted_draft_claims": True,
+    }
+
+
 def _evidence_repair_instructions(
     instructions: str,
     candidate_answer: str,
@@ -4780,6 +4829,7 @@ class RagApiService:
             assessment["grounding_status"] = "scope_overclaim"
 
         verification = unavailable_verification("disabled")
+        initial_verification: dict[str, object] | None = None
         evidence_repair = False
         supported_subset_only = False
         verifier = getattr(self.generator, "verify", None)
@@ -4968,6 +5018,10 @@ class RagApiService:
                     "warning",
                 )
                 verification = unavailable_verification("audit_unavailable")
+
+            initial_verification = _verification_diagnostic_snapshot(
+                verification
+            )
 
             audit_counts = verification.get("counts")
             if verification.get("performed") is True and isinstance(
@@ -5624,6 +5678,7 @@ class RagApiService:
                 "reduced_output_for_generation": reduced_output_for_generation,
                 "quality_retry": quality_retry,
                 "evidence_repair": evidence_repair,
+                "verification_initial": initial_verification,
                 "citation_discovery": citation_discovery,
                 "code_blocks_removed": removed_code_blocks,
                 "code_citations_attached": code_citations_attached,
