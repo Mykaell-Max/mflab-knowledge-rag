@@ -1567,3 +1567,15 @@ evidência `persisted_structure`, cujos dois extremos estejam no pacote final e
 cujo alvo tenha sido reservado pela seleção de linhagem. Assim, a representação
 pública auditável também funciona como caminho de recuperação determinístico,
 sem aceitar relações propostas pelo modelo.
+
+A validação real da 0.46.1 mostrou por que a recuperação ainda não era
+suficiente. Os filhos diretos eram reservados, mas o chamador que originou a
+travessia podia ser removido ao competir com as demais facetas da pergunta. Sem
+o chamador entre as fontes finais, uma aresta real não podia ser convertida em
+uma linhagem do caderno. A 0.46.2 reserva a espinha como uma unidade: prioriza
+genericamente o chamador com mais filhos diretos observados e mantém o chamador
+mais até quatro implementações dentro do mesmo limite de cinco fontes. Outros
+aspectos continuam preenchendo as vagas restantes. O pacote também expõe
+`lineage_origin_chunk_ids` e `lineage_flow_chunk_ids` para tornar a decisão
+diagnosticável. Não há nomes de mecanismos, arquivos, símbolos, projetos ou
+branches nessa política.

@@ -2100,6 +2100,14 @@ class ApiServiceTests(unittest.TestCase):
             ["caller", "callee"],
         )
         self.assertEqual(
+            context["agent_investigation"]["lineage_origin_chunk_ids"],
+            ["observed", "caller"],
+        )
+        self.assertEqual(
+            context["agent_investigation"]["lineage_flow_chunk_ids"],
+            ["observed", "callee", "caller"],
+        )
+        self.assertEqual(
             context["agent_investigation"]["lineage_graph_chunk_ids"],
             ["callee"],
         )

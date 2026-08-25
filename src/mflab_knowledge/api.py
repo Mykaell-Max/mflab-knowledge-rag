@@ -2603,6 +2603,8 @@ class RagApiService:
         baseline_chunk_ids: list[str] = []
         graph_frontier_chunk_ids: list[str] = []
         lineage_graph_chunk_ids: list[str] = []
+        lineage_origin_chunk_ids: list[str] = []
+        lineage_flow_chunk_ids: list[str] = []
         lineage_edges: list[dict[str, object]] = []
         terminal_graph_chunk_ids: list[str] = []
         final_reserved_context_chunk_ids: list[str] = []
@@ -3445,6 +3447,34 @@ class RagApiService:
                             "kind": "calls_symbol",
                         }
                     )
+            lineage_origin_chunk_ids = list(
+                dict.fromkeys(
+                    str(edge.get("origin_chunk_id", ""))
+                    for edge in lineage_edges
+                    if str(edge.get("origin_chunk_id", ""))
+                )
+            )
+            lineage_targets_by_origin: dict[str, list[str]] = {}
+            for edge in lineage_edges:
+                origin_id = str(edge.get("origin_chunk_id", ""))
+                target_id = str(edge.get("target_chunk_id", ""))
+                if not origin_id or not target_id:
+                    continue
+                targets = lineage_targets_by_origin.setdefault(origin_id, [])
+                if target_id not in targets:
+                    targets.append(target_id)
+            for origin_id, target_ids in sorted(
+                lineage_targets_by_origin.items(),
+                key=lambda value: len(value[1]),
+                reverse=True,
+            ):
+                for chunk_id in (origin_id, *target_ids):
+                    if chunk_id not in lineage_flow_chunk_ids:
+                        lineage_flow_chunk_ids.append(chunk_id)
+                    if len(lineage_flow_chunk_ids) >= MAX_SECTION_SOURCES:
+                        break
+                if len(lineage_flow_chunk_ids) >= MAX_SECTION_SOURCES:
+                    break
             if lineage_graph_chunk_ids:
                 record(
                     "agent",
@@ -3498,7 +3528,9 @@ class RagApiService:
             final_reserved_context_chunk_ids = list(
                 dict.fromkeys(
                     [
+                        *lineage_flow_chunk_ids,
                         *reserved_context_chunk_ids,
+                        *lineage_origin_chunk_ids,
                         *lineage_graph_chunk_ids,
                         *terminal_graph_chunk_ids,
                         *baseline_chunk_ids,
@@ -3509,7 +3541,17 @@ class RagApiService:
             # Evidence explicitly retained for distinct coverage aspects owns
             # the first positions. Baseline retrieval and graph frontiers fill
             # the remainder, instead of displacing later requested stages.
-            selected_chunk_ids: list[str] = list(reserved_context_chunk_ids)
+            selected_chunk_ids: list[str] = list(lineage_flow_chunk_ids)
+            selected_chunk_ids.extend(
+                chunk_id
+                for chunk_id in reserved_context_chunk_ids
+                if chunk_id not in selected_chunk_ids
+            )
+            selected_chunk_ids.extend(
+                chunk_id
+                for chunk_id in lineage_origin_chunk_ids
+                if chunk_id not in selected_chunk_ids
+            )
             selected_chunk_ids.extend(
                 chunk_id
                 for chunk_id in lineage_graph_chunk_ids
@@ -3552,6 +3594,23 @@ class RagApiService:
                     if not isinstance(values, list):
                         continue
                     for result in values:
+                        if not isinstance(result, dict):
+                            continue
+                        chunk_id = str(result.get("chunk_id", ""))
+                        if (
+                            chunk_id in selected_chunk_ids
+                            and chunk_id not in selected_by_chunk
+                        ):
+                            selected_by_chunk[chunk_id] = result
+                for lineage in callee_lineages:
+                    origin = lineage.get("origin")
+                    children = lineage.get("results")
+                    candidates: list[object] = []
+                    if isinstance(origin, dict):
+                        candidates.append(origin)
+                    if isinstance(children, list):
+                        candidates.extend(children)
+                    for result in candidates:
                         if not isinstance(result, dict):
                             continue
                         chunk_id = str(result.get("chunk_id", ""))
@@ -3774,6 +3833,8 @@ class RagApiService:
                 "baseline_chunk_ids": baseline_chunk_ids,
                 "initial_baseline_chunk_ids": initial_baseline_chunk_ids,
                 "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
+                "lineage_origin_chunk_ids": lineage_origin_chunk_ids,
+                "lineage_flow_chunk_ids": lineage_flow_chunk_ids,
                 "lineage_graph_chunk_ids": lineage_graph_chunk_ids,
                 "lineage_edges": lineage_edges,
                 "lineage_algorithm": CALL_LINEAGE_ALGORITHM,
