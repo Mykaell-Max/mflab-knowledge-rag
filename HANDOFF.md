@@ -1666,3 +1666,27 @@ de fluxo e deixa de competir como complemento de outra seção. A relação entr
 no contrato estrutural entregue ao gerador. A regra depende apenas do grafo
 persistido, do escopo autorizado e dos aspectos da pergunta; não contém nomes
 de projetos, branches, arquivos, classes ou mecanismos científicos.
+
+A validação real da 0.46.8 mostrou que a aresta ascendente foi recuperada, mas
+não aplicada. A faceta curta `flow` havia sido classificada como requisito de
+apresentação e o passe de entrada aceitava somente facetas de conteúdo. O mesmo
+relatório revelou uma segunda interação: um coordenador amplo de domínio tinha
+três descendentes finais e, por isso, o caderno os agrupou como uma única
+espinha, mesmo quando dois pertenciam a outros subsistemas. A implementação de
+partícula continuava no pacote e no caderno, mas foi deslocada para uma seção
+somente de apresentação e acabou omitida pela geração nessa execução.
+
+A 0.46.9 corrige as duas interações no caderno, sem alterar recuperação ou
+indexação. Facetas estruturalmente reconhecíveis podem receber um ponto de
+entrada mesmo quando também orientam a forma da resposta, e configuração passa
+a integrar o vocabulário estrutural genérico. Quando a pergunta possui um
+assunto nomeado, apenas um coordenador cuja identidade de caminho ou símbolo
+repete esse assunto pode dominar uma espinha com vários descendentes. Menções
+ao assunto encontradas apenas no corpo de um coordenador amplo não bastam para
+apropriar chamadas vizinhas. Uma aresta ascendente isolada para o assunto ainda
+é preservada normalmente. Isso mantém entradas de alto nível, implementações
+locais e integração em seções coerentes sem vocabulário do corpus no motor.
+O contrato de síntese também preserva os `source_ids` específicos que o caderno
+atribuiu a cada faceta. Quando fontes atribuídas mostram operações locais
+distintas, o modelo deve explicar ambas ou declarar o limite observado, em vez
+de substituir silenciosamente uma implementação por outra fonte da seção.

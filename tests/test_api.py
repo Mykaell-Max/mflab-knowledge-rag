@@ -464,7 +464,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v15")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v16")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -896,7 +896,7 @@ class ApiServiceTests(unittest.TestCase):
                 },
                 {
                     "aspect_id": "A2",
-                    "aspect": "initialization flow",
+                    "aspect": "flow",
                     "status": "partial",
                     "chunk_ids": ["factory", "implementation"],
                 },
@@ -927,10 +927,17 @@ class ApiServiceTests(unittest.TestCase):
                     "path": "src/domain.cpp",
                     "title": "Domain::configure",
                     "source_kind": "agent_callers_evidence",
+                    "text": "factory.configure(); options.load();",
                 },
             ],
             question="Explain initialization flow",
-            related_chunk_ids=["entry", "factory", "implementation"],
+            subject_identifiers=["Factory"],
+            related_chunk_ids=[
+                "entry",
+                "factory",
+                "implementation",
+                "options",
+            ],
             lineage_edges=[
                 {
                     "origin_chunk_id": "entry",
@@ -951,6 +958,7 @@ class ApiServiceTests(unittest.TestCase):
             if "S2" in section["source_ids"]
         )
         self.assertEqual(flow["source_ids"][:2], ["S4", "S2"])
+        self.assertNotIn("S1", flow["source_ids"])
         self.assertEqual(flow["status"], "verified_flow")
         self.assertIn(
             {
@@ -1133,6 +1141,7 @@ class ApiServiceTests(unittest.TestCase):
                         "aspect_id": "A1",
                         "aspect": "particle advancement",
                         "role": "content",
+                        "source_ids": ["S1", "S2"],
                     },
                     {
                         "aspect_id": "A2",
@@ -1147,6 +1156,8 @@ class ApiServiceTests(unittest.TestCase):
 
         self.assertIn("role=content", instructions)
         self.assertIn("role=delivery", instructions)
+        self.assertIn('"source_ids": ["S1", "S2"]', instructions)
+        self.assertIn("explain both", instructions)
         self.assertIn("never create a separate paragraph", instructions)
 
     def test_context_packing_preserves_distinct_paths_before_repeated_chunks(self) -> None:

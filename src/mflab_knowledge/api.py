@@ -184,7 +184,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v15"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v16"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -261,6 +261,9 @@ _NOTEBOOK_DELIVERY_PREFIXES = (
 _NOTEBOOK_STRUCTURAL_TERMS = {
     "advanc",
     "advancement",
+    "config",
+    "configuration",
+    "configure",
     "entry",
     "flow",
     "initia",
@@ -513,10 +516,8 @@ def _build_evidence_notebook(
         str(value) for value in related_chunk_ids or [] if str(value)
     }
 
-    def source_is_subject_anchored(source: dict[str, object]) -> bool:
-        if not subject_signatures:
-            return True
-        source_signature = "".join(
+    def source_signature(source: dict[str, object]) -> str:
+        return "".join(
             character.casefold()
             for character in " ".join(
                 str(source.get(field, ""))
@@ -524,9 +525,35 @@ def _build_evidence_notebook(
             )
             if character.isalnum()
         )
+
+    def source_identity_signature(source: dict[str, object]) -> str:
+        return "".join(
+            character.casefold()
+            for character in " ".join(
+                str(source.get(field, "")) for field in ("path", "title")
+            )
+            if character.isalnum()
+        )
+
+    def source_is_subject_anchored(source: dict[str, object]) -> bool:
+        if not subject_signatures:
+            return True
         return (
-            any(signature in source_signature for signature in subject_signatures)
+            any(
+                signature in source_signature(source)
+                for signature in subject_signatures
+            )
             or str(source.get("chunk_id", "")) in structurally_related
+        )
+
+    def source_identity_repeats_subject(source_id: str) -> bool:
+        source = source_by_id.get(source_id)
+        return bool(
+            source
+            and any(
+                signature in source_identity_signature(source)
+                for signature in subject_signatures
+            )
         )
 
     source_by_chunk: dict[str, str] = {}
@@ -947,6 +974,13 @@ def _build_evidence_notebook(
             for value in lineage.get("target_source_ids", [])
             if str(value)
         ]
+        # A broad upstream coordinator can call many unrelated subsystems that
+        # happen to be in the bounded context. When the user named a subject,
+        # only a coordinator that repeats that subject may own a multi-child
+        # execution spine. A separately observed caller-to-subject edge is
+        # still preserved by the upstream-entry pass below.
+        if subject_signatures and not source_identity_repeats_subject(origin_id):
+            continue
         spine_ids = [origin_id, *target_ids][:max_sources_per_section]
         if len(spine_ids) < 3 or claimed_flow_sources & set(spine_ids):
             continue
@@ -1059,7 +1093,6 @@ def _build_evidence_notebook(
                     section.get("status") == "verified_flow"
                     or any(
                         isinstance(aspect, dict)
-                        and aspect.get("role") != "delivery"
                         and _notebook_needs_structural_context(
                             str(aspect.get("aspect", ""))
                         )
@@ -1122,7 +1155,7 @@ def _build_evidence_notebook(
         if relation not in raw_relations:
             raw_relations.insert(0, relation)
         for aspect in owner.get("aspects", []):
-            if not isinstance(aspect, dict) or aspect.get("role") == "delivery":
+            if not isinstance(aspect, dict):
                 continue
             if not _notebook_needs_structural_context(
                 str(aspect.get("aspect", ""))
@@ -1239,6 +1272,9 @@ def _section_synthesis_instructions(
             "aspect_id": str(item.get("aspect_id", "")),
             "aspect": str(item.get("aspect", "")),
             "role": str(item.get("role", "content")),
+            "source_ids": [
+                str(value) for value in item.get("source_ids", []) if str(value)
+            ],
         }
         for item in section.get("aspects", [])
         if isinstance(item, dict)
@@ -1281,11 +1317,15 @@ def _section_synthesis_instructions(
         "hints, not facts: "
         + json.dumps(aspects, ensure_ascii=False)
         + ". Labels with role=content are the exclusive technical subjects of "
-        "this part: give each one a clearly identifiable cited explanation when "
-        "its supplied sources support it, or state the exact local boundary when "
-        "they do not. Labels with role=delivery are presentation requirements "
-        "shared across the answer, such as explaining the mechanism or including "
-        "code. Apply them while discussing the content; never create a separate "
+        "this part. Their source_ids are the bounded evidence assigned to that "
+        "facet: give each facet a clearly identifiable cited explanation when "
+        "those sources support it, or state the exact local boundary when they "
+        "do not. When two assigned sources expose distinct local operations, "
+        "explain both instead of silently substituting one for the other. Labels "
+        "with role=delivery are presentation requirements shared across the "
+        "answer, such as explaining the mechanism or including code; their "
+        "source_ids only identify where that presentation can be grounded. Apply "
+        "them while discussing the content; never create a separate "
         "paragraph, stage, or restatement for a delivery label. Explain only what the "
         "supplied sources establish for these aspects. "
         "Explain the mechanism didactically: identify the local responsibility, "
