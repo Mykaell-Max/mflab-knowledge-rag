@@ -184,7 +184,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v16"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v17"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -535,15 +535,17 @@ def _build_evidence_notebook(
             if character.isalnum()
         )
 
-    def source_is_subject_anchored(source: dict[str, object]) -> bool:
+    def source_mentions_subject(source: dict[str, object]) -> bool:
         if not subject_signatures:
             return True
-        return (
-            any(
-                signature in source_signature(source)
-                for signature in subject_signatures
-            )
-            or str(source.get("chunk_id", "")) in structurally_related
+        return any(
+            signature in source_signature(source)
+            for signature in subject_signatures
+        )
+
+    def source_is_subject_anchored(source: dict[str, object]) -> bool:
+        return source_mentions_subject(source) or (
+            str(source.get("chunk_id", "")) in structurally_related
         )
 
     def source_identity_repeats_subject(source_id: str) -> bool:
@@ -571,6 +573,12 @@ def _build_evidence_notebook(
     lineage_targets: dict[str, list[str]] = {}
     lineage_observations: dict[str, set[str]] = {}
     upstream_targets: dict[str, list[str]] = {}
+    subject_identity_ids = {
+        source_id
+        for source_id in source_by_id
+        if source_identity_repeats_subject(source_id)
+    }
+    direct_subject_neighbor_ids: set[str] = set()
     for raw_edge in lineage_edges or []:
         if not isinstance(raw_edge, dict):
             continue
@@ -578,6 +586,15 @@ def _build_evidence_notebook(
         target_id = source_by_chunk.get(str(raw_edge.get("target_chunk_id", "")))
         if not origin_id or not target_id or origin_id == target_id:
             continue
+        # The investigation graph can expose siblings reached through the same
+        # broad coordinator. Only a direct edge to a definition whose identity
+        # repeats the named subject establishes structural relevance. This
+        # keeps a real caller or callee while preventing an adjacent subsystem
+        # from becoming part of the answer merely because it shares a parent.
+        if origin_id in subject_identity_ids:
+            direct_subject_neighbor_ids.add(target_id)
+        if target_id in subject_identity_ids:
+            direct_subject_neighbor_ids.add(origin_id)
         targets = lineage_targets.setdefault(origin_id, [])
         if target_id not in targets:
             targets.append(target_id)
@@ -602,6 +619,48 @@ def _build_evidence_notebook(
                     upstream_targets[origin_id]
                 )
             verified_lineages.append(lineage)
+
+    if subject_signatures and lineage_edges:
+        allowed_source_ids = {
+            source_id
+            for source_id, source in source_by_id.items()
+            if source_mentions_subject(source)
+            or source_id in direct_subject_neighbor_ids
+        }
+        source_by_id = {
+            source_id: source
+            for source_id, source in source_by_id.items()
+            if source_id in allowed_source_ids
+        }
+        source_by_chunk = {
+            chunk_id: source_id
+            for chunk_id, source_id in source_by_chunk.items()
+            if source_id in allowed_source_ids
+        }
+        filtered_lineages: list[dict[str, object]] = []
+        for lineage in verified_lineages:
+            origin_id = str(lineage.get("origin_source_id", ""))
+            if origin_id not in allowed_source_ids:
+                continue
+            target_ids = [
+                str(value)
+                for value in lineage.get("target_source_ids", [])
+                if str(value) in allowed_source_ids
+            ]
+            if not target_ids:
+                continue
+            filtered = {**lineage, "target_source_ids": target_ids}
+            upstream_ids = [
+                str(value)
+                for value in lineage.get("upstream_target_source_ids", [])
+                if str(value) in allowed_source_ids
+            ]
+            if upstream_ids:
+                filtered["upstream_target_source_ids"] = upstream_ids
+            else:
+                filtered.pop("upstream_target_source_ids", None)
+            filtered_lineages.append(filtered)
+        verified_lineages = filtered_lineages
 
     sections: list[dict[str, object]] = []
     gaps: list[dict[str, object]] = []
@@ -1185,6 +1244,11 @@ def _build_evidence_notebook(
         "algorithm": EVIDENCE_NOTEBOOK_ALGORITHM,
         "subject_identifiers": list(subject_identifiers or []),
         "eligible_source_ids": list(source_by_id),
+        "subject_anchored_chunk_ids": [
+            str(source.get("chunk_id", ""))
+            for source in source_by_id.values()
+            if str(source.get("chunk_id", ""))
+        ],
         "excluded_sources": len(sources) - len(source_by_id),
         "verified_lineages": verified_lineages,
         "sections": sections,
@@ -5196,7 +5260,13 @@ class RagApiService:
                     normalized,
                     sources=evidence,
                     subject_identifiers=subject_identifiers,
-                    related_chunk_ids=lineage_graph_chunk_ids,
+                    related_chunk_ids=[
+                        str(value)
+                        for value in evidence_notebook.get(
+                            "subject_anchored_chunk_ids", []
+                        )
+                        if str(value)
+                    ],
                 )
                 normalized = downgrade_operation_mismatch_claims(
                     normalized,

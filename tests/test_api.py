@@ -464,7 +464,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v16")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v17")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -795,6 +795,71 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("S1", selected)
         self.assertIn("S2", selected)
         self.assertNotIn("S3", selected)
+
+    def test_evidence_notebook_excludes_subject_sibling_from_shared_coordinator(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "configuration",
+                    "status": "partial",
+                    "chunk_ids": ["neighbor-configure"],
+                }
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "coordinator",
+                    "path": "src/domain.cpp",
+                    "title": "Domain::setup",
+                    "text": "particle_engine.configure(); pressure.configure();",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "subject-configure",
+                    "path": "src/particle_engine.cpp",
+                    "title": "ParticleEngine::configure",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "neighbor-configure",
+                    "path": "src/pressure.cpp",
+                    "title": "Pressure::configure",
+                },
+            ],
+            question="Explain ParticleEngine configuration",
+            subject_identifiers=["ParticleEngine"],
+            related_chunk_ids=[
+                "coordinator",
+                "subject-configure",
+                "neighbor-configure",
+            ],
+            lineage_edges=[
+                {
+                    "origin_chunk_id": "coordinator",
+                    "target_chunk_id": "subject-configure",
+                },
+                {
+                    "origin_chunk_id": "coordinator",
+                    "target_chunk_id": "neighbor-configure",
+                },
+            ],
+        )
+
+        self.assertEqual(notebook["eligible_source_ids"], ["S1", "S2"])
+        selected = {
+            str(source_id)
+            for section in notebook["sections"]
+            for source_id in section["source_ids"]
+        }
+        self.assertIn("S2", selected)
+        self.assertNotIn("S3", selected)
+        self.assertEqual(
+            notebook["subject_anchored_chunk_ids"],
+            ["coordinator", "subject-configure"],
+        )
 
     def test_evidence_notebook_groups_verified_caller_and_callees_as_flow(self) -> None:
         notebook = api._build_evidence_notebook(

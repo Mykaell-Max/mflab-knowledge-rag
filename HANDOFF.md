@@ -1690,3 +1690,23 @@ O contrato de síntese também preserva os `source_ids` específicos que o cader
 atribuiu a cada faceta. Quando fontes atribuídas mostram operações locais
 distintas, o modelo deve explicar ambas ou declarar o limite observado, em vez
 de substituir silenciosamente uma implementação por outra fonte da seção.
+
+A validação real da 0.46.9 passou os dois gabaritos formais, com todas as fontes
+obrigatórias presentes e respostas marcadas como completas e citadas. A leitura
+qualitativa, porém, encontrou uma afirmação inadequada: a explicação do DPM
+começou por `Poisson::configure` e declarou uma relação entre o solver e as
+partículas que o código citado não estabelecia. O nó havia entrado como irmão
+estrutural do DPM por compartilhar o mesmo coordenador de domínio. Isso mostrou
+que cobertura formal e citações válidas não bastam quando a fronteira usada para
+autorizar o assunto ainda é ampla demais.
+
+A 0.46.10 introduz `sectional_evidence_notebook_v17`. Para uma pergunta com
+assunto nomeado, uma fonte estrutural que não menciona esse assunto só permanece
+elegível quando é vizinha direta, por aresta persistida, de uma definição cuja
+identidade de caminho ou símbolo repete o assunto. Irmãos alcançados por um
+coordenador comum são removidos antes da organização das seções. Chamadores e
+implementações diretamente ligados continuam permitidos. A auditoria final
+passa a usar a mesma fronteira filtrada do caderno, em vez de considerar toda a
+fronteira de exploração como vínculo suficiente. A política é derivada de
+proveniência, identidade e arestas verificadas, sem nomes científicos, arquivos,
+branches ou repositórios codificados no motor.
