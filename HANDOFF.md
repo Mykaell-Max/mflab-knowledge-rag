@@ -1754,3 +1754,28 @@ grafo. O comportamento foi coberto por um teste de corpus neutro no qual uma
 rotina de configuração e uma rotina de regeneração vencem utilitários de
 limites e saída. Nenhum nome de projeto, branch, arquivo ou mecanismo
 científico foi adicionado ao motor.
+
+A validação real da 0.46.12 confirmou a melhora temática: o gerenciador e a
+rotina de regeneração antes omitidos chegaram à resposta, e o caso de fluxo do
+subsistema continuou aprovado. Restou a ausência do ponto de entrada do domínio
+na resposta final, embora ele já estivesse na seção estrutural do caderno. A
+faceta curta `flow` ainda era classificada como requisito de apresentação, não
+como assunto técnico. A seção que continha o chamador do domínio ficou sem uma
+faceta de conteúdo e perdeu prioridade na síntese. Uma rotina auxiliar chamada
+`std::max` também ocupou sozinha a seção de inicialização porque seu corpo
+continha várias palavras das hipóteses de busca, enquanto sua identidade não
+declarava uma operação de inicialização.
+
+A 0.46.13 introduz `sectional_evidence_notebook_v20`. Fluxo passa a ser tratado
+como conteúdo técnico; somente requisitos de forma, como explicação e trecho de
+código, permanecem como entrega compartilhada. Em facetas de ciclo de vida, uma
+operação declarada na identidade do símbolo recebe precedência sobre a mesma
+palavra encontrada incidentalmente no corpo de um helper. Nomes de papéis como
+`Builder` e `Factory` deixam de produzir sozinhos equivalência com uma operação
+de construção; métodos compostos que realmente declaram a operação continuam
+reconhecidos. Complementos muito abaixo da melhor pontuação temática não entram
+na seção apenas para preencher espaço. Depois de qualquer reorganização por
+arestas, os `source_ids` de cada faceta são novamente limitados às fontes locais
+da seção e nunca permanecem vazios. Todas as decisões continuam derivadas de
+texto, identidade, proveniência e estrutura verificável, sem regras específicas
+para o corpus.

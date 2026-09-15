@@ -184,11 +184,12 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v19"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v20"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
 MAX_SECTION_SOURCES = 5
+NOTEBOOK_COMPLEMENT_SCORE_DIVISOR = 2
 MAX_LINEAGE_IMPLEMENTATIONS = 8
 MAX_LINEAGE_FLOW_SOURCES = 10
 CONTEXT_RESERVATION_ALGORITHM = "balanced_evidence_channels_v2"
@@ -254,7 +255,6 @@ _NOTEBOOK_DELIVERY_PREFIXES = (
     "detail",
     "excerp",
     "explan",
-    "flow",
     "mechan",
     "snippet",
     "step",
@@ -346,8 +346,9 @@ def _notebook_semantic_terms(value: object) -> set[str]:
     """Add corpus-neutral lifecycle equivalences to visible lexical terms."""
 
     terms = _notebook_match_terms(value)
+    semantic_candidates = terms - _NOTEBOOK_IMPLEMENTATION_ROLE_TERMS
     for marker, prefixes in _NOTEBOOK_SEMANTIC_FAMILIES.items():
-        if any(term.startswith(prefixes) for term in terms):
+        if any(term.startswith(prefixes) for term in semantic_candidates):
             terms.add(marker)
     return terms
 
@@ -595,7 +596,9 @@ def _rank_notebook_sources(
     ):
         identity_terms = source_identity_terms_by_id[source_id]
         content_terms = source_content_terms_by_id[source_id]
-        distinct_source_terms = source_terms - common_terms
+        distinct_source_terms = (
+            source_terms - common_terms
+        ) | (source_terms & _NOTEBOOK_SEMANTIC_MARKERS)
         aspect_overlap = aspect_terms & distinct_source_terms
         identity_aspect_overlap = aspect_terms & identity_terms
         content_aspect_overlap = aspect_terms & content_terms
@@ -610,6 +613,11 @@ def _rank_notebook_sources(
         topic_overlap = identity_topic_overlap | content_topic_overlap
         lifecycle_overlap = (
             aspect_overlap & _NOTEBOOK_SEMANTIC_MARKERS
+        )
+        identity_lifecycle_overlap = (
+            raw_aspect_terms
+            & _NOTEBOOK_SEMANTIC_MARKERS
+            & identity_terms
         )
         source_kind = str(source_by_id[source_id].get("source_kind", ""))
         structurally_observed = any(
@@ -649,7 +657,18 @@ def _rank_notebook_sources(
                 + len(identity_question_overlap) * 5
                 + len(content_question_overlap)
                 + len(lifecycle_overlap) * 8
+                # A lifecycle operation declared by the symbol itself is much
+                # stronger than the same verb appearing incidentally inside a
+                # helper body. This stabilizes stage selection without knowing
+                # any repository-specific class or file name.
+                + len(identity_lifecycle_overlap) * 40
             )
+            if (
+                raw_topic_terms
+                and not identity_topic_overlap
+                and content_topic_overlap
+            ):
+                score = max(1, score - 24)
         if (
             score > 0
             and structural_connection_requested
@@ -888,14 +907,21 @@ def _build_evidence_notebook(
             max_sources_per_section,
             max(3 if structural_connection_requested else 1, len(source_ids)),
         )
-        for score, _source_position, source_id in _rank_notebook_sources(
+        ranked_sources = _rank_notebook_sources(
             aspect,
             question,
             source_by_id,
             ranking_hints=ranking_hints,
             structural_source_ids=structural_source_ids,
-        ):
-            if score < 1 or len(source_ids) >= target_source_count:
+        )
+        strongest_score = ranked_sources[0][0] if ranked_sources else 0
+        for score, _source_position, source_id in ranked_sources:
+            if (
+                score < 1
+                or score * NOTEBOOK_COMPLEMENT_SCORE_DIVISOR
+                < strongest_score
+                or len(source_ids) >= target_source_count
+            ):
                 break
             if source_id not in source_ids:
                 source_ids.append(source_id)
@@ -1067,7 +1093,11 @@ def _build_evidence_notebook(
             continue
         gap_source_ids = [source_id]
         for candidate_score, _candidate_position, candidate_id in ranked[1:]:
-            if candidate_score < 1 or len(gap_source_ids) >= 2:
+            if (
+                candidate_score < 1
+                or candidate_score * NOTEBOOK_COMPLEMENT_SCORE_DIVISOR < score
+                or len(gap_source_ids) >= 2
+            ):
                 break
             if candidate_id not in gap_source_ids:
                 gap_source_ids.append(candidate_id)
@@ -1131,14 +1161,22 @@ def _build_evidence_notebook(
             for aspect in raw_aspects
             if isinstance(aspect, dict)
         )
-        for score, _position, source_id in _rank_notebook_sources(
+        ranked_complements = _rank_notebook_sources(
             aspect_labels,
             question,
             source_by_id,
             ranking_hints=ranking_hints,
             structural_source_ids=structural_source_ids,
-        ):
-            if score < 1:
+        )
+        strongest_score = (
+            ranked_complements[0][0] if ranked_complements else 0
+        )
+        for score, _position, source_id in ranked_complements:
+            if (
+                score < 1
+                or score * NOTEBOOK_COMPLEMENT_SCORE_DIVISOR
+                < strongest_score
+            ):
                 break
             if source_id in raw_ids:
                 continue
@@ -1423,6 +1461,25 @@ def _build_evidence_notebook(
                 target_id,
                 *aspect_ids,
             ][:max_sources_per_section]
+
+    # Structural re-parenting happens after the first ownership pass. Restore
+    # the local provenance invariant so a facet can never be synthesized with
+    # an empty audit scope while its section still carries authorized sources.
+    for section in sections:
+        local_ids = [
+            str(value)
+            for value in section.get("source_ids", [])
+            if str(value)
+        ]
+        for aspect in section.get("aspects", []):
+            if not isinstance(aspect, dict):
+                continue
+            aspect_ids = [
+                str(value)
+                for value in aspect.get("source_ids", [])
+                if str(value) in local_ids
+            ]
+            aspect["source_ids"] = aspect_ids or list(local_ids)
 
     sections = [
         section

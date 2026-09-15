@@ -405,10 +405,55 @@ class ApiServiceTests(unittest.TestCase):
                 for aspect in section["aspects"]
             )
         )
-        self.assertIn("S3", adaptive_section["source_ids"])
         self.assertIn("S4", adaptive_section["source_ids"])
         self.assertNotIn("S5", adaptive_section["source_ids"])
         self.assertNotIn("S6", adaptive_section["source_ids"])
+        selected = {
+            source_id
+            for section in notebook["sections"]
+            for source_id in section["source_ids"]
+        }
+        self.assertIn("S3", selected)
+        self.assertIn("S4", selected)
+        self.assertNotIn("S5", selected)
+        self.assertNotIn("S6", selected)
+
+    def test_notebook_treats_flow_as_technical_content(self) -> None:
+        self.assertEqual(api._notebook_aspect_role("flow"), "content")
+        self.assertEqual(api._notebook_aspect_role("runtime flow"), "content")
+        self.assertEqual(api._notebook_aspect_role("code snippet"), "delivery")
+
+    def test_notebook_prefers_declared_lifecycle_over_incidental_body_terms(
+        self,
+    ) -> None:
+        ranked = api._rank_notebook_sources(
+            "initialization",
+            "Explique a inicialização da malha adaptativa",
+            {
+                "S1": {
+                    "path": "src/grid/grid_manager.cpp",
+                    "title": "GridManager::configure",
+                    "source_kind": "agent_related_evidence",
+                    "text": "configure refinement regions",
+                },
+                "S2": {
+                    "path": "src/grid/tree/domain_filling.cpp",
+                    "title": "maximum",
+                    "source_kind": "agent_related_evidence",
+                    "text": (
+                        "check adaptive grid initialization configuration "
+                        "parameters and setup stages"
+                    ),
+                },
+            },
+            ranking_hints=[
+                "adaptive grid initialization",
+                "adaptive grid configuration parameters",
+            ],
+            structural_source_ids={"S1", "S2"},
+        )
+
+        self.assertEqual(ranked[0][2], "S1")
 
     def test_recovers_selected_lineage_from_persisted_public_graph(self) -> None:
         edges = api._lineage_edges_from_investigation_graph(
@@ -574,7 +619,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v19")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v20")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
