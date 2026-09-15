@@ -184,7 +184,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v18"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v19"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -242,6 +242,8 @@ _NOTEBOOK_GENERIC_TERMS = {
     "mechan",
     "mechanism",
     "method",
+    "runtim",
+    "runtime",
     "snippet",
     "source",
     "stage",
@@ -274,6 +276,62 @@ _NOTEBOOK_STRUCTURAL_TERMS = {
     "mechanism",
 }
 
+_NOTEBOOK_SEMANTIC_FAMILIES = {
+    "__lifecycle_setup": (
+        "alloc",
+        "build",
+        "config",
+        "construct",
+        "creat",
+        "factor",
+        "init",
+        "load",
+        "prepar",
+        "setup",
+    ),
+    "__lifecycle_adapt": (
+        "adapt",
+        "refin",
+        "regener",
+        "regrid",
+        "remesh",
+    ),
+    "__lifecycle_runtime": (
+        "advanc",
+        "execut",
+        "move",
+        "run",
+        "runtime",
+        "step",
+        "update",
+    ),
+    "__lifecycle_integrate": (
+        "coupl",
+        "integr",
+        "interact",
+        "transfer",
+    ),
+}
+
+_NOTEBOOK_SEMANTIC_MARKERS = set(_NOTEBOOK_SEMANTIC_FAMILIES)
+
+_NOTEBOOK_IMPLEMENTATION_ROLE_TERMS = {
+    "builde",
+    "builder",
+    "contro",
+    "controller",
+    "factor",
+    "factory",
+    "handle",
+    "handler",
+    "implem",
+    "implementation",
+    "manage",
+    "manager",
+    "servic",
+    "service",
+}
+
 
 def _notebook_match_terms(value: object) -> set[str]:
     terms: set[str] = set()
@@ -281,6 +339,16 @@ def _notebook_match_terms(value: object) -> set[str]:
         terms.add(term)
         if len(term) >= 6:
             terms.add(term[:6])
+    return terms
+
+
+def _notebook_semantic_terms(value: object) -> set[str]:
+    """Add corpus-neutral lifecycle equivalences to visible lexical terms."""
+
+    terms = _notebook_match_terms(value)
+    for marker, prefixes in _NOTEBOOK_SEMANTIC_FAMILIES.items():
+        if any(term.startswith(prefixes) for term in terms):
+            terms.add(marker)
     return terms
 
 
@@ -328,6 +396,36 @@ def _notebook_ranking_context(
                 if isinstance(value, str) and value.strip()
             )
     return " ".join(dict.fromkeys(values))[:limit]
+
+
+def _notebook_ranking_hints(
+    exploration: object,
+    *,
+    limit: int = 32,
+) -> list[str]:
+    """Return bounded planner vocabulary without merging it into user intent."""
+
+    raw_plan = (
+        exploration.get("query_plan")
+        if isinstance(exploration, dict)
+        else None
+    )
+    if not isinstance(raw_plan, dict):
+        return []
+    values: list[str] = []
+    for field in ("queries", "identifiers"):
+        raw_values = raw_plan.get(field)
+        if not isinstance(raw_values, list):
+            continue
+        for raw_value in raw_values:
+            if not isinstance(raw_value, str):
+                continue
+            value = raw_value.strip()
+            if value and value not in values:
+                values.append(value[:240])
+            if len(values) >= limit:
+                return values
+    return values
 
 
 def _lineage_edges_from_investigation_graph(
@@ -402,24 +500,41 @@ def _rank_notebook_sources(
     aspect: object,
     question: str,
     source_by_id: dict[str, dict[str, object]],
+    *,
+    ranking_hints: list[str] | None = None,
+    structural_source_ids: set[str] | None = None,
 ) -> list[tuple[int, int, str]]:
-    """Rank authorized sources using provenance and bounded visible evidence."""
+    """Rank sources by facet, topic identity and verified structural role.
 
-    source_terms_by_id = {
-        source_id: _notebook_match_terms(
+    Planner vocabulary helps bridge natural language and code terminology, but
+    remains a search hint.  It is never merged into the literal user question
+    and cannot make an unrelated implementation role the topic by itself.
+    """
+
+    source_identity_terms_by_id = {
+        source_id: _notebook_semantic_terms(
             " ".join(
                 str(source.get(field, ""))
-                for field in (
-                    "path",
-                    "title",
-                    "source_kind",
-                    "format",
-                    "text",
-                )
+                for field in ("project", "path", "title")
             )
-            [:5000]
         )
         for source_id, source in source_by_id.items()
+    }
+    source_content_terms_by_id = {
+        source_id: _notebook_semantic_terms(
+            " ".join(
+                str(source.get(field, ""))
+                for field in ("source_kind", "format", "text")
+            )[:5000]
+        )
+        for source_id, source in source_by_id.items()
+    }
+    source_terms_by_id = {
+        source_id: (
+            source_identity_terms_by_id[source_id]
+            | source_content_terms_by_id[source_id]
+        )
+        for source_id in source_by_id
     }
     term_frequency: dict[str, int] = {}
     for terms in source_terms_by_id.values():
@@ -431,16 +546,45 @@ def _rank_notebook_sources(
         for term, count in term_frequency.items()
         if count >= common_threshold
     }
-    raw_aspect_terms = _notebook_match_terms(aspect)
-    aspect_terms = raw_aspect_terms - common_terms
+    raw_aspect_terms = _notebook_semantic_terms(aspect)
+    relevant_hint_terms: set[str] = set()
+    for hint in ranking_hints or []:
+        hint_terms = _notebook_semantic_terms(hint)
+        if hint_terms & raw_aspect_terms:
+            # Class-role words are useful to retrieve candidates, but are poor
+            # evidence that a candidate belongs to a scientific facet.  Keep
+            # lifecycle equivalences derived from the hint while excluding the
+            # role label itself from source assignment.
+            relevant_hint_terms.update(
+                hint_terms - _NOTEBOOK_IMPLEMENTATION_ROLE_TERMS
+            )
+    expanded_aspect_terms = raw_aspect_terms | relevant_hint_terms
+    aspect_terms = (
+        expanded_aspect_terms - common_terms
+    ) | (expanded_aspect_terms & _NOTEBOOK_SEMANTIC_MARKERS)
     # Terms repeated throughout the candidate set are weak discriminators for
     # the facet itself, but an explicit subject from the user's question must
     # remain available as a guard. In a repository query, the correct files can
     # all contain the subject while a reachable neighboring subsystem does not.
     # Removing that repeated subject previously rejected useful complements.
-    question_terms = _notebook_match_terms(question)
-    question_subject_terms = question_terms - _NOTEBOOK_GENERIC_TERMS
-    specific_aspect_terms = aspect_terms - _NOTEBOOK_GENERIC_TERMS
+    question_terms = _notebook_semantic_terms(question)
+    question_subject_terms = (
+        question_terms
+        - _NOTEBOOK_GENERIC_TERMS
+        - _NOTEBOOK_SEMANTIC_MARKERS
+        - _NOTEBOOK_IMPLEMENTATION_ROLE_TERMS
+    )
+    raw_topic_terms = (
+        expanded_aspect_terms
+        - _NOTEBOOK_GENERIC_TERMS
+        - _NOTEBOOK_SEMANTIC_MARKERS
+        - _NOTEBOOK_IMPLEMENTATION_ROLE_TERMS
+    )
+    specific_aspect_terms = (
+        raw_aspect_terms
+        - _NOTEBOOK_GENERIC_TERMS
+        - _NOTEBOOK_SEMANTIC_MARKERS
+    )
     structural_connection_requested = _notebook_needs_structural_context(
         aspect
     )
@@ -449,39 +593,67 @@ def _rank_notebook_sources(
     for position, (source_id, source_terms) in enumerate(
         source_terms_by_id.items()
     ):
+        identity_terms = source_identity_terms_by_id[source_id]
+        content_terms = source_content_terms_by_id[source_id]
         distinct_source_terms = source_terms - common_terms
         aspect_overlap = aspect_terms & distinct_source_terms
-        question_overlap = question_subject_terms & source_terms
+        identity_aspect_overlap = aspect_terms & identity_terms
+        content_aspect_overlap = aspect_terms & content_terms
+        identity_question_overlap = question_subject_terms & identity_terms
+        content_question_overlap = question_subject_terms & content_terms
+        question_overlap = (
+            identity_question_overlap | content_question_overlap
+        )
         specific_overlap = specific_aspect_terms & distinct_source_terms
-        # A generic lifecycle word such as ``configure`` is not enough to pull
-        # an unrelated neighboring subsystem into a section.  It must also
-        # match the question's subject, unless a facet-specific term such as
-        # ``particle`` or ``domain`` matches directly.
-        if not aspect_overlap and question_overlap:
-            # A lower-weight subject-only match admits one structural neighbor
-            # such as a factory or coordinator whose symbol uses a different
-            # lifecycle verb.  The explicit question subject is still required,
-            # so an adjacent subsystem reached by the graph is not admitted
-            # merely because it also has a generic configure/advance method.
-            score = len(question_overlap)
-        elif not aspect_overlap or (
-            not question_overlap and not specific_overlap
+        identity_topic_overlap = raw_topic_terms & identity_terms
+        content_topic_overlap = raw_topic_terms & content_terms
+        topic_overlap = identity_topic_overlap | content_topic_overlap
+        lifecycle_overlap = (
+            aspect_overlap & _NOTEBOOK_SEMANTIC_MARKERS
+        )
+        source_kind = str(source_by_id[source_id].get("source_kind", ""))
+        structurally_observed = any(
+            role in source_kind
+            for role in ("callers", "callees", "neighborhood", "related")
+        ) or source_id in (structural_source_ids or set())
+
+        # Topic-bearing facets must remain in that topic.  A planner-generated
+        # implementation role such as ``factory`` is deliberately excluded
+        # from the guard, so another factory cannot win by name alone.
+        if raw_topic_terms and not topic_overlap:
+            score = 0
+        elif not aspect_overlap and question_overlap:
+            score = (
+                len(identity_question_overlap) * 5
+                + len(content_question_overlap)
+            )
+        elif not aspect_overlap:
+            score = 0
+        elif (
+            not specific_overlap
+            and not topic_overlap
+            and not question_overlap
+            and not (structurally_observed and lifecycle_overlap)
         ):
+            # A bare lifecycle verb is not evidence of relevance.  The only
+            # exception is a source reached through a verified structural
+            # operation, which may express the same stage using another verb.
             score = 0
         else:
             score = (
-                len(aspect_overlap) * 8
-                + len(specific_overlap) * 4
-                + len(question_overlap) * 2
+                len(identity_aspect_overlap) * 14
+                + len(content_aspect_overlap) * 4
+                + len(specific_overlap) * 6
+                + len(identity_topic_overlap) * 12
+                + len(content_topic_overlap) * 2
+                + len(identity_question_overlap) * 5
+                + len(content_question_overlap)
+                + len(lifecycle_overlap) * 8
             )
-        source_kind = str(source_by_id[source_id].get("source_kind", ""))
         if (
             score > 0
             and structural_connection_requested
-            and any(
-                role in source_kind
-                for role in ("callers", "callees", "neighborhood", "related")
-            )
+            and structurally_observed
         ):
             score += 10
         ranked.append((score, -position, source_id))
@@ -493,6 +665,7 @@ def _build_evidence_notebook(
     sources: list[dict[str, object]],
     *,
     question: str = "",
+    ranking_hints: list[str] | None = None,
     subject_identifiers: list[str] | None = None,
     related_chunk_ids: list[str] | None = None,
     lineage_edges: list[dict[str, object]] | None = None,
@@ -667,6 +840,11 @@ def _build_evidence_notebook(
     assigned_source_ids: set[str] = set()
     assigned_anchor_source_ids: set[str] = set()
     evidenced_aspect_ids: set[str] = set()
+    structural_source_ids = {
+        source_id
+        for source_id, source in source_by_id.items()
+        if str(source.get("chunk_id", "")) in structurally_related
+    }
     for position, item in enumerate(raw_coverage, start=1):
         if not isinstance(item, dict):
             continue
@@ -683,6 +861,8 @@ def _build_evidence_notebook(
                 aspect,
                 question,
                 source_by_id,
+                ranking_hints=ranking_hints,
+                structural_source_ids=structural_source_ids,
             )
             scores_by_source = {
                 source_id: score
@@ -699,8 +879,6 @@ def _build_evidence_notebook(
                     source_id
                     for source_id in source_ids
                     if scores_by_source.get(source_id, 0) == best_score
-                    or str(source_by_id[source_id].get("chunk_id", ""))
-                    in structurally_related
                 ]
         anchor_source_ids = list(source_ids)
         structural_connection_requested = _notebook_needs_structural_context(
@@ -714,6 +892,8 @@ def _build_evidence_notebook(
             aspect,
             question,
             source_by_id,
+            ranking_hints=ranking_hints,
+            structural_source_ids=structural_source_ids,
         ):
             if score < 1 or len(source_ids) >= target_source_count:
                 break
@@ -879,6 +1059,8 @@ def _build_evidence_notebook(
             gap.get("aspect", ""),
             question,
             source_by_id,
+            ranking_hints=ranking_hints,
+            structural_source_ids=structural_source_ids,
         )
         score, _position, source_id = ranked[0]
         if score < 1:
@@ -953,6 +1135,8 @@ def _build_evidence_notebook(
             aspect_labels,
             question,
             source_by_id,
+            ranking_hints=ranking_hints,
+            structural_source_ids=structural_source_ids,
         ):
             if score < 1:
                 break
@@ -4492,9 +4676,9 @@ class RagApiService:
                 else []
             ),
             raw_sources,
-            question=_notebook_ranking_context(
-                str(context["query"]),
-                context.get("exploration"),
+            question=str(context["query"]),
+            ranking_hints=_notebook_ranking_hints(
+                context.get("exploration")
             ),
             subject_identifiers=subject_identifiers,
             related_chunk_ids=lineage_graph_chunk_ids,

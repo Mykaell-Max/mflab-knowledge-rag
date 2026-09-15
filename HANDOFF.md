@@ -1730,3 +1730,27 @@ assunto nomeado, um coordenador com vários filhos deixa de dominar sozinho o
 caderno; relações ascendentes verificadas de um para um continuam formando a
 ordem narrativa. A mudança usa somente canais de recuperação, direção das
 arestas e proveniência, sem vocabulário ou caminhos específicos do corpus.
+
+A validação real da 0.46.11 confirmou que os canais protegidos mantiveram no
+contexto as definições necessárias. O caso de fluxo do subsistema passou sem
+fontes de sistemas vizinhos. No caso de malha adaptativa, o pacote autorizado
+já continha o gerenciador e a rotina de regeneração esperados, mas o caderno
+preferiu um construtor geométrico e uma fábrica de saída. A causa deixou de ser
+recuperação ou orçamento: palavras de papel arquitetural propostas pelo
+planejador, como `factory`, estavam misturadas à pergunta literal e podiam
+dominar a associação de uma faceta.
+
+A 0.46.12 introduz `sectional_evidence_notebook_v19`. A pergunta literal e as
+pistas exploratórias permanecem campos distintos. Pistas são usadas apenas
+quando possuem relação lexical ou de ciclo de vida com a faceta atual. Papéis
+genéricos de implementação, como fábrica, gerenciador ou construtor, ajudam a
+buscar candidatos, mas não estabelecem o tema de uma seção. O ranqueamento dá
+mais peso à identidade verificável de caminho e símbolo do que a palavras
+incidentais no corpo do trecho e normaliza, de forma genérica, etapas de
+configuração, inicialização, execução, integração e adaptação. Âncoras propostas
+pelo modelo são substituídas quando outra fonte autorizada possui evidência
+temática mais forte, mesmo que a âncora fraca também tenha sido alcançada pelo
+grafo. O comportamento foi coberto por um teste de corpus neutro no qual uma
+rotina de configuração e uma rotina de regeneração vencem utilitários de
+limites e saída. Nenhum nome de projeto, branch, arquivo ou mecanismo
+científico foi adicionado ao motor.

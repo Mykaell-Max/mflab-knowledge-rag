@@ -300,6 +300,116 @@ class ApiServiceTests(unittest.TestCase):
 
         self.assertEqual(ranked[0][2], "S2")
 
+    def test_notebook_ranking_hints_remain_separate_from_user_intent(
+        self,
+    ) -> None:
+        exploration = {
+            "query_plan": {
+                "queries": ["adaptive grid initialization"],
+                "identifiers": ["GridFactory::createGrid"],
+            }
+        }
+
+        self.assertEqual(
+            api._notebook_ranking_hints(exploration),
+            ["adaptive grid initialization", "GridFactory::createGrid"],
+        )
+
+    def test_evidence_notebook_uses_facet_topic_before_incidental_role(
+        self,
+    ) -> None:
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "factory",
+                "path": "src/grid/grid_factory.cpp",
+                "title": "GridFactory::createGrid",
+                "source_kind": "agent_search_evidence",
+                "text": "return new TreeDomainFilling();",
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "domain",
+                "path": "src/domain/domain.cpp",
+                "title": "Domain::configure",
+                "source_kind": "agent_callers_evidence",
+                "text": "grid_manager.configure();",
+            },
+            {
+                "source_id": "S3",
+                "chunk_id": "manager",
+                "path": "src/grid/grid_manager.cpp",
+                "title": "GridManager::configure",
+                "source_kind": "agent_related_evidence",
+                "text": "runInitialRemesh(); configure adaptive refinement;",
+            },
+            {
+                "source_id": "S4",
+                "chunk_id": "regenerate",
+                "path": "src/grid/tree/domain_filling.cpp",
+                "title": "DomainFilling::regenerateTreeByRegions",
+                "source_kind": "agent_related_evidence",
+                "text": "regenerate adaptive tree refinement regions;",
+            },
+            {
+                "source_id": "S5",
+                "chunk_id": "bounds",
+                "path": "src/grid/common/cuboid_builder.cpp",
+                "title": "CuboidBuilder::procBounds",
+                "source_kind": "agent_related_evidence",
+                "text": "compute cell bounds and halo cells;",
+            },
+            {
+                "source_id": "S6",
+                "chunk_id": "output",
+                "path": "src/output/output_factory.cpp",
+                "title": "OutputFactory::createOutput",
+                "source_kind": "agent_related_evidence",
+                "text": "create output handler with a grid pointer;",
+            },
+        ]
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "initialization",
+                    "status": "partial",
+                    "chunk_ids": ["factory", "domain"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "adaptive grid",
+                    "status": "partial",
+                    "chunk_ids": ["bounds", "output"],
+                },
+            ],
+            sources,
+            question=(
+                "Mostre onde a malha adaptativa é inicializada e explique o fluxo"
+            ),
+            ranking_hints=[
+                "adaptive grid initialization entry point",
+                "adaptive grid configuration",
+                "grid factory",
+            ],
+            related_chunk_ids=[
+                str(source["chunk_id"]) for source in sources
+            ],
+        )
+
+        adaptive_section = next(
+            section
+            for section in notebook["sections"]
+            if any(
+                aspect.get("aspect") == "adaptive grid"
+                for aspect in section["aspects"]
+            )
+        )
+        self.assertIn("S3", adaptive_section["source_ids"])
+        self.assertIn("S4", adaptive_section["source_ids"])
+        self.assertNotIn("S5", adaptive_section["source_ids"])
+        self.assertNotIn("S6", adaptive_section["source_ids"])
+
     def test_recovers_selected_lineage_from_persisted_public_graph(self) -> None:
         edges = api._lineage_edges_from_investigation_graph(
             {
@@ -464,7 +574,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v18")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v19")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
