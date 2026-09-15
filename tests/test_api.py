@@ -464,7 +464,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v17")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v18")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -1131,6 +1131,65 @@ class ApiServiceTests(unittest.TestCase):
                 exploration_intent="mechanism",
             )
         )
+
+    def test_unnamed_question_does_not_collapse_multi_child_helper_flow(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "initialization",
+                    "status": "partial",
+                    "chunk_ids": ["helper"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "adaptive flow",
+                    "status": "partial",
+                    "chunk_ids": ["entry"],
+                },
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "helper",
+                    "path": "src/helper.cpp",
+                    "title": "Bounds::compute",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "child-a",
+                    "path": "src/math.cpp",
+                    "title": "maximum",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "child-b",
+                    "path": "src/math.cpp",
+                    "title": "minimum",
+                },
+                {
+                    "source_id": "S4",
+                    "chunk_id": "entry",
+                    "path": "src/domain.cpp",
+                    "title": "Domain::configure",
+                },
+            ],
+            question="Explain how adaptive initialization works",
+            related_chunk_ids=["helper", "child-a", "child-b", "entry"],
+            lineage_edges=[
+                {"origin_chunk_id": "helper", "target_chunk_id": "child-a"},
+                {"origin_chunk_id": "helper", "target_chunk_id": "child-b"},
+            ],
+        )
+
+        self.assertFalse(
+            any(
+                section.get("status") == "verified_flow"
+                for section in notebook["sections"]
+            )
+        )
         self.assertFalse(
             api._should_use_sectional_synthesis(
                 notebook["sections"],
@@ -1342,6 +1401,7 @@ class ApiServiceTests(unittest.TestCase):
     def test_context_reservation_balances_aspects_lineages_and_frontier(self) -> None:
         selected = api._balanced_context_chunk_ids(
             aspect_chunk_ids=["aspect-a", "aspect-b"],
+            upstream_entry_chunk_ids=["domain-entry", "outer-entry"],
             lineage_targets_by_origin={
                 "configure": ["allocate", "reset"],
                 "advance": ["move", "cleanup"],
@@ -1357,15 +1417,36 @@ class ApiServiceTests(unittest.TestCase):
             [
                 "aspect-a",
                 "aspect-b",
+                "domain-entry",
+                "outer-entry",
+                "baseline",
                 "configure",
                 "allocate",
                 "advance",
                 "move",
-                "inner-step",
-                "baseline",
-                "domain-entry",
             ],
         )
+
+    def test_context_reservation_protects_baseline_from_many_lineages(self) -> None:
+        selected = api._balanced_context_chunk_ids(
+            aspect_chunk_ids=["anchor"],
+            upstream_entry_chunk_ids=["entry-a", "entry-b", "entry-c"],
+            lineage_targets_by_origin={
+                f"origin-{index}": [f"child-{index}"] for index in range(8)
+            },
+            graph_frontier_chunk_ids=["frontier"],
+            baseline_chunk_ids=["anchor", "baseline-definition"],
+            remaining_groups=[],
+            limit=8,
+        )
+
+        self.assertEqual(selected[:4], [
+            "anchor",
+            "entry-a",
+            "entry-b",
+            "baseline-definition",
+        ])
+        self.assertNotIn("entry-c", selected)
 
     def test_context_packing_keeps_room_for_repeated_lifecycle_methods(self) -> None:
         packed, _used, _truncated = api._pack_context_results(

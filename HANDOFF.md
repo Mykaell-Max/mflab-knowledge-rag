@@ -1710,3 +1710,23 @@ passa a usar a mesma fronteira filtrada do caderno, em vez de considerar toda a
 fronteira de exploração como vínculo suficiente. A política é derivada de
 proveniência, identidade e arestas verificadas, sem nomes científicos, arquivos,
 branches ou repositórios codificados no motor.
+
+A validação real da 0.46.10 confirmou a finalidade da fronteira temática no
+caso do DPM. A resposta deixou de incluir o solver de Poisson e passou a seguir
+o ponto de entrada do domínio, a configuração do gerenciador, o avanço, o
+movimento e a atualização da partícula. O caso de malha adaptativa, contudo,
+flutuou na exploração: `MeshManager::configure` já estava entre os resultados
+da navegação estrutural, mas não chegou ao pacote final. Uma única evidência de
+aspecto e muitos pares de linhagem consumiram as doze vagas antes que o canal
+de busca-base fosse consultado. Sem assunto nomeado, um helper de limites com
+vários descendentes também absorveu todas as facetas em uma seção.
+
+A 0.46.11 introduz `balanced_evidence_channels_v2` e
+`sectional_evidence_notebook_v18`. Depois das evidências de aspecto, até dois
+pontos de entrada obtidos por `find_callers` e uma evidência distinta da
+busca-base são reservados antes dos descendentes. Assim, uma fronteira extensa
+não pode expulsar uma definição já recuperada por outro canal. Quando não há
+assunto nomeado, um coordenador com vários filhos deixa de dominar sozinho o
+caderno; relações ascendentes verificadas de um para um continuam formando a
+ordem narrativa. A mudança usa somente canais de recuperação, direção das
+arestas e proveniência, sem vocabulário ou caminhos específicos do corpus.

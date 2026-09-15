@@ -184,14 +184,14 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v17"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v18"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
 MAX_SECTION_SOURCES = 5
 MAX_LINEAGE_IMPLEMENTATIONS = 8
 MAX_LINEAGE_FLOW_SOURCES = 10
-CONTEXT_RESERVATION_ALGORITHM = "balanced_evidence_channels_v1"
+CONTEXT_RESERVATION_ALGORITHM = "balanced_evidence_channels_v2"
 MAX_SECTION_CONTINUATIONS = 2
 MAX_COMPOSITION_DRAFT_CHARACTERS = 1600
 
@@ -1027,6 +1027,14 @@ def _build_evidence_notebook(
         key=lambda value: len(value.get("target_source_ids", [])),
         reverse=True,
     ):
+        # Without a named subject, a multi-child coordinator cannot safely be
+        # treated as the single narrative spine. It may be a low-level helper
+        # whose callers and callees merely share generic lifecycle vocabulary.
+        # Directed one-to-one entry relations remain available to the upstream
+        # pass below, so verified structure is preserved without collapsing
+        # otherwise independent sections.
+        if not subject_signatures:
+            continue
         origin_id = str(lineage.get("origin_source_id", ""))
         target_ids = [
             str(value)
@@ -1651,6 +1659,7 @@ def _pack_context_results(
 def _balanced_context_chunk_ids(
     *,
     aspect_chunk_ids: list[str],
+    upstream_entry_chunk_ids: list[str],
     lineage_targets_by_origin: dict[str, list[str]],
     graph_frontier_chunk_ids: list[str],
     baseline_chunk_ids: list[str],
@@ -1659,11 +1668,13 @@ def _balanced_context_chunk_ids(
 ) -> list[str]:
     """Reserve bounded evidence across independent retrieval channels.
 
-    Coverage observations come first. Each verified lineage then receives one
-    origin/child pair, followed by alternating graph-frontier and baseline
-    entries. Additional descendants fill only the remaining capacity. This
-    prevents either a large call tree or a noisy search result from consuming
-    the complete evidence window.
+    Coverage observations come first. A bounded number of directed upstream
+    entries and one distinct baseline result are then protected before call
+    descendants are considered. Each verified lineage subsequently receives
+    one origin/child pair, followed by alternating graph-frontier and remaining
+    baseline entries. Additional descendants fill only the remaining capacity.
+    This prevents either a large call tree or a noisy search result from
+    consuming the complete evidence window.
     """
 
     if limit < 1:
@@ -1677,6 +1688,19 @@ def _balanced_context_chunk_ids(
 
     for chunk_id in aspect_chunk_ids:
         append(chunk_id)
+    entry_reservations = 0
+    for chunk_id in upstream_entry_chunk_ids:
+        before = len(selected)
+        append(chunk_id)
+        if len(selected) > before:
+            entry_reservations += 1
+        if entry_reservations >= 2:
+            break
+    for chunk_id in baseline_chunk_ids:
+        before = len(selected)
+        append(chunk_id)
+        if len(selected) > before:
+            break
     for origin_id, target_ids in lineage_targets_by_origin.items():
         append(origin_id)
         if target_ids:
@@ -1686,8 +1710,8 @@ def _balanced_context_chunk_ids(
     ):
         if position < len(graph_frontier_chunk_ids):
             append(graph_frontier_chunk_ids[position])
-        if position < len(baseline_chunk_ids):
-            append(baseline_chunk_ids[position])
+        if position + 1 < len(baseline_chunk_ids):
+            append(baseline_chunk_ids[position + 1])
     for group in remaining_groups:
         for chunk_id in group:
             append(chunk_id)
@@ -2978,6 +3002,7 @@ class RagApiService:
         lineage_graph_chunk_ids: list[str] = []
         lineage_origin_chunk_ids: list[str] = []
         lineage_flow_chunk_ids: list[str] = []
+        upstream_entry_chunk_ids: list[str] = []
         lineage_edges: list[dict[str, object]] = []
         terminal_graph_chunk_ids: list[str] = []
         final_reserved_context_chunk_ids: list[str] = []
@@ -3939,8 +3964,17 @@ class RagApiService:
                 for chunk_id in prioritized_kept_chunk_ids
                 if chunk_id not in reserved_context_chunk_ids
             ]
+            upstream_entry_chunk_ids = list(
+                dict.fromkeys(
+                    str(edge.get("source", "")).removeprefix("chunk:")
+                    for edge in graph_traversals
+                    if edge.get("tool") == "find_callers"
+                    and str(edge.get("source", "")).removeprefix("chunk:")
+                )
+            )
             final_reserved_context_chunk_ids = _balanced_context_chunk_ids(
                 aspect_chunk_ids=reserved_context_chunk_ids,
+                upstream_entry_chunk_ids=upstream_entry_chunk_ids,
                 lineage_targets_by_origin=lineage_targets_by_origin,
                 graph_frontier_chunk_ids=graph_frontier_chunk_ids,
                 baseline_chunk_ids=baseline_chunk_ids,
@@ -4202,6 +4236,7 @@ class RagApiService:
                 "graph_frontier_chunk_ids": graph_frontier_chunk_ids,
                 "lineage_origin_chunk_ids": lineage_origin_chunk_ids,
                 "lineage_flow_chunk_ids": lineage_flow_chunk_ids,
+                "upstream_entry_chunk_ids": upstream_entry_chunk_ids,
                 "lineage_graph_chunk_ids": lineage_graph_chunk_ids,
                 "lineage_edges": lineage_edges,
                 "lineage_algorithm": CALL_LINEAGE_ALGORITHM,
