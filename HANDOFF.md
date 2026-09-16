@@ -1854,3 +1854,23 @@ a afirmação é rebaixada antes da entrega e segue o fallback de reparo ou salv
 já existente. Texto comum apenas estilizado com crases continua sob responsabilidade
 da auditoria semântica. A regra é derivada da forma do identificador e da proveniência,
 sem listas de nomes de projetos, arquivos, branches ou conceitos científicos.
+
+A validação real da 0.46.17 passou os dois casos, com 38 afirmações
+sustentadas, nenhuma incerta ou rejeitada e sem a explicação indevida da chave
+`cflGlobal`. O resultado isolou a etapa seguinte como um problema editorial. A
+resposta do subsistema permaneceu factual, porém repetiu configuração e integração
+em partes consecutivas. A resposta de malha atribuiu configuração a um método
+vazio e tratou seleção na fábrica como se fosse, por si só, inicialização
+interna. Essas formulações não introduziram literais falsos, mas excederam a
+precisão operacional mostrada pelas fontes.
+
+A 0.46.18 introduz `continuity_aware_sectional_narrative_v1`. Cada chamada de
+seção recebe um registro compacto das facetas técnicas já explicadas, somente
+para impedir que partes posteriores recomecem ou resumam o texto anterior. O
+contrato exige que cada parágrafo avance para uma operação distinta e proíbe
+recapitulações da mesma faceta com sinônimos. Também separa explicitamente
+seleção de tipo, construção, configuração, inicialização e execução: uma
+fábrica não prova a inicialização interna do objeto, e um corpo vazio prova
+apenas a existência de um hook sem operação. A mudança não adiciona uma passagem
+global de reescrita, não altera a recuperação e não relaxa as auditorias de
+evidência e completude.

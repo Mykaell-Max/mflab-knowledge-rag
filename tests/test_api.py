@@ -1373,6 +1373,38 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn('"origin_source_id": "S4"', instructions)
         self.assertIn('"target_source_ids": ["S3", "S2"]', instructions)
 
+    def test_section_prompt_preserves_operation_precision_and_prior_coverage(self) -> None:
+        instructions = api._section_synthesis_instructions(
+            "Base instructions.",
+            {
+                "section_id": "E2",
+                "aspects": [
+                    {
+                        "aspect_id": "A2",
+                        "aspect": "runtime advancement",
+                        "role": "content",
+                        "source_ids": ["S2"],
+                    }
+                ],
+            },
+            position=2,
+            total=2,
+            sources=[],
+            prior_aspects=[
+                {
+                    "aspect_id": "A1",
+                    "aspect": "configuration",
+                    "source_ids": ["S1"],
+                }
+            ],
+        )
+
+        self.assertIn('"aspect": "configuration"', instructions)
+        self.assertIn("do not explain or summarize them again", instructions)
+        self.assertIn("not interchangeable", instructions)
+        self.assertIn("empty function body", instructions)
+        self.assertIn("do not recap it", instructions)
+
     def test_verified_flow_survives_without_model_authored_coverage(self) -> None:
         notebook = api._build_evidence_notebook(
             [],
@@ -3015,6 +3047,14 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(generator.calls[2]["max_output_tokens"], 1536)
         self.assertIn("SECTIONAL NARRATIVE CONTRACT", generator.calls[0]["instructions"])
         self.assertIn("SECTION CONTINUATION CONTRACT", generator.calls[1]["instructions"])
+        self.assertIn(
+            '"aspect": "entry point"',
+            generator.calls[3]["instructions"],
+        )
+        self.assertIn(
+            "do not explain or summarize them again",
+            generator.calls[3]["instructions"],
+        )
         self.assertNotIn("##", result["answer"])
         self.assertIn("The entry point", result["answer"])
         self.assertIn("local setup", result["answer"])

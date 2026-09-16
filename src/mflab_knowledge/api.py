@@ -186,6 +186,7 @@ MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
 EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v21"
+SECTIONAL_NARRATIVE_ALGORITHM = "continuity_aware_sectional_narrative_v1"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -1841,6 +1842,7 @@ def _section_synthesis_instructions(
     position: int,
     total: int,
     sources: list[dict[str, object]] | None = None,
+    prior_aspects: list[dict[str, object]] | None = None,
 ) -> str:
     aspects = [
         {
@@ -1869,6 +1871,17 @@ def _section_synthesis_instructions(
         }
         for item in section.get("verified_relations", [])
         if isinstance(item, dict)
+    ]
+    covered_before = [
+        {
+            "aspect_id": str(item.get("aspect_id", "")),
+            "aspect": str(item.get("aspect", "")),
+            "source_ids": [
+                str(value) for value in item.get("source_ids", []) if str(value)
+            ],
+        }
+        for item in prior_aspects or []
+        if isinstance(item, dict) and str(item.get("aspect", "")).strip()
     ]
     truncation_contract = (
         " Sources marked as text-truncated contain an explicit omission. A fenced "
@@ -1907,7 +1920,11 @@ def _section_synthesis_instructions(
         "describe what the relevant operations do, and explain why they matter "
         "to the requested flow. Prefer connected prose over one sentence per "
         "symbol. Do not merely paraphrase a function name or say that a code "
-        "excerpt is located in a file. "
+        "excerpt is located in a file. Every paragraph must advance to a distinct "
+        "source-backed operation or interpretation. Once an operation has been "
+        "explained, do not recap it, restate it with synonyms, or add a summary "
+        "sentence that repeats the same facts. When several sources establish one "
+        "operation, synthesize it once with the necessary citations. "
         + (
             "Open with a short orientation that establishes the supported role "
             "of this first part. "
@@ -1915,16 +1932,29 @@ def _section_synthesis_instructions(
             else "Begin as a continuation of the answer. Use a neutral topical "
             "transition when the evidence does not prove runtime order; claim "
             "that one stage leads to another only when a supplied source shows "
-            "that connection. "
+            "that connection. Facets already handled by preceding parts are listed "
+            "below only to prevent repetition; do not explain or summarize them "
+            "again: "
+            + json.dumps(covered_before, ensure_ascii=False)
+            + ". "
         )
-        + "Do not add a final conclusion unless this is the last part. Do not infer "
+        + "Do not add a final conclusion unless this is the last part; even in the "
+        "last part, do not recap the answer unless a new source-backed synthesis "
+        "adds understanding. Do not infer "
         "a call, sequence, purpose, or causal relationship from neighboring "
         "definitions. If a transition is not shown, state the local boundary "
         "briefly instead of completing it from memory. A file path establishes "
         "where evidence was found, not what a generic setting means. A configuration "
         "record directly establishes its visible keys and values; assign those "
         "settings to a subsystem, object, or runtime stage only when the supplied "
-        "content explicitly makes that connection. A fenced code block must "
+        "content explicitly makes that connection. Describe operations at the "
+        "precision visible in the code: selecting a type, invoking a constructor, "
+        "configuring state, initializing state, and executing a runtime step are "
+        "not interchangeable. A factory branch or constructor call establishes "
+        "selection or construction, not internal initialization unless visible "
+        "code proves it. An empty function body establishes only that a no-op hook "
+        "exists; never attribute configuration or initialization work to it. A "
+        "fenced code block must "
         "copy short, complete, contiguous lines exactly as visible in one supplied "
         "source; otherwise explain the operation in prose. When code is requested "
         "and an exact excerpt is useful, place it immediately after the paragraph "
@@ -5176,6 +5206,7 @@ class RagApiService:
         generated_sections: list[dict[str, object]] = []
         generated_section_plans: list[dict[str, object]] = []
         section_claim_source_candidates: dict[str, set[str]] = {}
+        prior_section_aspects: list[dict[str, object]] = []
         generated: dict[str, object] | None = None
         if use_sectional_synthesis:
             record(
@@ -5241,16 +5272,18 @@ class RagApiService:
                             ],
                         },
                     )
+                    section_instructions = _section_synthesis_instructions(
+                        str(context["instructions"]),
+                        section,
+                        position=position,
+                        total=len(notebook_sections),
+                        sources=section_sources,
+                        prior_aspects=prior_section_aspects,
+                    )
                     generation_attempts += 1
                     generated_section = self.generator.generate(
                         question=str(context["query"]),
-                        instructions=_section_synthesis_instructions(
-                            str(context["instructions"]),
-                            section,
-                            position=position,
-                            total=len(notebook_sections),
-                            sources=section_sources,
-                        ),
+                        instructions=section_instructions,
                         sources=section_sources,
                         max_output_tokens=section_output_limit,
                         temperature=temperature,
@@ -5275,13 +5308,7 @@ class RagApiService:
                             continuation = self.generator.generate(
                                 question=str(context["query"]),
                                 instructions=_section_continuation_instructions(
-                                    _section_synthesis_instructions(
-                                        str(context["instructions"]),
-                                        section,
-                                        position=position,
-                                        total=len(notebook_sections),
-                                        sources=section_sources,
-                                    ),
+                                    section_instructions,
                                     str(generated_section.get("answer", "")),
                                 ),
                                 sources=section_sources,
@@ -5420,6 +5447,20 @@ class RagApiService:
                             ).update(section_source_ids)
                     generated_sections.append(generated_section)
                     generated_section_plans.append(section)
+                    prior_section_aspects.extend(
+                        {
+                            "aspect_id": str(aspect.get("aspect_id", "")),
+                            "aspect": str(aspect.get("aspect", "")),
+                            "source_ids": [
+                                str(value)
+                                for value in aspect.get("source_ids", [])
+                                if str(value)
+                            ],
+                        }
+                        for aspect in section.get("aspects", [])
+                        if isinstance(aspect, dict)
+                        and aspect.get("role", "content") == "content"
+                    )
                     section_generation_count += 1
                     record(
                         "generation",
@@ -6761,6 +6802,7 @@ class RagApiService:
                 "response_depth": response_depth,
                 "generation_attempts": generation_attempts,
                 "sectional_synthesis": sectional_synthesis,
+                "sectional_narrative_algorithm": SECTIONAL_NARRATIVE_ALGORITHM,
                 "section_composition": section_composition,
                 "section_composition_attempted": section_composition_attempted,
                 "section_composition_algorithm": SECTION_COMPOSITION_ALGORITHM,
