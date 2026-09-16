@@ -1951,7 +1951,15 @@ def _missing_content_aspects(
     section: dict[str, object],
     answer: object,
 ) -> list[dict[str, object]]:
-    """Return technical facets with no citation from their assigned scope."""
+    """Return uncited source obligations for each technical facet.
+
+    A content facet can intentionally carry more than one source when the
+    notebook found distinct local operations in the same bounded reading
+    window.  Treating those sources as alternatives allowed a draft to cite
+    only one operation while the whole facet was marked as present.  Preserve
+    the facet label, but narrow its completion scope to the source IDs that the
+    draft actually omitted.
+    """
 
     cited = citation_ids(str(answer))
     missing: list[dict[str, object]] = []
@@ -1965,13 +1973,16 @@ def _missing_content_aspects(
             for value in raw_aspect.get("source_ids", [])
             if str(value)
         ]
-        if source_ids and not cited.intersection(source_ids):
+        uncited_source_ids = [
+            source_id for source_id in source_ids if source_id not in cited
+        ]
+        if uncited_source_ids:
             missing.append(
                 {
                     "aspect_id": str(raw_aspect.get("aspect_id", "")),
                     "aspect": str(raw_aspect.get("aspect", "")),
                     "role": "content",
-                    "source_ids": source_ids,
+                    "source_ids": uncited_source_ids,
                 }
             )
     return missing
@@ -5306,11 +5317,11 @@ class RagApiService:
                         section,
                         generated_section.get("answer", ""),
                     )
-                    # A single technical facet may legitimately use only one
-                    # of several supporting sources. The completion gate is
-                    # reserved for a compound section whose independently
-                    # scoped facets would otherwise be silently collapsed into
-                    # one another.
+                    # The completion gate remains bounded to compound sections,
+                    # but every source assigned to their technical facets is a
+                    # local coverage obligation.  The helper returns only the
+                    # still-uncited IDs, so the continuation cannot repeat the
+                    # operation that the first draft already explained.
                     if len(content_aspects) >= 2 and missing_aspects:
                         missing_source_ids = {
                             str(value)

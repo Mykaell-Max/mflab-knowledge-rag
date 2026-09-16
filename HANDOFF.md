@@ -1824,3 +1824,17 @@ faceta. Correspondência lexical ou presença na mesma seção não pode substit
 essa proveniência. Se a continuação ainda falhar, a resposta permanece marcada
 como limitada, em vez de receber completude incorreta. O mecanismo é genérico e
 opera apenas sobre facetas, `source_ids` e citações autorizadas.
+
+A validação real da 0.46.15 mostrou que o fluxo do subsistema continuou completo,
+mas a continuação seletiva permaneceu inativa no caso de malha. Duas facetas da
+mesma seção compartilhavam o escopo `S4,S9`; uma resposta que citava apenas `S9`
+era aceita porque a verificação tratava as fontes atribuídas como alternativas.
+Assim, o caderno, o grafo e o pacote de evidências estavam corretos, mas a fonte
+do gerenciador ainda podia ser omitida sem acionar a barreira.
+
+A 0.46.16 transforma cada fonte técnica atribuída a uma faceta composta em uma
+obrigação local de cobertura. A verificação calcula exatamente quais `source_ids`
+não foram citados e a continuação recebe apenas esse subconjunto, sem regenerar
+ou repetir as operações já explicadas. Facetas de apresentação continuam fora da
+barreira. A regra usa apenas a organização genérica do caderno e a proveniência
+autorizada; não contém nomes de projetos, branches, arquivos ou mecanismos.

@@ -3081,13 +3081,13 @@ class ApiServiceTests(unittest.TestCase):
                             "aspect_id": "A1",
                             "aspect": "initialization",
                             "role": "content",
-                            "source_ids": ["S1"],
+                            "source_ids": ["S1", "S2"],
                         },
                         {
                             "aspect_id": "A2",
                             "aspect": "adaptation",
                             "role": "content",
-                            "source_ids": ["S2"],
+                            "source_ids": ["S1", "S2"],
                         },
                     ],
                 }
@@ -3135,6 +3135,52 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("visible [S1]", result["answer"])
         self.assertIn("visible [S2]", result["answer"])
         self.assertEqual(result["context"]["section_completion_count"], 1)
+
+    def test_missing_content_aspects_returns_only_uncited_source_obligations(
+        self,
+    ) -> None:
+        section = {
+            "aspects": [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "initialization",
+                    "role": "content",
+                    "source_ids": ["S1", "S2"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "adaptation",
+                    "role": "content",
+                    "source_ids": ["S1", "S2"],
+                },
+                {
+                    "aspect_id": "A3",
+                    "aspect": "code excerpt",
+                    "role": "delivery",
+                    "source_ids": ["S3"],
+                },
+            ]
+        }
+
+        missing = api._missing_content_aspects(section, "Observed adaptation [S2].")
+
+        self.assertEqual(
+            missing,
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "initialization",
+                    "role": "content",
+                    "source_ids": ["S1"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "adaptation",
+                    "role": "content",
+                    "source_ids": ["S1"],
+                },
+            ],
+        )
 
     def test_answer_coverage_requires_the_facets_assigned_source(self) -> None:
         generator = _CoverageVerifyingGenerator(
