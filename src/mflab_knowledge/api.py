@@ -184,7 +184,7 @@ CONTEXT_PATH_DIVERSITY_TARGET = 5
 MIN_CONTEXT_SOURCE_CHARACTERS = 800
 TERMINAL_GRAPH_ROUNDS = 3
 TERMINAL_GRAPH_ACTIONS_PER_ROUND = 8
-EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v20"
+EVIDENCE_NOTEBOOK_ALGORITHM = "sectional_evidence_notebook_v21"
 SECTION_COMPOSITION_ALGORITHM = "grounded_section_composition_v2"
 ENABLE_GLOBAL_SECTION_COMPOSITION = False
 MAX_EVIDENCE_SECTIONS = 4
@@ -874,6 +874,7 @@ def _build_evidence_notebook(
             source_id = source_by_chunk.get(str(chunk_id))
             if source_id and source_id not in source_ids:
                 source_ids.append(source_id)
+        observed_source_ids = list(source_ids)
         aspect_role = _notebook_aspect_role(aspect)
         if source_ids and aspect_role == "content":
             ranked_anchor_candidates = _rank_notebook_sources(
@@ -937,6 +938,11 @@ def _build_evidence_notebook(
             # Later section-wide structural complements are intentionally not
             # promoted into this aspect's coverage-audit scope.
             "source_ids": list(source_ids),
+            # Keep the model-observed anchors internally. Ranking may replace
+            # a weak source, but verified graph organization still needs to
+            # know which node caused this facet to be investigated. This field
+            # is removed before the notebook is returned to callers.
+            "_observed_source_ids": observed_source_ids,
         }
         # Investigation coverage is deliberately conservative: ``partial``
         # means that a real observed chunk exists but the agent has not proved
@@ -1462,6 +1468,254 @@ def _build_evidence_notebook(
                 *aspect_ids,
             ][:max_sources_per_section]
 
+    # Reconstruct a local execution component around anchors that the coverage
+    # ledger actually observed.  Metadata ranking is useful for replacing a
+    # weak topical source, but it must not erase a verified caller -> anchor ->
+    # callee chain.  In particular, a delivery request such as a code excerpt
+    # cannot take ownership of the anchor and leave the technical flow in an
+    # unrelated helper component.
+    aspect_catalog: dict[str, dict[str, object]] = {}
+    for section in sections:
+        for aspect in section.get("aspects", []):
+            if not isinstance(aspect, dict):
+                continue
+            aspect_id = str(aspect.get("aspect_id", ""))
+            if aspect_id:
+                aspect_catalog.setdefault(aspect_id, dict(aspect))
+    for gap in gaps:
+        if not isinstance(gap, dict):
+            continue
+        aspect_id = str(gap.get("aspect_id", ""))
+        if aspect_id:
+            aspect_catalog.setdefault(aspect_id, dict(gap))
+
+    def verified_local_component(
+        anchor_id: str,
+    ) -> tuple[list[str], list[dict[str, object]]]:
+        callers: list[str] = []
+        children: list[str] = []
+        relations: list[dict[str, object]] = []
+        for lineage in verified_lineages:
+            origin_id = str(lineage.get("origin_source_id", ""))
+            upstream_ids = [
+                str(value)
+                for value in lineage.get("upstream_target_source_ids", [])
+                if str(value)
+            ]
+            if anchor_id in upstream_ids and origin_id in source_by_id:
+                if origin_id not in callers:
+                    callers.append(origin_id)
+                relations.append(
+                    {
+                        "origin_source_id": origin_id,
+                        "target_source_ids": [anchor_id],
+                        "kind": "calls_symbol",
+                        "observed_via": "find_callers",
+                    }
+                )
+            if origin_id != anchor_id:
+                continue
+            direct_children = [
+                str(value)
+                for value in lineage.get("target_source_ids", [])
+                if str(value) in source_by_id and str(value) != anchor_id
+            ]
+            for child_id in direct_children:
+                if child_id not in children:
+                    children.append(child_id)
+
+        # Both sides of the observed anchor are required. A caller alone is
+        # handled by the conservative upstream-entry pass above; descendants
+        # alone are merely an expansion. Only the complete local component can
+        # replace metadata-ranked section ownership.
+        if not callers or not children:
+            return [], []
+        component: list[str] = []
+        for source_id in [*callers, anchor_id, *children]:
+            if source_id not in component:
+                component.append(source_id)
+            if len(component) >= max_sources_per_section:
+                break
+        if children:
+            kept_children = [
+                source_id for source_id in children if source_id in component
+            ]
+            if kept_children:
+                relations.append(
+                    {
+                        "origin_source_id": anchor_id,
+                        "target_source_ids": kept_children,
+                        "kind": "calls_symbol",
+                    }
+                )
+        return component, relations
+
+    normalized_aspect_ids: set[str] = set()
+    for section in list(sections):
+        for aspect in list(section.get("aspects", [])):
+            if not isinstance(aspect, dict) or aspect.get("role") != "content":
+                continue
+            aspect_id = str(aspect.get("aspect_id", ""))
+            if not aspect_id or aspect_id in normalized_aspect_ids:
+                continue
+            observed_ids = [
+                str(value)
+                for value in aspect.get("_observed_source_ids", [])
+                if str(value) in source_by_id
+            ]
+            candidates = [
+                verified_local_component(anchor_id)
+                for anchor_id in observed_ids
+            ]
+            candidates = [candidate for candidate in candidates if candidate[0]]
+            if not candidates:
+                continue
+            component_ids, component_relations = max(
+                candidates,
+                key=lambda candidate: len(candidate[0]),
+            )
+            normalized_aspect_ids.add(aspect_id)
+            component_set = set(component_ids)
+            section["status"] = "verified_flow"
+            section["source_ids"] = list(component_ids)
+            section["verified_relations"] = component_relations
+            aspect["source_ids"] = list(component_ids)
+            owner_aspects = section.get("aspects")
+            assert isinstance(owner_aspects, list)
+
+            for other in sections:
+                if other is section:
+                    continue
+                other_ids = [
+                    str(value) for value in other.get("source_ids", [])
+                ]
+                other["source_ids"] = [
+                    source_id
+                    for source_id in other_ids
+                    if source_id not in component_set
+                ]
+                kept_aspects: list[dict[str, object]] = []
+                for other_aspect in other.get("aspects", []):
+                    if not isinstance(other_aspect, dict):
+                        continue
+                    other_observed = {
+                        str(value)
+                        for value in other_aspect.get(
+                            "_observed_source_ids", []
+                        )
+                    }
+                    if (
+                        other_aspect.get("role") == "delivery"
+                        and other_observed & component_set
+                    ):
+                        other_id = str(other_aspect.get("aspect_id", ""))
+                        if not any(
+                            isinstance(existing, dict)
+                            and str(existing.get("aspect_id", "")) == other_id
+                            for existing in owner_aspects
+                        ):
+                            moved_aspect = dict(other_aspect)
+                            moved_aspect["source_ids"] = [
+                                source_id
+                                for source_id in component_ids
+                                if source_id in other_observed
+                            ] or list(component_ids)
+                            owner_aspects.append(moved_aspect)
+                        continue
+                    raw_other_ids = other_aspect.get("source_ids")
+                    if isinstance(raw_other_ids, list):
+                        other_aspect["source_ids"] = [
+                            str(value)
+                            for value in raw_other_ids
+                            if str(value) not in component_set
+                        ]
+                    kept_aspects.append(other_aspect)
+                other["aspects"] = kept_aspects
+
+    sections = [
+        section
+        for section in sections
+        if section.get("source_ids") and section.get("aspects")
+    ]
+
+    # Structural ownership can free the only useful source for a content gap,
+    # or remove a content section whose former sources belonged to another
+    # verified component. Recover such facets from the strongest still-free
+    # authorized evidence rather than silently dropping them.
+    active_content_ids = {
+        str(aspect.get("aspect_id", ""))
+        for section in sections
+        for aspect in section.get("aspects", [])
+        if isinstance(aspect, dict) and aspect.get("role") == "content"
+    }
+    for aspect_id, catalog_aspect in aspect_catalog.items():
+        if (
+            catalog_aspect.get("role") != "content"
+            or aspect_id in active_content_ids
+        ):
+            continue
+        ranked = _rank_notebook_sources(
+            catalog_aspect.get("aspect", ""),
+            question,
+            source_by_id,
+            ranking_hints=ranking_hints,
+            structural_source_ids=structural_source_ids,
+        )
+        if not ranked or ranked[0][0] < 1:
+            continue
+        strongest_score = ranked[0][0]
+        used_ids = {
+            str(value)
+            for section in sections
+            for value in section.get("source_ids", [])
+        }
+        viable_ids = [
+            source_id
+            for score, _position, source_id in ranked
+            if score >= 1
+            and score * NOTEBOOK_COMPLEMENT_SCORE_DIVISOR >= strongest_score
+        ]
+        free_ids = [
+            source_id for source_id in viable_ids if source_id not in used_ids
+        ]
+        selected_ids = free_ids[:2]
+        if selected_ids and len(sections) < max_sections:
+            recovered_aspect = dict(catalog_aspect)
+            recovered_aspect["source_ids"] = list(selected_ids)
+            sections.append(
+                {
+                    "section_id": f"E{len(sections) + 1}",
+                    "status": "candidate_context",
+                    "aspects": [recovered_aspect],
+                    "source_ids": list(selected_ids),
+                }
+            )
+            candidate_gap_ids.add(aspect_id)
+            active_content_ids.add(aspect_id)
+            continue
+        matching_owner = next(
+            (
+                section
+                for source_id in viable_ids
+                for section in sections
+                if source_id in section.get("source_ids", [])
+            ),
+            None,
+        )
+        if matching_owner is None:
+            continue
+        recovered_aspect = dict(catalog_aspect)
+        recovered_aspect["source_ids"] = [
+            str(value)
+            for value in matching_owner.get("source_ids", [])
+            if str(value) in viable_ids
+        ] or [str(value) for value in matching_owner.get("source_ids", [])]
+        matching_aspects = matching_owner.get("aspects")
+        assert isinstance(matching_aspects, list)
+        matching_aspects.append(recovered_aspect)
+        candidate_gap_ids.add(aspect_id)
+        active_content_ids.add(aspect_id)
+
     # Structural re-parenting happens after the first ownership pass. Restore
     # the local provenance invariant so a facet can never be synthesized with
     # an empty audit scope while its section still carries authorized sources.
@@ -1480,6 +1734,7 @@ def _build_evidence_notebook(
                 if str(value) in local_ids
             ]
             aspect["source_ids"] = aspect_ids or list(local_ids)
+            aspect.pop("_observed_source_ids", None)
 
     sections = [
         section
@@ -1488,6 +1743,12 @@ def _build_evidence_notebook(
     ]
     for position, section in enumerate(sections, start=1):
         section["section_id"] = f"E{position}"
+
+    public_gaps: list[dict[str, object]] = []
+    for gap in gaps:
+        clean_gap = dict(gap)
+        clean_gap.pop("_observed_source_ids", None)
+        public_gaps.append(clean_gap)
 
     return {
         "algorithm": EVIDENCE_NOTEBOOK_ALGORITHM,
@@ -1501,7 +1762,7 @@ def _build_evidence_notebook(
         "excluded_sources": len(sources) - len(source_by_id),
         "verified_lineages": verified_lineages,
         "sections": sections,
-        "gaps": gaps,
+        "gaps": public_gaps,
         "ready_sections": len(sections),
         "covered_aspects": len(evidenced_aspect_ids),
         "gap_aspects": len(gaps),

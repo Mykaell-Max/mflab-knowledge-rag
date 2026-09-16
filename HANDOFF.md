@@ -1779,3 +1779,27 @@ arestas, os `source_ids` de cada faceta são novamente limitados às fontes loca
 da seção e nunca permanecem vazios. Todas as decisões continuam derivadas de
 texto, identidade, proveniência e estrutura verificável, sem regras específicas
 para o corpus.
+
+A validação real da 0.46.13 manteve aprovado o fluxo completo do subsistema e
+removeu os falsos positivos de saída e helpers que apareciam na malha. O caso de
+malha ainda terminou sem o ponto de entrada do domínio. O relatório mostrou que
+essa fonte já estava recuperada e ligada à fábrica por uma aresta verificada,
+mas a fábrica havia se tornado proprietária de uma seção isolada de `code
+snippet`. A faceta técnica `flow` foi deslocada para outro componente do grafo,
+formado por rotinas auxiliares. Portanto, a falha já não estava na busca, no
+grafo ou no orçamento, e sim na divisão de propriedade entre conteúdo técnico e
+formato da resposta.
+
+A 0.46.14 introduz `sectional_evidence_notebook_v21`. O caderno preserva
+internamente os nós que o ledger de cobertura observou antes do ranqueamento. Se
+um desses nós possui simultaneamente um chamador e um descendente direto
+verificados, a seção técnica é reconstruída como um componente local ordenado
+`chamador -> âncora observada -> descendente`. Uma faceta de entrega que observou
+a mesma âncora acompanha essa seção e não pode retirar dela a implementação.
+Fontes de componentes auxiliares deixam de competir pelo mesmo fluxo. Se a
+reorganização liberar a melhor evidência de uma faceta de conteúdo que estava
+sem seção, essa faceta recebe uma nova janela limitada; ela não desaparece por
+efeito colateral. Relações com apenas um lado da âncora continuam usando os
+passes conservadores anteriores. A regra depende somente de âncoras observadas,
+arestas dirigidas e proveniência autorizada, sem nomes científicos, arquivos,
+branches ou repositórios codificados no motor.

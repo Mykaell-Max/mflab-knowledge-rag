@@ -619,7 +619,7 @@ class ApiServiceTests(unittest.TestCase):
             max_sections=2,
         )
 
-        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v20")
+        self.assertEqual(notebook["algorithm"], "sectional_evidence_notebook_v21")
         self.assertEqual(notebook["ready_sections"], 2)
         self.assertEqual(notebook["covered_aspects"], 3)
         self.assertEqual(notebook["gap_aspects"], 1)
@@ -1196,6 +1196,153 @@ class ApiServiceTests(unittest.TestCase):
             ),
             1,
         )
+
+    def test_evidence_notebook_rebuilds_observed_flow_component(self) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "initialization",
+                    "status": "partial",
+                    "chunk_ids": ["manager"],
+                },
+                {
+                    "aspect_id": "A2",
+                    "aspect": "flow",
+                    "status": "partial",
+                    "chunk_ids": ["factory"],
+                },
+                {
+                    "aspect_id": "A3",
+                    "aspect": "code snippet",
+                    "status": "partial",
+                    "chunk_ids": ["factory"],
+                },
+                {
+                    "aspect_id": "A4",
+                    "aspect": "adaptive grid",
+                    "status": "gap",
+                    "chunk_ids": [],
+                },
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "factory",
+                    "path": "src/grid/factory.cpp",
+                    "title": "GridFactory::createGrid",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "domain",
+                    "path": "src/domain.cpp",
+                    "title": "Domain::configure",
+                    "text": "grid = GridFactory::createGrid();",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "header",
+                    "path": "src/grid/factory.hpp",
+                    "title": "getInstance",
+                },
+                {
+                    "source_id": "S4",
+                    "chunk_id": "manager",
+                    "path": "src/grid/manager.cpp",
+                    "title": "GridManager::initialize",
+                },
+                {
+                    "source_id": "S5",
+                    "chunk_id": "implementation",
+                    "path": "src/grid/tree_grid.cpp",
+                    "title": "TreeGrid::TreeGrid",
+                },
+                {
+                    "source_id": "S6",
+                    "chunk_id": "regenerate",
+                    "path": "src/grid/tree/regeneration.cpp",
+                    "title": "TreeRegeneration::adaptGrid",
+                },
+                {
+                    "source_id": "S7",
+                    "chunk_id": "helper",
+                    "path": "src/math/bounds.cpp",
+                    "title": "Bounds::maximum",
+                },
+            ],
+            question=(
+                "Show the code that initializes the adaptive grid and explain "
+                "the flow"
+            ),
+            related_chunk_ids=[
+                "factory",
+                "domain",
+                "header",
+                "manager",
+                "implementation",
+                "regenerate",
+                "helper",
+            ],
+            lineage_edges=[
+                {
+                    "origin_chunk_id": "domain",
+                    "target_chunk_id": "factory",
+                    "observed_via": "find_callers",
+                },
+                {
+                    "origin_chunk_id": "header",
+                    "target_chunk_id": "factory",
+                    "observed_via": "find_callers",
+                },
+                {
+                    "origin_chunk_id": "factory",
+                    "target_chunk_id": "implementation",
+                    "observed_via": "find_callees",
+                },
+                {
+                    "origin_chunk_id": "regenerate",
+                    "target_chunk_id": "helper",
+                    "observed_via": "find_callees",
+                },
+            ],
+        )
+
+        flow = next(
+            section
+            for section in notebook["sections"]
+            if any(
+                aspect.get("aspect") == "flow"
+                for aspect in section["aspects"]
+            )
+        )
+        self.assertEqual(flow["status"], "verified_flow")
+        self.assertEqual(flow["source_ids"], ["S2", "S3", "S1", "S5"])
+        self.assertNotIn("S6", flow["source_ids"])
+        self.assertNotIn("S7", flow["source_ids"])
+        self.assertIn(
+            "code snippet",
+            [aspect["aspect"] for aspect in flow["aspects"]],
+        )
+        self.assertFalse(
+            any(
+                section["aspects"]
+                and all(
+                    aspect.get("role") == "delivery"
+                    for aspect in section["aspects"]
+                )
+                for section in notebook["sections"]
+            )
+        )
+        adaptive = next(
+            section
+            for section in notebook["sections"]
+            if any(
+                aspect.get("aspect") == "adaptive grid"
+                for aspect in section["aspects"]
+            )
+        )
+        self.assertIn("S6", adaptive["source_ids"])
+        self.assertNotIn("_observed_source_ids", str(notebook))
 
     def test_section_prompt_uses_verified_execution_spine(self) -> None:
         instructions = api._section_synthesis_instructions(
