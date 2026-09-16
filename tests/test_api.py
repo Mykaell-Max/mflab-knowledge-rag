@@ -3026,6 +3026,234 @@ class ApiServiceTests(unittest.TestCase):
         self.assertEqual(result["usage"]["total_tokens"], 60)
         self.assertEqual(result["finish_reason"], "stop")
 
+    def test_sectional_synthesis_completes_a_distinct_omitted_facet(
+        self,
+    ) -> None:
+        generator = _SequencedGenerator(
+            [
+                "The adaptive operation is visible [S2].",
+                "The initialization operation is visible [S1].",
+            ]
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                verify_evidence=False,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "initialize",
+                "project": "Solver",
+                "path": "src/manager.cpp",
+                "text": "void initialize() {}",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "adapt",
+                "project": "Solver",
+                "path": "src/adaptation.cpp",
+                "text": "void adapt() {}",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+        ]
+        notebook = {
+            "algorithm": api.EVIDENCE_NOTEBOOK_ALGORITHM,
+            "sections": [
+                {
+                    "section_id": "E1",
+                    "status": "verified_flow",
+                    "source_ids": ["S1", "S2"],
+                    "aspects": [
+                        {
+                            "aspect_id": "A1",
+                            "aspect": "initialization",
+                            "role": "content",
+                            "source_ids": ["S1"],
+                        },
+                        {
+                            "aspect_id": "A2",
+                            "aspect": "adaptation",
+                            "role": "content",
+                            "source_ids": ["S2"],
+                        },
+                    ],
+                }
+            ],
+            "gaps": [],
+            "ready_sections": 1,
+            "covered_aspects": 2,
+            "gap_aspects": 0,
+        }
+        with (
+            mock.patch.object(
+                service,
+                "context",
+                return_value={
+                    "query": "Explain initialization and adaptation",
+                    "mode": "hybrid",
+                    "instructions": api.CONTEXT_INSTRUCTIONS,
+                    "exploration": {"intent": "mechanism"},
+                    "agent_investigation": {"coverage": []},
+                    "retrieved_count": 2,
+                    "source_count": 2,
+                    "context_characters": 40,
+                    "truncated": False,
+                    "sources": sources,
+                    "investigation": {"steps": []},
+                },
+            ),
+            mock.patch.object(
+                api,
+                "_build_evidence_notebook",
+                return_value=notebook,
+            ),
+        ):
+            result = service.ask(
+                query="Explain initialization and adaptation",
+                response_depth="detailed",
+            )
+
+        self.assertEqual(len(generator.calls), 2)
+        self.assertEqual(generator.calls[1]["sources"], [sources[0]])
+        self.assertIn(
+            "MISSING FACET COMPLETION",
+            generator.calls[1]["instructions"],
+        )
+        self.assertIn("visible [S1]", result["answer"])
+        self.assertIn("visible [S2]", result["answer"])
+        self.assertEqual(result["context"]["section_completion_count"], 1)
+
+    def test_answer_coverage_requires_the_facets_assigned_source(self) -> None:
+        generator = _CoverageVerifyingGenerator(
+            answers=["Only the adjacent operation is described [S2]."],
+            audits=[
+                '{"claims":[{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S2"]}]}'
+            ],
+            coverage_audits=[
+                '{"coverage":[{"aspect_id":"A1","status":"covered",'
+                '"claim_ids":["C1"]}]}'
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                max_repair_attempts=0,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "required",
+                "project": "Solver",
+                "path": "src/required.cpp",
+                "text": "required operation",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "adjacent",
+                "project": "Solver",
+                "path": "src/adjacent.cpp",
+                "text": "adjacent operation",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+        ]
+        notebook = {
+            "algorithm": api.EVIDENCE_NOTEBOOK_ALGORITHM,
+            "sections": [
+                {
+                    "section_id": "E1",
+                    "status": "verified_flow",
+                    "source_ids": ["S1", "S2"],
+                    "aspects": [
+                        {
+                            "aspect_id": "A1",
+                            "aspect": "required operation",
+                            "role": "content",
+                            "source_ids": ["S1"],
+                        }
+                    ],
+                }
+            ],
+            "gaps": [],
+            "ready_sections": 1,
+            "covered_aspects": 1,
+            "gap_aspects": 0,
+        }
+        with (
+            mock.patch.object(
+                service,
+                "context",
+                return_value={
+                    "query": "Explain the required operation",
+                    "mode": "hybrid",
+                    "instructions": api.CONTEXT_INSTRUCTIONS,
+                    "exploration": {
+                        "intent": "mechanism",
+                        "query_plan": {
+                            "aspect_anchors": [
+                                {
+                                    "aspect": "required operation",
+                                    "question_span": "required operation",
+                                }
+                            ]
+                        },
+                    },
+                    "agent_investigation": {
+                        "coverage": [
+                            {
+                                "aspect": "required operation",
+                                "status": "partial",
+                                "chunk_ids": ["required"],
+                            }
+                        ]
+                    },
+                    "retrieved_count": 2,
+                    "source_count": 2,
+                    "context_characters": 40,
+                    "truncated": False,
+                    "sources": sources,
+                    "investigation": {"steps": []},
+                },
+            ),
+            mock.patch.object(
+                api,
+                "_build_evidence_notebook",
+                return_value=notebook,
+            ),
+        ):
+            result = service.ask(
+                query="Explain the required operation",
+                response_depth="detailed",
+            )
+
+        self.assertEqual(result["answer_completeness"], "coverage_limited")
+        self.assertFalse(result["answer_coverage"]["complete"])
+
     def test_ask_preserves_grounded_sections_without_global_rewrite(self) -> None:
         generator = _ComposingGenerator(
             [

@@ -1947,6 +1947,67 @@ def _section_synthesis_instructions(
     )
 
 
+def _missing_content_aspects(
+    section: dict[str, object],
+    answer: object,
+) -> list[dict[str, object]]:
+    """Return technical facets with no citation from their assigned scope."""
+
+    cited = citation_ids(str(answer))
+    missing: list[dict[str, object]] = []
+    for raw_aspect in section.get("aspects", []):
+        if not isinstance(raw_aspect, dict):
+            continue
+        if str(raw_aspect.get("role", "content")) != "content":
+            continue
+        source_ids = [
+            str(value)
+            for value in raw_aspect.get("source_ids", [])
+            if str(value)
+        ]
+        if source_ids and not cited.intersection(source_ids):
+            missing.append(
+                {
+                    "aspect_id": str(raw_aspect.get("aspect_id", "")),
+                    "aspect": str(raw_aspect.get("aspect", "")),
+                    "role": "content",
+                    "source_ids": source_ids,
+                }
+            )
+    return missing
+
+
+def _section_completion_instructions(
+    instructions: str,
+    section: dict[str, object],
+    *,
+    position: int,
+    total: int,
+    sources: list[dict[str, object]],
+) -> str:
+    """Request only a technical facet omitted by the first section draft."""
+
+    return (
+        _section_synthesis_instructions(
+            instructions,
+            section,
+            position=position,
+            total=total,
+            sources=sources,
+        )
+        + "\n\nMISSING FACET COMPLETION: A preceding draft already covered the "
+        "other facets of this section, but omitted every citation from the "
+        "source scope assigned to the content facets listed above. Write only "
+        "a concise continuation for those missing facets. Do not repeat the "
+        "question, orientation, previously covered operations, or a conclusion. "
+        "Use at least one assigned source for each content facet, explain the "
+        "local operation it actually establishes, and cite that source in the "
+        "same factual paragraph. If the supplied evidence does not establish "
+        "the requested relation, state that exact local boundary with its "
+        "citation instead of inventing the transition."
+    )
+
+
 def _format_section_answer(
     answer: object,
     section: dict[str, object],
@@ -5060,6 +5121,7 @@ class RagApiService:
                     "section_composition_max_output_tokens": None,
                     "section_generation_count": 0,
                     "section_continuation_count": 0,
+                    "section_completion_count": 0,
                     "requested_max_context_characters": requested_context_limit,
                     "max_context_characters": effective_context_limit,
                     "requested_max_output_tokens": requested_output_limit,
@@ -5097,6 +5159,7 @@ class RagApiService:
         section_composition_max_output_tokens: int | None = None
         section_generation_count = 0
         section_continuation_count = 0
+        section_completion_count = 0
         section_output_limit: int | None = None
         generated_sections: list[dict[str, object]] = []
         generated_section_plans: list[dict[str, object]] = []
@@ -5233,6 +5296,100 @@ class RagApiService:
                         section,
                         position=position,
                     )
+                    content_aspects = [
+                        aspect
+                        for aspect in section.get("aspects", [])
+                        if isinstance(aspect, dict)
+                        and aspect.get("role") == "content"
+                    ]
+                    missing_aspects = _missing_content_aspects(
+                        section,
+                        generated_section.get("answer", ""),
+                    )
+                    # A single technical facet may legitimately use only one
+                    # of several supporting sources. The completion gate is
+                    # reserved for a compound section whose independently
+                    # scoped facets would otherwise be silently collapsed into
+                    # one another.
+                    if len(content_aspects) >= 2 and missing_aspects:
+                        missing_source_ids = {
+                            str(value)
+                            for aspect in missing_aspects
+                            for value in aspect.get("source_ids", [])
+                            if str(value)
+                        }
+                        completion_sources = [
+                            source
+                            for source in section_sources
+                            if str(source.get("source_id", ""))
+                            in missing_source_ids
+                        ]
+                        if completion_sources:
+                            completion_plan = {
+                                "section_id": section.get("section_id"),
+                                "status": section.get("status"),
+                                "aspects": missing_aspects,
+                                "source_ids": sorted(missing_source_ids),
+                            }
+                            record(
+                                "generation",
+                                (
+                                    "Completando facetas omitidas da seção "
+                                    f"{position}/{len(notebook_sections)}"
+                                ),
+                                (
+                                    "A continuação receberá somente as fontes "
+                                    "atribuídas às facetas técnicas sem citação."
+                                ),
+                                {
+                                    "aspects": [
+                                        aspect.get("aspect")
+                                        for aspect in missing_aspects
+                                    ],
+                                    "sources": sorted(missing_source_ids),
+                                },
+                            )
+                            generation_attempts += 1
+                            try:
+                                completion = self.generator.generate(
+                                    question=str(context["query"]),
+                                    instructions=(
+                                        _section_completion_instructions(
+                                            str(context["instructions"]),
+                                            completion_plan,
+                                            position=position,
+                                            total=len(notebook_sections),
+                                            sources=completion_sources,
+                                        )
+                                    ),
+                                    sources=completion_sources,
+                                    max_output_tokens=min(
+                                        section_output_limit,
+                                        1024,
+                                    ),
+                                    temperature=temperature,
+                                )
+                            except GenerationContextTooLargeError:
+                                self.log(
+                                    "A conclusão de uma faceta não coube na "
+                                    "janela; preservando a seção já elaborada",
+                                    "warning",
+                                )
+                            else:
+                                completion["answer"] = _format_section_answer(
+                                    completion.get("answer", ""),
+                                    completion_plan,
+                                    position=position,
+                                )
+                                generated_section = (
+                                    _combine_section_generations(
+                                        [generated_section, completion]
+                                    )
+                                )
+                                generated_section["finish_reason"] = (
+                                    completion.get("finish_reason")
+                                )
+                                section_completion_count += 1
                     section_source_ids = {
                         str(source.get("source_id", ""))
                         for source in section_sources
@@ -5272,6 +5429,7 @@ class RagApiService:
                 generated_section_plans.clear()
                 section_generation_count = 0
                 section_continuation_count = 0
+                section_completion_count = 0
                 section_output_limit = None
             else:
                 if generated_sections:
@@ -6244,6 +6402,14 @@ class RagApiService:
                 )
                 return len(uncited_text) >= 12 and uncited_text in section_answer
 
+            def claim_source_ids(claim: dict[str, object]) -> set[str]:
+                raw_ids = claim.get("source_ids")
+                return (
+                    {str(value) for value in raw_ids if str(value)}
+                    if isinstance(raw_ids, list)
+                    else set()
+                )
+
             section_claim_ids_by_aspect: dict[str, set[str]] = {}
             sectional_code_aspects: set[str] = set()
             for section_plan, generated_section in zip(
@@ -6264,10 +6430,32 @@ class RagApiService:
                         raw_aspect.get("aspect", "")
                     ).strip().casefold()
                     if aspect_key:
+                        raw_aspect_source_ids = raw_aspect.get("source_ids")
+                        aspect_source_scope = (
+                            {
+                                str(value)
+                                for value in raw_aspect_source_ids
+                                if str(value)
+                            }
+                            if isinstance(raw_aspect_source_ids, list)
+                            else set()
+                        )
+                        scoped_section_claim_ids = {
+                            str(claim.get("claim_id", ""))
+                            for claim in supported_claims
+                            if str(claim.get("claim_id", ""))
+                            in section_claim_ids
+                            and (
+                                not aspect_source_scope
+                                or aspect_source_scope.intersection(
+                                    claim_source_ids(claim)
+                                )
+                            )
+                        }
                         section_claim_ids_by_aspect.setdefault(
                             aspect_key,
                             set(),
-                        ).update(section_claim_ids)
+                        ).update(scoped_section_claim_ids)
                         aspect_role = str(
                             raw_aspect.get("role", "content")
                         )
@@ -6281,14 +6469,6 @@ class RagApiService:
                             and code_requested
                         ):
                             sectional_code_aspects.add(aspect_key)
-
-            def claim_source_ids(claim: dict[str, object]) -> set[str]:
-                raw_ids = claim.get("source_ids")
-                return (
-                    {str(value) for value in raw_ids if str(value)}
-                    if isinstance(raw_ids, list)
-                    else set()
-                )
 
             coverage_claim_ids_by_aspect = {
                 aspect: set(claim_ids)
@@ -6319,6 +6499,12 @@ class RagApiService:
                     str(claim.get("claim_id", ""))
                     for claim in supported_claims
                     if claim.get("claim_id")
+                    and (
+                        not aspect_source_ids
+                        or aspect_source_ids.intersection(
+                            claim_source_ids(claim)
+                        )
+                    )
                     and specific_claim_terms.intersection(
                         _notebook_match_terms(claim.get("claim", ""))
                     )
@@ -6569,6 +6755,7 @@ class RagApiService:
                 ),
                 "section_generation_count": section_generation_count,
                 "section_continuation_count": section_continuation_count,
+                "section_completion_count": section_completion_count,
                 "section_max_output_tokens": section_output_limit,
                 "reduced_for_generation": reduced_for_generation,
                 "reduced_output_for_generation": reduced_output_for_generation,

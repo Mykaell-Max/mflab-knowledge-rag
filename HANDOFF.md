@@ -1803,3 +1803,24 @@ efeito colateral. Relações com apenas um lado da âncora continuam usando os
 passes conservadores anteriores. A regra depende somente de âncoras observadas,
 arestas dirigidas e proveniência autorizada, sem nomes científicos, arquivos,
 branches ou repositórios codificados no motor.
+
+A validação real da 0.46.14 confirmou a reorganização estrutural: a seção de
+fluxo passou a conter o chamador do domínio, a fábrica e seu descendente direto,
+enquanto a solicitação de trecho de código deixou de competir como assunto. A
+rotina de adaptação recebeu uma segunda seção junto ao gerenciador. A resposta,
+porém, citou somente a adaptação nessa seção e omitiu o gerenciador. A auditoria
+marcou as duas facetas como cobertas porque todas as afirmações da seção eram
+associadas a todas as suas facetas, mesmo quando seus `source_ids` eram
+distintos. O problema restante estava na síntese e no contrato de completude,
+não na recuperação nem na montagem do grafo.
+
+A 0.46.15 adiciona uma barreira de completude por faceta. Quando uma seção
+composta possui duas ou mais facetas técnicas com escopos de fonte distintos, o
+servidor verifica as citações antes de reunir a resposta. Se uma faceta não
+aparece, uma única continuação curta recebe somente as fontes atribuídas a ela;
+o restante da seção não é regenerado. Na auditoria final, uma afirmação só pode
+cobrir uma faceta quando cita uma fonte pertencente ao escopo específico dessa
+faceta. Correspondência lexical ou presença na mesma seção não pode substituir
+essa proveniência. Se a continuação ainda falhar, a resposta permanece marcada
+como limitada, em vez de receber completude incorreta. O mecanismo é genérico e
+opera apenas sobre facetas, `source_ids` e citações autorizadas.
