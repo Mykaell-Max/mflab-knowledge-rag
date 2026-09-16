@@ -1838,3 +1838,19 @@ não foram citados e a continuação recebe apenas esse subconjunto, sem regener
 ou repetir as operações já explicadas. Facetas de apresentação continuam fora da
 barreira. A regra usa apenas a organização genérica do caderno e a proveniência
 autorizada; não contém nomes de projetos, branches, arquivos ou mecanismos.
+
+A validação real da 0.46.16 passou os dois casos. A malha acionou um complemento
+seletivo e preservou na resposta o domínio, a fábrica, o gerenciador e a rotina de
+regeneração; o fluxo do subsistema permaneceu completo sem complemento. A leitura
+qualitativa ainda encontrou uma afirmação sobre uma chave escrita em código inline
+cuja fonte citada não exibia esse identificador. Isso mostrou que o verificador
+semântico podia aceitar uma explicação plausível mesmo quando o literal pertencia
+a outro contexto.
+
+A 0.46.17 introduz `claim_evidence_audit_v10`. Símbolos, métodos, chaves, valores
+constantes e caminhos simples apresentados como código inline precisam aparecer
+literalmente em pelo menos uma fonte citada pela mesma afirmação. Caso contrário,
+a afirmação é rebaixada antes da entrega e segue o fallback de reparo ou salvamento
+já existente. Texto comum apenas estilizado com crases continua sob responsabilidade
+da auditoria semântica. A regra é derivada da forma do identificador e da proveniência,
+sem listas de nomes de projetos, arquivos, branches ou conceitos científicos.

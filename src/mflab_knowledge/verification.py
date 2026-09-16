@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from mflab_knowledge.grounding import citation_ids, factual_units
 
-VERIFICATION_ALGORITHM = "claim_evidence_audit_v9"
+VERIFICATION_ALGORITHM = "claim_evidence_audit_v10"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
 INVESTIGATION_ALGORITHM = "bounded_investigation_v30"
 
@@ -24,6 +24,13 @@ _TRAILING_CITATION = re.compile(
 )
 _CALLABLE_REFERENCE = re.compile(
     r"(?:\b[A-Za-z_]\w*(?:::|->|\.)?)*\b([A-Za-z_]\w*)\s*\(\s*\)"
+)
+_INLINE_CODE = re.compile(r"(?<!`)`([^`\r\n]{1,160})`(?!`)")
+_SIMPLE_CODE_IDENTIFIER = re.compile(
+    r"^[A-Za-z_]\w*(?:(?:::|->|\.)[A-Za-z_]\w*)*(?:\(\))?$"
+)
+_CODE_PATH = re.compile(
+    r"^[A-Za-z0-9_.-]+(?:/[A-Za-z0-9_.-]+)+$"
 )
 _BEHAVIOR_ASSERTION = re.compile(
     r"\b(?:calcul|comput|control|gerenc|handle|implement|inicializ|initializ|"
@@ -546,6 +553,113 @@ def downgrade_operation_mismatch_claims(
                 "das operações visíveis nas fontes citadas."
             )
         findings.append(finding)
+    counts = {
+        verdict: sum(item.get("verdict") == verdict for item in findings)
+        for verdict in ("supported", "unsupported", "uncertain")
+    }
+    return {
+        **verification,
+        "algorithm": VERIFICATION_ALGORITHM,
+        "claims": findings,
+        "counts": counts,
+        "passed": bool(findings)
+        and counts["unsupported"] == 0
+        and counts["uncertain"] == 0,
+    }
+
+
+def downgrade_unmatched_inline_identifiers(
+    verification: dict[str, object],
+    *,
+    sources: list[dict[str, object]],
+) -> dict[str, object]:
+    """Reject code identifiers absent from every source cited by a claim.
+
+    Inline-code formatting is an explicit assertion that a concrete symbol,
+    configuration key, value, or path exists.  A semantic verifier can accept
+    a plausible explanation even when that literal belongs to a neighboring
+    source.  This deterministic guard requires simple code-shaped literals to
+    occur in the cited provenance itself.  It deliberately ignores ordinary
+    prose placed in backticks and contains no repository-specific vocabulary.
+    """
+
+    raw_findings = verification.get("claims")
+    if not isinstance(raw_findings, list):
+        return verification
+
+    source_by_id = {
+        str(source.get("source_id", "")): source
+        for source in sources
+        if str(source.get("source_id", ""))
+    }
+
+    def code_identifiers(value: object) -> list[str]:
+        identifiers: list[str] = []
+        for match in _INLINE_CODE.finditer(str(value)):
+            literal = match.group(1).strip()
+            if not literal or literal.startswith("S") and literal[1:].isdigit():
+                continue
+            simple_identifier = bool(_SIMPLE_CODE_IDENTIFIER.fullmatch(literal))
+            path = bool(_CODE_PATH.fullmatch(literal))
+            camel_case = bool(re.search(r"[a-z][A-Z]", literal))
+            upper_constant = (
+                len(literal) >= 2
+                and any(character.isalpha() for character in literal)
+                and literal.upper() == literal
+            )
+            code_shaped = (
+                simple_identifier
+                and (
+                    camel_case
+                    or upper_constant
+                    or "_" in literal
+                    or any(marker in literal for marker in ("::", "->", ".", "()"))
+                )
+            ) or path
+            if code_shaped and literal not in identifiers:
+                identifiers.append(literal)
+        return identifiers
+
+    findings: list[dict[str, object]] = []
+    for raw_finding in raw_findings:
+        if not isinstance(raw_finding, dict):
+            continue
+        finding = dict(raw_finding)
+        if finding.get("verdict") != "supported":
+            findings.append(finding)
+            continue
+        identifiers = code_identifiers(finding.get("claim", ""))
+        if not identifiers:
+            findings.append(finding)
+            continue
+        cited_texts = [
+            " ".join(
+                str(source.get(field, ""))
+                for field in ("path", "title", "text")
+            )
+            for source_id in finding.get("source_ids", [])
+            if (source := source_by_id.get(str(source_id))) is not None
+        ]
+        unmatched: list[str] = []
+        for identifier in identifiers:
+            variants = {identifier}
+            if identifier.endswith("()"):
+                variants.add(identifier[:-2])
+            if not any(
+                variant in cited_text
+                for cited_text in cited_texts
+                for variant in variants
+            ):
+                unmatched.append(identifier)
+        if unmatched:
+            finding["verdict"] = "uncertain"
+            finding["finding"] = (
+                "Os identificadores em código não aparecem nas fontes citadas: "
+                + ", ".join(unmatched)
+                + "."
+            )
+        findings.append(finding)
+
     counts = {
         verdict: sum(item.get("verdict") == verdict for item in findings)
         for verdict in ("supported", "unsupported", "uncertain")

@@ -7,6 +7,7 @@ from mflab_knowledge.verification import (
     claims_for_verification,
     downgrade_callsite_only_claims,
     downgrade_operation_mismatch_claims,
+    downgrade_unmatched_inline_identifiers,
     downgrade_unanchored_subject_claims,
     emit_progress,
     normalize_support_discovery,
@@ -77,6 +78,90 @@ class VerificationTests(unittest.TestCase):
 
         self.assertTrue(result["passed"])
         self.assertEqual(result["claims"][0]["verdict"], "supported")
+
+    def test_downgrades_inline_identifier_absent_from_cited_source(self) -> None:
+        result = downgrade_unmatched_inline_identifiers(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": (
+                            "O parâmetro `timeStepLimit` controla a iteração [S1]."
+                        ),
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "A fonte foi aceita pelo modelo.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "path": "config/runtime.json",
+                    "title": "arquivo",
+                    "text": '{"cleanup_interval": 50}',
+                }
+            ],
+        )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "uncertain")
+        self.assertIn("timeStepLimit", result["claims"][0]["finding"])
+
+    def test_keeps_inline_identifiers_visible_in_cited_source(self) -> None:
+        result = downgrade_unmatched_inline_identifiers(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": (
+                            "`RuntimeManager::advance()` usa `time_step` [S1]."
+                        ),
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "Os identificadores estão visíveis.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "path": "src/runtime_manager.cpp",
+                    "title": "RuntimeManager::advance",
+                    "text": "void RuntimeManager::advance() { update(time_step); }",
+                }
+            ],
+        )
+
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "supported")
+
+    def test_inline_prose_without_code_shape_is_left_to_semantic_audit(self) -> None:
+        result = downgrade_unmatched_inline_identifiers(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "A etapa de `malha adaptativa` foi descrita [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "A afirmação foi avaliada semanticamente.",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[{"source_id": "S1", "text": "adaptive grid"}],
+        )
+
+        self.assertTrue(result["passed"])
 
     def test_selects_named_subjects_and_excludes_scope_or_generic_words(self) -> None:
         result = select_query_subject_identifiers(

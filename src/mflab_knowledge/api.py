@@ -105,6 +105,7 @@ from mflab_knowledge.verification import (
     claims_for_verification,
     downgrade_callsite_only_claims,
     downgrade_operation_mismatch_claims,
+    downgrade_unmatched_inline_identifiers,
     downgrade_unanchored_subject_claims,
     emit_progress,
     normalize_support_discovery,
@@ -5975,6 +5976,10 @@ class RagApiService:
                     ],
                 )
                 normalized = downgrade_operation_mismatch_claims(
+                    normalized,
+                    sources=evidence,
+                )
+                normalized = downgrade_unmatched_inline_identifiers(
                     normalized,
                     sources=evidence,
                 )
