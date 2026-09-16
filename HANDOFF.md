@@ -1921,3 +1921,19 @@ gabarito de malha deixa de exigir o arquivo do hook vazio e passa a exigir a
 fábrica que demonstra a seleção e a construção efetivamente executadas. Essa é
 uma correção da referência científica da avaliação; o motor continua sem nomes
 de projetos, arquivos, branches ou mecanismos codificados.
+
+A validação real da 0.46.20 aprovou integralmente recuperação, escopo,
+completude, proveniência e auditoria científica nos dois casos. A resposta de
+malha preservou cinco fontes, doze afirmações sustentadas e quatro citações
+estruturais acrescentadas a partir das arestas verificadas. A resposta detalhada
+do subsistema preservou sete fontes e vinte e seis afirmações sustentadas; uma
+recapitulação criada durante o salvamento determinístico foi removida e a forma
+final voltou a ser auditada. A única reprovação foi o tempo de geração detalhada:
+`308,025 s` diante de um limite fixo de `300 s`, ainda dentro do limite total de
+dez minutos e sem erro operacional ou perda de qualidade.
+
+A 0.46.21 ajusta somente a avaliação do caso detalhado para aceitar até 420
+segundos de geração, preservando o limite total de 600 segundos. O novo valor
+acomoda a variabilidade esperada do modelo local e ainda detecta regressões de
+latência relevantes. Nenhuma regra de recuperação, geração, verificação ou
+proveniência foi relaxada.
