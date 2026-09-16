@@ -336,6 +336,76 @@ def remove_redundant_prose_paragraphs(answer: str) -> tuple[str, int]:
     return "".join(rebuilt).strip(), removed
 
 
+def normalize_standalone_source_citations(answer: str) -> tuple[str, int]:
+    """Move explicit source-list citations onto the claims they follow.
+
+    Some small local models emit a short evidence block followed by a line such
+    as ``Source: path [S2]`` even when instructed to cite each factual unit.
+    The source line is not itself useful prose and leaves the preceding claims
+    formally uncited.  Attach its already-declared IDs to the contiguous prose
+    block since the previous source marker, then let the normal semantic audit
+    decide whether each claim is actually supported.  Code fences, headings,
+    existing citations, and ordinary bullets are never rewritten.
+    """
+
+    lines = answer.splitlines()
+    source_marker = re.compile(
+        r"^\s*(?:[-*+]\s*)?(?:\*{0,2})?(?:source|fonte)(?:\*{0,2})?\s*:\s*.+"
+        r"(?P<citation>\[\s*S\d+\s*(?:(?:,|;)\s*S\d+\s*)*\])\s*$",
+        re.IGNORECASE,
+    )
+    support_intro = re.compile(
+        r"^\s*(?:this is supported by|supported by|fonte|isso e sustentado por|"
+        r"isto e sustentado por).*$",
+        re.IGNORECASE,
+    )
+    in_fence = False
+    fenced_lines: set[int] = set()
+    for index, line in enumerate(lines):
+        if line.lstrip().startswith("```"):
+            fenced_lines.add(index)
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            fenced_lines.add(index)
+    in_fence = False
+    last_marker = -1
+    attached = 0
+    remove: set[int] = set()
+    for index, line in enumerate(lines):
+        if line.lstrip().startswith("```"):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        match = source_marker.match(line)
+        if match is None:
+            continue
+        citation = match.group("citation")
+        changed = False
+        for candidate_index in range(last_marker + 1, index):
+            candidate = lines[candidate_index].strip()
+            if (
+                candidate_index in fenced_lines
+                or not candidate
+                or candidate.startswith("#")
+                or citation_ids(candidate)
+                or support_intro.match(candidate)
+            ):
+                continue
+            lines[candidate_index] = lines[candidate_index].rstrip() + " " + citation
+            attached += 1
+            changed = True
+        if changed:
+            remove.add(index)
+            if index > 0 and support_intro.match(lines[index - 1].strip()):
+                remove.add(index - 1)
+        last_marker = index
+    return "\n".join(
+        line for index, line in enumerate(lines) if index not in remove
+    ).strip(), attached
+
+
 def _json_object(value: str) -> dict[str, object]:
     candidate = value.strip()
     fenced = re.fullmatch(r"```(?:json)?\s*(.*?)\s*```", candidate, re.DOTALL)
@@ -943,7 +1013,14 @@ def select_query_subject_identifiers(
     branch names select provenance but do not define the scientific subject.
     """
 
-    question_signature = _identifier_signature(question)
+    normalized_question = " ".join(
+        re.findall(
+            r"[a-z0-9]+",
+            unicodedata.normalize("NFKD", question.casefold()).encode(
+                "ascii", "ignore"
+            ).decode("ascii"),
+        )
+    )
     excluded = {
         _identifier_signature(value)
         for value in excluded_labels or []
@@ -952,6 +1029,23 @@ def select_query_subject_identifiers(
     selected: list[str] = []
     selected_signatures: set[str] = set()
 
+    def visibly_written(value: str) -> bool:
+        normalized_value = " ".join(
+            re.findall(
+                r"[a-z0-9]+",
+                unicodedata.normalize("NFKD", value.casefold()).encode(
+                    "ascii", "ignore"
+                ).decode("ascii"),
+            )
+        )
+        return bool(
+            normalized_value
+            and re.search(
+                rf"(?:^|\s){re.escape(normalized_value)}(?:$|\s)",
+                normalized_question,
+            )
+        )
+
     def append(value: str) -> None:
         label = " ".join(value.split()).strip()
         signature = _identifier_signature(label)
@@ -959,7 +1053,7 @@ def select_query_subject_identifiers(
             len(signature) < 3
             or signature in excluded
             or signature in selected_signatures
-            or signature not in question_signature
+            or not visibly_written(label)
         ):
             return
         selected.append(label)

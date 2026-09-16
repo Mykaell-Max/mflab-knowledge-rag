@@ -36,6 +36,7 @@ from mflab_knowledge.embeddings import (
 )
 from mflab_knowledge.exploration import (
     exploration_instructions,
+    fallback_query_plan,
     navigation_terms,
     normalize_query_plan,
     overview_authority,
@@ -110,6 +111,7 @@ from mflab_knowledge.verification import (
     downgrade_unmatched_inline_identifiers,
     downgrade_unanchored_subject_claims,
     emit_progress,
+    normalize_standalone_source_citations,
     normalize_support_discovery,
     normalize_verification,
     remove_redundant_prose_paragraphs,
@@ -1831,11 +1833,11 @@ def _should_use_sectional_synthesis(
     )
     if not detailed_request:
         return False
-    return len(sections) >= 2 or any(
-        isinstance(section, dict)
-        and section.get("status") == "verified_flow"
-        for section in sections
-    )
+    # Even one evidence-owned facet benefits from the stricter sectional
+    # contract.  Falling back to the broad prompt for a single section caused
+    # small models to produce source inventories and disconnected claims even
+    # though the notebook had already selected the correct bounded evidence.
+    return True
 
 
 def _section_synthesis_instructions(
@@ -4958,6 +4960,8 @@ class RagApiService:
                         "Planejador local indisponível; usando expansão determinística",
                         "warning",
                     )
+            if query_plan is None:
+                query_plan = fallback_query_plan(query, deterministic_plan)
         context = self.context(
             query=query,
             mode=mode,
@@ -5764,6 +5768,19 @@ class RagApiService:
         assert isinstance(raw_sources, list)
         assert generated is not None
         answer = str(generated["answer"])
+        answer, standalone_citations_attached = normalize_standalone_source_citations(
+            answer
+        )
+        if standalone_citations_attached:
+            record(
+                "verification",
+                "Citações destacadas normalizadas",
+                (
+                    "Referências declaradas em linhas separadas foram associadas "
+                    "às afirmações correspondentes antes da auditoria semântica."
+                ),
+                {"citations_attached": standalone_citations_attached},
+            )
         if sectional_synthesis:
             answer, redundant_paragraphs_removed = remove_redundant_prose_paragraphs(
                 answer

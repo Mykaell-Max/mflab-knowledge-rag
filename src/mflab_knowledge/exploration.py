@@ -42,6 +42,7 @@ LOCATION_PATTERNS = (
 )
 
 MECHANISM_PATTERNS = (
+    r"^como\b",
     r"\bcomo(?: .+)? (?:funciona|opera|implementad[oa]|resolvid[oa]|calculad[oa])\b",
     r"\bexplique (?:como|o funcionamento)\b",
     r"\bexplique .+\b(?:fluxo|ciclo|arquitetura|integracao)\b",
@@ -49,6 +50,44 @@ MECHANISM_PATTERNS = (
     r"\bexplain how\b",
     r"\bexplain .+\b(?:flow|lifecycle|architecture|integration)\b",
 )
+
+
+def fallback_query_plan(
+    original_query: str,
+    exploration: dict[str, object],
+) -> dict[str, object]:
+    """Keep bounded investigation available when model planning is unavailable.
+
+    The fallback deliberately contributes no invented symbols.  It preserves
+    the deterministic search expansions and turns the user's complete request
+    into one opaque coverage facet, so an intermittent malformed planner reply
+    cannot silently disable graph navigation and the read-only agent.
+    """
+
+    query = " ".join(original_query.split()).strip()
+    raw_queries = exploration.get("queries")
+    queries = [
+        str(value)
+        for value in raw_queries or []
+        if isinstance(value, str) and str(value).strip()
+    ]
+    intent = str(exploration.get("intent", "direct"))
+    aspect_anchors: list[dict[str, str]] = []
+    if intent in {"location", "mechanism"} and query and len(query) <= 2_000:
+        aspect_anchors.append(
+            {
+                "aspect": f"requested {intent}",
+                "question_span": query,
+            }
+        )
+    return {
+        "algorithm": "deterministic_query_fallback_v1",
+        "generated": False,
+        "queries": queries or [query],
+        "identifiers": [],
+        "aspects": [item["aspect"] for item in aspect_anchors],
+        "aspect_anchors": aspect_anchors,
+    }
 
 CONSTRUCTION_PATTERNS = (
     r"\b(?:inicializ|cria|constr)[a-z0-9]*\b",
@@ -275,7 +314,22 @@ def navigation_terms(
                 candidates.append(title)
             path = result.get("path")
             if isinstance(path, str) and path.strip():
-                candidates.append(PurePosixPath(path).stem)
+                parsed_path = PurePosixPath(path)
+                candidates.append(parsed_path.stem)
+                # Repository vocabulary is often encoded by a distinctive
+                # directory acronym while the file itself has a generic name.
+                # Expose only code-shaped path components already observed in
+                # authorized results; do not invent aliases from domain lists.
+                for component in parsed_path.parts[:-1]:
+                    letters = "".join(
+                        character for character in component if character.isalpha()
+                    )
+                    if (
+                        len(letters) >= 2
+                        and letters == letters.upper()
+                        and component not in candidates
+                    ):
+                        candidates.append(component)
 
     selected: list[str] = []
     seen: set[str] = set()

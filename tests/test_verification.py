@@ -12,6 +12,7 @@ from mflab_knowledge.verification import (
     downgrade_unmatched_inline_identifiers,
     downgrade_unanchored_subject_claims,
     emit_progress,
+    normalize_standalone_source_citations,
     normalize_support_discovery,
     normalize_verification,
     remove_redundant_prose_paragraphs,
@@ -314,6 +315,31 @@ class VerificationTests(unittest.TestCase):
             ),
             ["DPM"],
         )
+
+    def test_does_not_promote_planner_camelcase_alias_from_plain_phrase(self) -> None:
+        self.assertEqual(
+            select_query_subject_identifiers(
+                "Where is the discrete particle model initialized?",
+                ["ParticleModel", "DiscreteParticleManager"],
+            ),
+            [],
+        )
+
+    def test_normalizes_standalone_source_lines_before_audit(self) -> None:
+        answer, attached = normalize_standalone_source_citations(
+            "The matrix is assembled here.\n"
+            "The linear system is solved next.\n"
+            "This is supported by the following source:\n"
+            "- **Source**: `src/solver.f90` [S2]\n\n"
+            "```fortran\ncall solve()\n```"
+        )
+
+        self.assertEqual(attached, 2)
+        self.assertIn("assembled here. [S2]", answer)
+        self.assertIn("solved next. [S2]", answer)
+        self.assertNotIn("Source", answer)
+        self.assertIn("call solve()", answer)
+        self.assertNotIn("call solve() [S2]", answer)
 
     def test_downgrades_subject_relationship_absent_from_cited_source(self) -> None:
         result = downgrade_unanchored_subject_claims(

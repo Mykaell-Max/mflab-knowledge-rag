@@ -431,7 +431,10 @@ class OpenAICompatibleGenerator:
                         "Before sending the answer, check that every factual prose "
                         "paragraph and every factual list item ends with the source "
                         "ID or IDs that directly support that complete unit. Omit a "
-                        "unit when no indexed source directly supports it."
+                        "unit when no indexed source directly supports it. Put each "
+                        "citation in the same paragraph or list item as its claim. "
+                        "Never emit a bibliography, a standalone Source/Fonte line, "
+                        "or a list that merely restates paths from the evidence."
                     ),
                 },
             ],
@@ -521,7 +524,9 @@ class OpenAICompatibleGenerator:
                         "to a subsystem or runtime phase only when source content "
                         "explicitly makes that connection. Every factual prose "
                         "paragraph and list item must end with the global source ID "
-                        "or IDs that directly support the complete unit."
+                        "or IDs that directly support the complete unit. Put citations "
+                        "inside the same factual unit; never emit a bibliography or "
+                        "standalone Source/Fonte lines."
                     ),
                 },
                 {

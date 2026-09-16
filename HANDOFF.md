@@ -1937,3 +1937,31 @@ segundos de geração, preservando o limite total de 600 segundos. O novo valor
 acomoda a variabilidade esperada do modelo local e ainda detecta regressões de
 latência relevantes. Nenhuma regra de recuperação, geração, verificação ou
 proveniência foi relaxada.
+
+A avaliação ampliada da 0.46.21 confirmou os dois fluxos detalhados e a visão
+geral, mas revelou diferenças de generalização nos casos curtos. Uma pergunta
+portuguesa iniciada por `Como` podia permanecer como consulta direta; se o
+planejador local devolvesse JSON inválido, nenhuma investigação agentiva era
+executada. Nos repositórios legados, identificadores CamelCase inventados apenas
+como hipótese de busca eram convertidos em assuntos que precisavam aparecer
+literalmente na fonte. O mapa estrutural já encontrava rotinas relevantes de
+Fortran, mas uma resposta podia desperdiçar o orçamento com linhas `Source:`
+separadas, deixando as afirmações anteriores formalmente sem citação. A saída
+Lagrangiana do MFSim-NG ficou completa e sustentada por implementação e
+interface; sua reprovação restante vinha da exigência antiga de um cabeçalho e
+de um limite de latência anterior ao pipeline de auditoria.
+
+A 0.46.22 mantém a investigação ativa nesses casos sem introduzir conhecimento
+do corpus. Perguntas portuguesas genéricas iniciadas por `Como` são tratadas como
+mecanismos; uma falha do planejador recebe um plano determinístico formado
+somente pela consulta e pelas expansões já autorizadas. Componentes de caminho
+que já aparecem como acrônimos em resultados podem orientar a navegação, sem
+listas de domínios. Somente identificadores distintivos escritos literalmente
+pelo usuário podem acionar a barreira lexical de assunto; hipóteses CamelCase do
+planejador não se tornam fatos. Um único caderno de evidência passa a usar o
+contrato seccional, e citações declaradas em linhas `Source/Fonte` são
+transferidas para o bloco de afirmações correspondente antes da auditoria, que
+continua decidindo semanticamente se há suporte. Os prompts também proíbem esse
+formato de bibliografia. O gabarito de saída Lagrangiana passa a exigir a
+implementação HDF5 e a interface realmente usada na resposta, com tempo de
+cliente compatível com as auditorias atuais.

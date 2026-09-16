@@ -4,6 +4,7 @@ import unittest
 
 from mflab_knowledge.exploration import (
     exploration_instructions,
+    fallback_query_plan,
     navigation_terms,
     normalize_query_plan,
     overview_authority,
@@ -57,6 +58,25 @@ class ExplorationTests(unittest.TestCase):
             "each available scope",
             exploration_instructions(comparison, []),
         )
+
+    def test_generic_portuguese_how_question_is_a_mechanism(self) -> None:
+        plan = plan_exploration(
+            "Como o código evita colisões entre identificadores diferentes?"
+        )
+
+        self.assertEqual(plan["intent"], "mechanism")
+        self.assertEqual(len(plan["queries"]), 3)
+
+    def test_fallback_plan_keeps_investigation_without_invented_symbols(self) -> None:
+        query = "Como o código conecta os identificadores?"
+        deterministic = plan_exploration(query)
+
+        plan = fallback_query_plan(query, deterministic)
+
+        self.assertFalse(plan["generated"])
+        self.assertEqual(plan["identifiers"], [])
+        self.assertEqual(plan["aspects"], ["requested mechanism"])
+        self.assertEqual(plan["aspect_anchors"][0]["question_span"], query)
 
     def test_overview_authority_prefers_root_readme_to_candidate_document(self) -> None:
         values = [
@@ -187,6 +207,23 @@ class ExplorationTests(unittest.TestCase):
         )
 
         self.assertEqual(terms, ["MeshFactory", "Domain::initialize", "mesh_manager"])
+
+    def test_navigation_terms_include_observed_path_acronyms(self) -> None:
+        terms = navigation_terms(
+            {"identifiers": []},
+            [
+                {
+                    "results": [
+                        {
+                            "title": "particle_step",
+                            "path": "src_lag/DPM/particle_step.f90",
+                        }
+                    ]
+                }
+            ],
+        )
+
+        self.assertEqual(terms, ["particle_step", "DPM"])
 
 
 if __name__ == "__main__":
