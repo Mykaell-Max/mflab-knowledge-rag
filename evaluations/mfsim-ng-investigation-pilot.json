@@ -26,7 +26,7 @@
         "scope_warning": false,
         "required_source_paths": [
           "src/mfsim/domain/domain.cpp",
-          "src/mfsim/mesh/mesh_manager.cpp",
+          "src/mfsim/mesh/mesh_factory.cpp",
           "src/mfsim/mesh/mtree/mtree_domain_filling.cpp"
         ]
       }

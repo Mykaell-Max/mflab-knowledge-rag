@@ -3282,6 +3282,131 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("MISSING FACET COMPLETION", generator.calls[1]["instructions"])
         self.assertEqual(result["context"]["section_completion_count"], 1)
 
+    def test_support_discovery_reapplies_verified_relation_before_audit(self) -> None:
+        generator = _SupportDiscoveringGenerator(
+            answers=[
+                "The factory selects the implementation [S1].",
+                "`Concrete::Concrete` constructs local state.",
+            ],
+            discoveries=[
+                '{"claims":[{"claim_id":"C2","verdict":"supported",'
+                '"source_ids":["S2"],"finding":"The constructor is defined."}]}'
+            ],
+            audits=[
+                '{"claims":['
+                '{"claim_id":"C1","verdict":"supported",'
+                '"source_ids":["S1"],"finding":"The caller selects it."},'
+                '{"claim_id":"C2","verdict":"supported",'
+                '"source_ids":["S1","S2"],'
+                '"finding":"The verified edge and body establish the claim."}]}'
+            ],
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                verify_evidence=True,
+                max_repair_attempts=0,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "factory",
+                "project": "Solver",
+                "path": "src/factory.cpp",
+                "title": "Factory::create",
+                "text": "return Concrete();",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "concrete",
+                "project": "Solver",
+                "path": "src/concrete.cpp",
+                "title": "Concrete::Concrete",
+                "text": "Concrete::Concrete() { initialize(); }",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+        ]
+        notebook = {
+            "algorithm": api.EVIDENCE_NOTEBOOK_ALGORITHM,
+            "sections": [
+                {
+                    "section_id": "E1",
+                    "status": "verified_flow",
+                    "source_ids": ["S1", "S2"],
+                    "aspects": [
+                        {
+                            "aspect_id": "A1",
+                            "aspect": "construction flow",
+                            "role": "content",
+                            "source_ids": ["S1", "S2"],
+                        }
+                    ],
+                    "verified_relations": [
+                        {
+                            "origin_source_id": "S1",
+                            "target_source_ids": ["S2"],
+                            "kind": "calls_symbol",
+                        }
+                    ],
+                }
+            ],
+            "gaps": [],
+            "ready_sections": 1,
+            "covered_aspects": 1,
+            "gap_aspects": 0,
+        }
+        with (
+            mock.patch.object(
+                service,
+                "context",
+                return_value={
+                    "query": "Explain the construction flow",
+                    "mode": "hybrid",
+                    "instructions": api.CONTEXT_INSTRUCTIONS,
+                    "exploration": {"intent": "mechanism"},
+                    "agent_investigation": {"coverage": []},
+                    "retrieved_count": 2,
+                    "source_count": 2,
+                    "context_characters": 40,
+                    "truncated": False,
+                    "sources": sources,
+                    "investigation": {"steps": []},
+                },
+            ),
+            mock.patch.object(
+                api,
+                "_build_evidence_notebook",
+                return_value=notebook,
+            ),
+        ):
+            result = service.ask(
+                query="Explain the construction flow",
+                response_depth="detailed",
+            )
+
+        self.assertIn(
+            "`Concrete::Concrete` constructs local state. [S1, S2]",
+            result["answer"],
+        )
+        self.assertEqual(result["context"]["section_completion_count"], 1)
+        self.assertEqual(
+            result["context"]["verified_relation_citations_attached"],
+            1,
+        )
+        self.assertTrue(result["verification"]["passed"])
+
     def test_missing_content_aspects_returns_only_uncited_source_obligations(
         self,
     ) -> None:

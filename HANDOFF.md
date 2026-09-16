@@ -1900,3 +1900,24 @@ trechos recentes, com as mesmas citações e identificadores, são removidos por
 filtro conservador; blocos de código nunca entram nessa deduplicação. Todas as
 regras usam apenas texto, sintaxe, arestas verificadas e proveniência, sem nomes
 de projetos, branches, arquivos ou mecanismos científicos codificados.
+
+A validação real da 0.46.19 confirmou a barreira principal. A afirmação de que
+um método vazio inicializava a malha foi removida e o caso passou de
+`supported_subset` para `complete`. A única reprovação restante foi a expectativa
+de que a resposta citasse o arquivo do método vazio. O construtor concreto também
+chegou à primeira auditoria, mas sua citação havia sido descoberta depois da
+passagem estrutural; por isso, as constantes visíveis somente no chamador ainda
+foram rejeitadas e a afirmação correta não sobreviveu ao salvamento. No caso do
+subsistema, o salvamento determinístico reconstruiu como parágrafos separados
+duas recapitulações que não existiam nessa forma durante a primeira passagem de
+deduplicação.
+
+A 0.46.20 reaplica as relações verificadas depois da descoberta de suporte e
+antes da primeira auditoria. Assim, uma implementação citada tardiamente recebe
+a fonte do chamador somente quando o caderno contém a aresta e a afirmação nomeia
+exatamente o destino. A deduplicação conservadora também é executada depois do
+salvamento determinístico e a forma reduzida passa novamente pela auditoria. O
+gabarito de malha deixa de exigir o arquivo do hook vazio e passa a exigir a
+fábrica que demonstra a seleção e a construção efetivamente executadas. Essa é
+uma correção da referência científica da avaliação; o motor continua sem nomes
+de projetos, arquivos, branches ou mecanismos codificados.

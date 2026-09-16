@@ -5930,6 +5930,40 @@ class RagApiService:
                     {"citations_attached": attached},
                 )
 
+        # Support discovery can attach a callee citation after the per-section
+        # structural pass has already run.  Reapply only the graph relations
+        # recorded in the evidence notebook before the first audit so call-site
+        # conditions and the implementation body are evaluated together.
+        if sectional_synthesis:
+            notebook_relations = [
+                relation
+                for section in evidence_notebook.get("sections", [])
+                if isinstance(section, dict)
+                for relation in section.get("verified_relations", [])
+                if isinstance(relation, dict)
+            ]
+            answer, late_relation_citations = attach_verified_relation_citations(
+                answer,
+                relations=notebook_relations,
+                sources=raw_sources,
+            )
+            verified_relation_citations_attached += late_relation_citations
+            if late_relation_citations:
+                assessment = _grounding_assessment(
+                    answer,
+                    raw_sources,
+                    require_scope_coverage=require_scope_coverage,
+                )
+                record(
+                    "verification",
+                    "Proveniência estrutural completada",
+                    (
+                        "Citações descobertas tardiamente foram conectadas "
+                        "somente às arestas verificadas do caderno."
+                    ),
+                    {"citations_attached": late_relation_citations},
+                )
+
         if quality_issues and assessment["grounding_status"] == "cited":
             assessment["grounding_status"] = "scope_overclaim"
 
@@ -6410,6 +6444,38 @@ class RagApiService:
                                 subset_counts.get("uncertain", 0)
                             ),
                         },
+                    )
+
+            # Deterministic salvage reconstructs the answer from individually
+            # supported claims.  That can create adjacent recap paragraphs even
+            # when the original sectional draft was concise.  Run the same
+            # conservative prose filter after salvage and re-audit the reduced
+            # answer; code fences and novel provenance are always preserved.
+            if verification.get("passed") is True and sectional_synthesis:
+                polished_answer, late_redundant_paragraphs = (
+                    remove_redundant_prose_paragraphs(answer)
+                )
+                if late_redundant_paragraphs:
+                    answer = polished_answer
+                    redundant_paragraphs_removed += late_redundant_paragraphs
+                    assessment = _grounding_assessment(
+                        answer,
+                        raw_sources,
+                        require_scope_coverage=require_scope_coverage,
+                    )
+                    quality_issues = overview_quality_issues(
+                        answer,
+                        exploration if isinstance(exploration, dict) else {},
+                    )
+                    verification = audit_with_retry(answer)
+                    record(
+                        "verification",
+                        "Resposta final sem recapitulações redundantes",
+                        (
+                            "A forma reduzida foi novamente auditada contra as "
+                            "mesmas fontes autorizadas."
+                        ),
+                        {"removed": late_redundant_paragraphs},
                     )
 
         verification_failed = bool(
