@@ -1029,7 +1029,57 @@ def select_query_subject_identifiers(
     selected: list[str] = []
     selected_signatures: set[str] = set()
 
+    normalized_question_words = normalized_question.split()
+
+    def acronym_expands_question(value: str) -> bool:
+        acronym = "".join(
+            character for character in value if character.isalpha()
+        )
+        if not (2 <= len(acronym) <= 8 and acronym == acronym.upper()):
+            return False
+        initials = acronym.casefold()
+        width = len(initials)
+        return any(
+            "".join(
+                word[0]
+                for word in normalized_question_words[start : start + width]
+            )
+            == initials
+            for start in range(max(0, len(normalized_question_words) - width + 1))
+        )
+
+    def literally_written(value: str) -> bool:
+        folded_question = unicodedata.normalize("NFKD", question.casefold()).encode(
+            "ascii", "ignore"
+        ).decode("ascii")
+        folded_value = unicodedata.normalize("NFKD", value.casefold()).encode(
+            "ascii", "ignore"
+        ).decode("ascii")
+        return bool(
+            folded_value
+            and re.search(
+                rf"(?<![a-z0-9_]){re.escape(folded_value)}(?![a-z0-9_])",
+                folded_question,
+            )
+        )
+
     def visibly_written(value: str) -> bool:
+        # Code-shaped aliases are planner hypotheses.  Treating
+        # ``mesh_refinement`` as if the user had written the natural phrase
+        # "mesh refinement" made a fabricated identifier exclude every real
+        # source.  Qualified and camel-case names therefore require literal
+        # syntax in the question.  Acronyms may additionally be derived from
+        # a contiguous phrase (for example adaptive mesh refinement -> AMR),
+        # which lets repository-observed vocabulary anchor evidence without a
+        # corpus-specific synonym table.
+        code_shaped = any(
+            marker in value for marker in ("::", "->", ".", "/", "_")
+        )
+        camel_case = bool(re.search(r"[a-zà-öø-ÿ][A-ZÀ-ÖØ-Þ]", value))
+        if code_shaped or camel_case:
+            return literally_written(value)
+        if acronym_expands_question(value):
+            return True
         normalized_value = " ".join(
             re.findall(
                 r"[a-z0-9]+",
@@ -1039,7 +1089,8 @@ def select_query_subject_identifiers(
             )
         )
         return bool(
-            normalized_value
+            literally_written(value)
+            or normalized_value
             and re.search(
                 rf"(?:^|\s){re.escape(normalized_value)}(?:$|\s)",
                 normalized_question,

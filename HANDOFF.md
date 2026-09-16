@@ -1965,3 +1965,24 @@ continua decidindo semanticamente se há suporte. Os prompts também proíbem es
 formato de bibliografia. O gabarito de saída Lagrangiana passa a exigir a
 implementação HDF5 e a interface realmente usada na resposta, com tempo de
 cliente compatível com as auditorias atuais.
+
+A avaliação ampliada da 0.46.22 mostrou que a fronteira estrutural já continha
+as rotinas necessárias para os casos de Poisson e refinamento adaptativo, mas
+duas etapas ainda descartavam informação válida. Uma hipótese com sublinhado,
+como `mesh_refinement`, podia ser considerada equivalente à frase natural da
+pergunta e excluir todas as fontes que não repetissem esse nome inventado. Em
+outro caso, o caderno mantinha uma rotina interna de montagem, embora o grafo já
+houvesse verificado a cadeia curta de chamadores que chegava até ela. O teste de
+saída Lagrangiana produziu uma resposta completa e totalmente sustentada, mas
+atingiu o limite de tokens antes de emitir o encerramento formal.
+
+A 0.46.23 separa sintaxe de código de linguagem natural ao selecionar o assunto.
+Aliases qualificados, CamelCase ou com sublinhado só são aceitos quando aparecem
+literalmente na pergunta. Siglas observadas nos caminhos reais podem ser usadas
+quando correspondem às iniciais de uma frase contígua escrita pelo usuário;
+assim, o mecanismo permanece genérico e dispensa listas de subsistemas. Para
+perguntas estruturais sem entidade nomeada, o caderno pode reconstruir uma
+cadeia verificada de até dois chamadores antes da evidência escolhida, mantendo
+um único caminho em vez de misturar vizinhos do grafo. Os orçamentos dos casos
+curtos foram recalibrados para a variabilidade medida, e a saída Lagrangiana
+recebe mais espaço para concluir naturalmente sem relaxar a auditoria.

@@ -1105,6 +1105,74 @@ class ApiServiceTests(unittest.TestCase):
         )
         self.assertEqual(configuration["source_ids"], ["S1"])
 
+    def test_evidence_notebook_recovers_verified_upstream_chain_without_subject(
+        self,
+    ) -> None:
+        notebook = api._build_evidence_notebook(
+            [
+                {
+                    "aspect_id": "A1",
+                    "aspect": "assembly and solve",
+                    "status": "partial",
+                    "chunk_ids": ["kernel"],
+                }
+            ],
+            [
+                {
+                    "source_id": "S1",
+                    "chunk_id": "kernel",
+                    "path": "src/matrix_kernel.f90",
+                    "title": "assemble_matrix",
+                },
+                {
+                    "source_id": "S2",
+                    "chunk_id": "solver",
+                    "path": "src/linear_solver.f90",
+                    "title": "solve_system",
+                },
+                {
+                    "source_id": "S3",
+                    "chunk_id": "entry",
+                    "path": "src/time_step.f90",
+                    "title": "advance_step",
+                },
+            ],
+            question="Where is the matrix assembled and solved?",
+            related_chunk_ids=["kernel", "solver", "entry"],
+            lineage_edges=[
+                {
+                    "origin_chunk_id": "solver",
+                    "target_chunk_id": "kernel",
+                    "observed_via": "find_callees",
+                },
+                {
+                    "origin_chunk_id": "entry",
+                    "target_chunk_id": "solver",
+                    "observed_via": "find_callers",
+                },
+            ],
+        )
+
+        flow = next(
+            section
+            for section in notebook["sections"]
+            if section.get("status") == "verified_flow"
+        )
+        self.assertEqual(flow["source_ids"], ["S3", "S2", "S1"])
+        self.assertEqual(len(flow["verified_relations"]), 2)
+
+    def test_observed_repository_acronyms_are_derived_from_paths(self) -> None:
+        self.assertEqual(
+            api._observed_repository_acronyms(
+                [
+                    {"path": "src/model/AMR/mesh.cpp"},
+                    {"path": "src/model/DPM/particle.cpp"},
+                    {"path": "src/model/AMR/config.cpp"},
+                ]
+            ),
+            ["AMR", "DPM"],
+        )
+
     def test_evidence_notebook_prepends_verified_upstream_caller(self) -> None:
         notebook = api._build_evidence_notebook(
             [

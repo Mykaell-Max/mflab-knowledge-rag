@@ -268,6 +268,8 @@ _NOTEBOOK_DELIVERY_PREFIXES = (
 )
 
 _NOTEBOOK_STRUCTURAL_TERMS = {
+    "assembl",
+    "assembly",
     "advanc",
     "advancement",
     "config",
@@ -281,6 +283,9 @@ _NOTEBOOK_STRUCTURAL_TERMS = {
     "integration",
     "mechan",
     "mechanism",
+    "solv",
+    "solve",
+    "solver",
 }
 
 _NOTEBOOK_SEMANTIC_FAMILIES = {
@@ -433,6 +438,38 @@ def _notebook_ranking_hints(
                 values.append(value[:240])
             if len(values) >= limit:
                 return values
+    return values
+
+
+def _observed_repository_acronyms(
+    sources: list[dict[str, object]],
+    *,
+    limit: int = 32,
+) -> list[str]:
+    """Return bounded acronym-like path components seen in real evidence.
+
+    These labels are only candidates. ``select_query_subject_identifiers``
+    still requires the label to be literal user vocabulary or the initials of
+    a contiguous phrase in the question. This supplies corpus vocabulary
+    without trusting planner-invented aliases or maintaining repository lists.
+    """
+
+    values: list[str] = []
+    for source in sources:
+        path = str(source.get("path", ""))
+        for raw_part in path.replace("\\", "/").split("/"):
+            part = raw_part.split(".", 1)[0].strip()
+            letters = "".join(
+                character for character in part if character.isalpha()
+            )
+            if (
+                2 <= len(letters) <= 8
+                and letters == letters.upper()
+                and part not in values
+            ):
+                values.append(part)
+                if len(values) >= limit:
+                    return values
     return values
 
 
@@ -1498,7 +1535,57 @@ def _build_evidence_notebook(
 
     def verified_local_component(
         anchor_id: str,
+        *,
+        allow_upstream_chain: bool = False,
     ) -> tuple[list[str], list[dict[str, object]]]:
+        upstream_component: tuple[
+            list[str], list[dict[str, object]]
+        ] = ([], [])
+        if allow_upstream_chain:
+            # For a structural question without a named code entity, recover
+            # the narrowest proven caller chain ending at an evidence anchor.
+            # The coverage model can select a low-level implementation while
+            # the persisted call graph has already found its solver/entry
+            # routine. Follow at most two incoming edges and keep one path,
+            # rather than merging every caller from neighboring subsystems.
+            reverse_edges: dict[str, list[str]] = {}
+            for lineage in verified_lineages:
+                origin_id = str(lineage.get("origin_source_id", ""))
+                if origin_id not in source_by_id:
+                    continue
+                for value in lineage.get("target_source_ids", []):
+                    target_id = str(value)
+                    if target_id in source_by_id and target_id != origin_id:
+                        reverse_edges.setdefault(target_id, []).append(origin_id)
+            chain = [anchor_id]
+            cursor = anchor_id
+            while len(chain) < 3:
+                parent_id = next(
+                    (
+                        value
+                        for value in reverse_edges.get(cursor, [])
+                        if value not in chain
+                    ),
+                    None,
+                )
+                if parent_id is None:
+                    break
+                chain.insert(0, parent_id)
+                cursor = parent_id
+            if len(chain) >= 2:
+                relations = [
+                    {
+                        "origin_source_id": chain[position],
+                        "target_source_ids": [chain[position + 1]],
+                        "kind": "calls_symbol",
+                    }
+                    for position in range(len(chain) - 1)
+                ]
+                upstream_component = (
+                    chain[:max_sources_per_section],
+                    relations,
+                )
+
         callers: list[str] = []
         children: list[str] = []
         relations: list[dict[str, object]] = []
@@ -1536,7 +1623,7 @@ def _build_evidence_notebook(
         # alone are merely an expansion. Only the complete local component can
         # replace metadata-ranked section ownership.
         if not callers or not children:
-            return [], []
+            return upstream_component
         component: list[str] = []
         for source_id in [*callers, anchor_id, *children]:
             if source_id not in component:
@@ -1570,9 +1657,26 @@ def _build_evidence_notebook(
                 for value in aspect.get("_observed_source_ids", [])
                 if str(value) in source_by_id
             ]
+            structural_aspect = _notebook_needs_structural_context(
+                str(aspect.get("aspect", ""))
+            )
+            component_anchor_ids = list(observed_ids)
+            if structural_aspect and not subject_signatures:
+                for value in section.get("source_ids", []):
+                    source_id = str(value)
+                    if (
+                        source_id in source_by_id
+                        and source_id not in component_anchor_ids
+                    ):
+                        component_anchor_ids.append(source_id)
             candidates = [
-                verified_local_component(anchor_id)
-                for anchor_id in observed_ids
+                verified_local_component(
+                    anchor_id,
+                    allow_upstream_chain=(
+                        structural_aspect and not subject_signatures
+                    ),
+                )
+                for anchor_id in component_anchor_ids
             ]
             candidates = [candidate for candidate in candidates if candidate[0]]
             if not candidates:
@@ -5042,7 +5146,8 @@ class RagApiService:
                 str(value)
                 for value in raw_subject_candidates or []
                 if isinstance(value, str)
-            ],
+            ]
+            + _observed_repository_acronyms(raw_sources),
             excluded_labels=scope_labels,
         )
         lineage_graph_chunk_ids = [

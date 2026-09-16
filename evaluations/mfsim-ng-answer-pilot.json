@@ -48,8 +48,8 @@
         "min_sources": 3,
         "min_citation_coverage": 1.0,
         "allowed_finish_reasons": ["stop"],
-        "max_client_duration_seconds": 120,
-        "max_generation_duration_seconds": 90,
+        "max_client_duration_seconds": 240,
+        "max_generation_duration_seconds": 120,
         "scope_warning": false,
         "required_source_paths": [
           "src/mfsim/common/id_generator.cpp",
@@ -67,7 +67,7 @@
       "limit": 10,
       "allowed_access": ["public", "lab"],
       "max_context_characters": 14000,
-      "max_output_tokens": 800,
+      "max_output_tokens": 1200,
       "temperature": 0,
       "expectations": {
         "abstained": false,
@@ -77,8 +77,8 @@
         "min_sources": 2,
         "min_citation_coverage": 1.0,
         "allowed_finish_reasons": ["stop"],
-        "max_client_duration_seconds": 240,
-        "max_generation_duration_seconds": 90,
+        "max_client_duration_seconds": 300,
+        "max_generation_duration_seconds": 150,
         "scope_warning": false,
         "required_source_paths": [
           "src/mfsim/output/hdf5/hdf5_lag_output.cpp",

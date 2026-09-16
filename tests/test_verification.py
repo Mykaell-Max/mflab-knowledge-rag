@@ -325,6 +325,24 @@ class VerificationTests(unittest.TestCase):
             [],
         )
 
+    def test_does_not_promote_code_alias_from_equivalent_plain_phrase(self) -> None:
+        self.assertEqual(
+            select_query_subject_identifiers(
+                "How is adaptive mesh refinement configured?",
+                ["mesh_refinement"],
+            ),
+            [],
+        )
+
+    def test_accepts_observed_acronym_derived_from_question_phrase(self) -> None:
+        self.assertEqual(
+            select_query_subject_identifiers(
+                "How is adaptive mesh refinement configured?",
+                ["AMR"],
+            ),
+            ["AMR"],
+        )
+
     def test_normalizes_standalone_source_lines_before_audit(self) -> None:
         answer, attached = normalize_standalone_source_citations(
             "The matrix is assembled here.\n"
