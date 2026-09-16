@@ -1874,3 +1874,29 @@ fábrica não prova a inicialização interna do objeto, e um corpo vazio prova
 apenas a existência de um hook sem operação. A mudança não adiciona uma passagem
 global de reescrita, não altera a recuperação e não relaxa as auditorias de
 evidência e completude.
+
+A validação real da 0.46.18 manteve completo o caso do subsistema, mas não
+resolveu sozinha a precisão operacional. A resposta de malha ainda atribuiu a
+inicialização a um método vazio, apesar de o próprio trecho citado mostrar um
+corpo sem operações. Ao mesmo tempo, a relação verificada entre a fábrica e o
+construtor concreto estava no caderno, mas uma afirmação sobre o construtor
+citava somente sua definição. A auditoria literal então rejeitou constantes de
+seleção que apareciam no chamador, não na fonte do construtor. No caso do
+subsistema, duas recapitulações sobreviveram mesmo após as instruções de
+continuidade. O resultado foi um caso completo em dois, com infraestrutura,
+grafo e proveniência preservados.
+
+A 0.46.19 introduz `claim_evidence_audit_v11` e três barreiras determinísticas
+depois da geração. Relações estruturais verificadas podem completar a citação de
+uma afirmação que nomeia exatamente o nó de destino, anexando também a fonte do
+chamador que comprova aquela conexão. Se uma fonte define uma função com corpo
+vazio, afirmações que atribuem a ela configuração, inicialização, criação,
+execução ou outra ação são rebaixadas, mesmo que o avaliador semântico as tenha
+aceitado; a descrição literal de que o corpo está vazio continua permitida.
+Seções de fluxo com arestas verificadas passam pela barreira de completude mesmo
+quando possuem uma única faceta técnica, impedindo que um destino estrutural
+observado desapareça da resposta. Por fim, parágrafos de prosa quase contidos em
+trechos recentes, com as mesmas citações e identificadores, são removidos por um
+filtro conservador; blocos de código nunca entram nessa deduplicação. Todas as
+regras usam apenas texto, sintaxe, arestas verificadas e proveniência, sem nomes
+de projetos, branches, arquivos ou mecanismos científicos codificados.

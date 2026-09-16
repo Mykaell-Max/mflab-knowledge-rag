@@ -4,14 +4,17 @@ import unittest
 
 from mflab_knowledge.verification import (
     attach_discovered_citations,
+    attach_verified_relation_citations,
     claims_for_verification,
     downgrade_callsite_only_claims,
+    downgrade_empty_callable_behavior_claims,
     downgrade_operation_mismatch_claims,
     downgrade_unmatched_inline_identifiers,
     downgrade_unanchored_subject_claims,
     emit_progress,
     normalize_support_discovery,
     normalize_verification,
+    remove_redundant_prose_paragraphs,
     sanitize_fenced_code_blocks,
     select_query_subject_identifiers,
     supported_claim_subset,
@@ -19,6 +22,122 @@ from mflab_knowledge.verification import (
 
 
 class VerificationTests(unittest.TestCase):
+    def test_attaches_verified_caller_to_target_specific_claim(self) -> None:
+        answer, attached = attach_verified_relation_citations(
+            "`ConcreteMesh::ConcreteMesh` is selected for MODE_X [S2].",
+            relations=[
+                {
+                    "origin_source_id": "S1",
+                    "target_source_ids": ["S2"],
+                    "kind": "calls_symbol",
+                }
+            ],
+            sources=[
+                {
+                    "source_id": "S1",
+                    "title": "MeshFactory::create",
+                    "text": "if (mode == MODE_X) return ConcreteMesh();",
+                },
+                {
+                    "source_id": "S2",
+                    "title": "ConcreteMesh::ConcreteMesh",
+                    "text": "ConcreteMesh::ConcreteMesh() { initialize(); }",
+                },
+            ],
+        )
+
+        self.assertEqual(attached, 1)
+        self.assertEqual(
+            answer,
+            "`ConcreteMesh::ConcreteMesh` is selected for MODE_X [S1, S2].",
+        )
+
+    def test_relation_citation_requires_the_exact_target_name(self) -> None:
+        answer, attached = attach_verified_relation_citations(
+            "A neighboring constructor is selected [S2].",
+            relations=[
+                {"origin_source_id": "S1", "target_source_ids": ["S2"]}
+            ],
+            sources=[
+                {"source_id": "S1", "title": "Factory::create", "text": "call"},
+                {"source_id": "S2", "title": "Mesh::Mesh", "text": "body"},
+            ],
+        )
+
+        self.assertEqual(attached, 0)
+        self.assertEqual(answer, "A neighboring constructor is selected [S2].")
+
+    def test_downgrades_behavior_attributed_to_empty_callable(self) -> None:
+        result = downgrade_empty_callable_behavior_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "`MeshManager::configure` initializes the mesh [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "accepted",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "title": "MeshManager::configure",
+                    "text": "void MeshManager::configure() { }",
+                }
+            ],
+        )
+
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["claims"][0]["verdict"], "uncertain")
+        self.assertIn("corpo citado está vazio", result["claims"][0]["finding"])
+
+    def test_keeps_literal_statement_that_callable_is_empty(self) -> None:
+        result = downgrade_empty_callable_behavior_claims(
+            {
+                "performed": True,
+                "passed": True,
+                "claims": [
+                    {
+                        "claim_id": "C1",
+                        "claim": "`MeshManager::configure` has an empty body [S1].",
+                        "verdict": "supported",
+                        "source_ids": ["S1"],
+                        "finding": "accepted",
+                    }
+                ],
+                "counts": {"supported": 1, "unsupported": 0, "uncertain": 0},
+            },
+            sources=[
+                {
+                    "source_id": "S1",
+                    "title": "MeshManager::configure",
+                    "text": "void MeshManager::configure() { }",
+                }
+            ],
+        )
+
+        self.assertTrue(result["passed"])
+
+    def test_removes_only_citation_compatible_redundant_paragraph(self) -> None:
+        answer, removed = remove_redundant_prose_paragraphs(
+            "The manager configures runtime metadata and allocates the mesh fields "
+            "before execution [S1].\n\n"
+            "The runtime metadata and mesh fields are configured and allocated by "
+            "the manager before execution [S1].\n\n"
+            "```cpp\nmanager.advance();\n```\n\n[S2]\n\n"
+            "The manager then advances the particles [S2]."
+        )
+
+        self.assertEqual(removed, 1)
+        self.assertEqual(answer.count("before execution"), 1)
+        self.assertIn("```cpp\nmanager.advance();\n```", answer)
+        self.assertIn("advances the particles", answer)
+
     def test_downgrades_initialization_claim_citing_only_cleanup_code(self) -> None:
         result = downgrade_operation_mismatch_claims(
             {

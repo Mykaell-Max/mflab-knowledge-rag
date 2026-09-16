@@ -102,14 +102,17 @@ from mflab_knowledge.verification import (
     ProgressCallback,
     VERIFICATION_ALGORITHM,
     attach_discovered_citations,
+    attach_verified_relation_citations,
     claims_for_verification,
     downgrade_callsite_only_claims,
+    downgrade_empty_callable_behavior_claims,
     downgrade_operation_mismatch_claims,
     downgrade_unmatched_inline_identifiers,
     downgrade_unanchored_subject_claims,
     emit_progress,
     normalize_support_discovery,
     normalize_verification,
+    remove_redundant_prose_paragraphs,
     sanitize_fenced_code_blocks,
     select_query_subject_identifiers,
     supported_claim_subset,
@@ -5202,6 +5205,8 @@ class RagApiService:
         section_generation_count = 0
         section_continuation_count = 0
         section_completion_count = 0
+        verified_relation_citations_attached = 0
+        redundant_paragraphs_removed = 0
         section_output_limit: int | None = None
         generated_sections: list[dict[str, object]] = []
         generated_section_plans: list[dict[str, object]] = []
@@ -5350,7 +5355,14 @@ class RagApiService:
                     # local coverage obligation.  The helper returns only the
                     # still-uncited IDs, so the continuation cannot repeat the
                     # operation that the first draft already explained.
-                    if len(content_aspects) >= 2 and missing_aspects:
+                    verified_flow_requires_completion = bool(
+                        section.get("status") == "verified_flow"
+                        and section.get("verified_relations")
+                    )
+                    if (
+                        len(content_aspects) >= 2
+                        or verified_flow_requires_completion
+                    ) and missing_aspects:
                         missing_source_ids = {
                             str(value)
                             for aspect in missing_aspects
@@ -5429,6 +5441,19 @@ class RagApiService:
                                     completion.get("finish_reason")
                                 )
                                 section_completion_count += 1
+                    (
+                        generated_section["answer"],
+                        relation_citations,
+                    ) = attach_verified_relation_citations(
+                        str(generated_section.get("answer", "")),
+                        relations=[
+                            item
+                            for item in section.get("verified_relations", [])
+                            if isinstance(item, dict)
+                        ],
+                        sources=section_sources,
+                    )
+                    verified_relation_citations_attached += relation_citations
                     section_source_ids = {
                         str(source.get("source_id", ""))
                         for source in section_sources
@@ -5739,6 +5764,20 @@ class RagApiService:
         assert isinstance(raw_sources, list)
         assert generated is not None
         answer = str(generated["answer"])
+        if sectional_synthesis:
+            answer, redundant_paragraphs_removed = remove_redundant_prose_paragraphs(
+                answer
+            )
+            if redundant_paragraphs_removed:
+                record(
+                    "generation",
+                    "Recapitulações redundantes removidas",
+                    (
+                        "Somente parágrafos sem conteúdo lexical ou proveniência "
+                        "nova foram omitidos."
+                    ),
+                    {"removed": redundant_paragraphs_removed},
+                )
         answer, removed_code_blocks, code_citations_attached = sanitize_fenced_code_blocks(
             answer,
             raw_sources,
@@ -6021,6 +6060,10 @@ class RagApiService:
                     sources=evidence,
                 )
                 normalized = downgrade_unmatched_inline_identifiers(
+                    normalized,
+                    sources=evidence,
+                )
+                normalized = downgrade_empty_callable_behavior_claims(
                     normalized,
                     sources=evidence,
                 )
@@ -6814,6 +6857,10 @@ class RagApiService:
                 "section_generation_count": section_generation_count,
                 "section_continuation_count": section_continuation_count,
                 "section_completion_count": section_completion_count,
+                "verified_relation_citations_attached": (
+                    verified_relation_citations_attached
+                ),
+                "redundant_paragraphs_removed": redundant_paragraphs_removed,
                 "section_max_output_tokens": section_output_limit,
                 "reduced_for_generation": reduced_for_generation,
                 "reduced_output_for_generation": reduced_output_for_generation,

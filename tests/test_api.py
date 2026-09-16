@@ -3176,6 +3176,112 @@ class ApiServiceTests(unittest.TestCase):
         self.assertIn("visible [S2]", result["answer"])
         self.assertEqual(result["context"]["section_completion_count"], 1)
 
+    def test_verified_flow_completes_an_omitted_relation_target(self) -> None:
+        generator = _SequencedGenerator(
+            [
+                "The coordinator invokes the factory [S1].",
+                "The concrete constructor initializes local state [S2].",
+            ]
+        )
+        service = api.RagApiService(
+            self.settings(),
+            generator=generator,
+            generation_config=GenerationConfig(
+                path=Path("generation.toml"),
+                base_url="http://127.0.0.1:8000/v1",
+                model="local-test-model",
+                verify_evidence=False,
+            ),
+        )
+        sources = [
+            {
+                "source_id": "S1",
+                "chunk_id": "factory",
+                "project": "Solver",
+                "path": "src/factory.cpp",
+                "title": "Factory::create",
+                "text": "return Concrete();",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+            {
+                "source_id": "S2",
+                "chunk_id": "concrete",
+                "project": "Solver",
+                "path": "src/concrete.cpp",
+                "title": "Concrete::Concrete",
+                "text": "Concrete::Concrete() { initialize(); }",
+                "selected_occurrence": {
+                    "branch": "main",
+                    "commit_sha": "a" * 40,
+                },
+            },
+        ]
+        notebook = {
+            "algorithm": api.EVIDENCE_NOTEBOOK_ALGORITHM,
+            "sections": [
+                {
+                    "section_id": "E1",
+                    "status": "verified_flow",
+                    "source_ids": ["S1", "S2"],
+                    "aspects": [
+                        {
+                            "aspect_id": "A1",
+                            "aspect": "construction flow",
+                            "role": "content",
+                            "source_ids": ["S1", "S2"],
+                        }
+                    ],
+                    "verified_relations": [
+                        {
+                            "origin_source_id": "S1",
+                            "target_source_ids": ["S2"],
+                            "kind": "calls_symbol",
+                        }
+                    ],
+                }
+            ],
+            "gaps": [],
+            "ready_sections": 1,
+            "covered_aspects": 1,
+            "gap_aspects": 0,
+        }
+        with (
+            mock.patch.object(
+                service,
+                "context",
+                return_value={
+                    "query": "Explain the construction flow",
+                    "mode": "hybrid",
+                    "instructions": api.CONTEXT_INSTRUCTIONS,
+                    "exploration": {"intent": "mechanism"},
+                    "agent_investigation": {"coverage": []},
+                    "retrieved_count": 2,
+                    "source_count": 2,
+                    "context_characters": 40,
+                    "truncated": False,
+                    "sources": sources,
+                    "investigation": {"steps": []},
+                },
+            ),
+            mock.patch.object(
+                api,
+                "_build_evidence_notebook",
+                return_value=notebook,
+            ),
+        ):
+            result = service.ask(
+                query="Explain the construction flow",
+                response_depth="detailed",
+            )
+
+        self.assertEqual(len(generator.calls), 2)
+        self.assertEqual(generator.calls[1]["sources"], [sources[1]])
+        self.assertIn("MISSING FACET COMPLETION", generator.calls[1]["instructions"])
+        self.assertEqual(result["context"]["section_completion_count"], 1)
+
     def test_missing_content_aspects_returns_only_uncited_source_obligations(
         self,
     ) -> None:

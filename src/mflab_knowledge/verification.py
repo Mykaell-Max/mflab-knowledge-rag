@@ -3,11 +3,12 @@ from __future__ import annotations
 import json
 import re
 import textwrap
+import unicodedata
 from collections.abc import Callable
 
 from mflab_knowledge.grounding import citation_ids, factual_units
 
-VERIFICATION_ALGORITHM = "claim_evidence_audit_v10"
+VERIFICATION_ALGORITHM = "claim_evidence_audit_v11"
 SUPPORT_DISCOVERY_ALGORITHM = "claim_support_discovery_v1"
 INVESTIGATION_ALGORITHM = "bounded_investigation_v30"
 
@@ -36,6 +37,11 @@ _BEHAVIOR_ASSERTION = re.compile(
     r"\b(?:calcul|comput|control|gerenc|handle|implement|inicializ|initializ|"
     r"respons[aá]vel|simul|solv|atualiz|updat)\w*\b",
     re.IGNORECASE,
+)
+_EMPTY_C_STYLE_CALLABLE = re.compile(
+    r"(?P<name>[A-Za-z_]\w*(?:::[A-Za-z_]\w*)*)\s*"
+    r"\([^;{}]*\)\s*(?:const\s*)?(?:noexcept\s*)?\{\s*\}",
+    re.DOTALL,
 )
 _CODE_FORMATS = {
     "c",
@@ -158,6 +164,176 @@ def claims_for_verification(answer: str) -> list[dict[str, object]]:
             }
         )
     return claims
+
+
+def attach_verified_relation_citations(
+    answer: str,
+    *,
+    relations: list[dict[str, object]],
+    sources: list[dict[str, object]],
+) -> tuple[str, int]:
+    """Attach a verified caller citation to a target-specific claim.
+
+    A generated sentence can describe a structurally verified call while citing
+    only the callee implementation. The callee proves its local behavior, but
+    conditions at the call site remain in the caller. Add the caller only when
+    the sentence already cites the relation target and names that exact target;
+    no semantic or repository-specific guess is made.
+    """
+
+    source_by_id = {
+        str(source.get("source_id", "")): source
+        for source in sources
+        if str(source.get("source_id", ""))
+    }
+    result = answer
+    attached = 0
+    search_starts: dict[str, int] = {}
+    for claim in claims_for_verification(answer):
+        claim_text = str(claim.get("text", "")).strip()
+        cited = {
+            str(value) for value in claim.get("cited_source_ids", []) if str(value)
+        }
+        if not claim_text or not cited:
+            continue
+        required_origins: set[str] = set()
+        for relation in relations:
+            if not isinstance(relation, dict):
+                continue
+            origin_id = str(relation.get("origin_source_id", ""))
+            if not origin_id or origin_id in cited or origin_id not in source_by_id:
+                continue
+            for raw_target_id in relation.get("target_source_ids", []):
+                target_id = str(raw_target_id)
+                if target_id not in cited:
+                    continue
+                target = source_by_id.get(target_id)
+                if target is None:
+                    continue
+                title = str(target.get("title", "")).strip().removesuffix("()")
+                if title and title in claim_text:
+                    required_origins.add(origin_id)
+                    break
+        if not required_origins:
+            continue
+        combined = sorted(
+            cited | required_origins,
+            key=lambda value: (
+                int(value[1:])
+                if value.startswith("S") and value[1:].isdigit()
+                else 10**9,
+                value,
+            ),
+        )
+        citation_tail = re.search(
+            r"\s*\[\s*S\d+\s*(?:(?:,|;)\s*S\d+\s*)*\]"
+            r"(?P<punctuation>[.!?]?)\s*$",
+            claim_text,
+        )
+        if citation_tail is None:
+            continue
+        replacement = claim_text[: citation_tail.start()].rstrip()
+        replacement += " [" + ", ".join(combined) + "]"
+        replacement += citation_tail.group("punctuation")
+        start = search_starts.get(claim_text, 0)
+        position = result.find(claim_text, start)
+        if position < 0:
+            continue
+        result = result[:position] + replacement + result[position + len(claim_text) :]
+        search_starts[claim_text] = position + len(replacement)
+        attached += len(required_origins)
+    return result, attached
+
+
+def remove_redundant_prose_paragraphs(answer: str) -> tuple[str, int]:
+    """Remove only citation-compatible paragraphs that add no lexical content.
+
+    Code fences are never changed. A prose paragraph is redundant only when it
+    has enough technical vocabulary, its citations and inline identifiers are
+    already present in the three prior prose paragraphs, and at least eighty
+    percent of its normalized terms were already stated. The evidence audit runs
+    after this transformation.
+    """
+
+    stop_words = {
+        "also",
+        "como",
+        "com",
+        "das",
+        "dos",
+        "este",
+        "esta",
+        "isso",
+        "para",
+        "pela",
+        "pelo",
+        "que",
+        "the",
+        "this",
+        "uma",
+        "with",
+    }
+
+    def terms(value: str) -> set[str]:
+        normalized = unicodedata.normalize("NFKD", value.casefold())
+        normalized = "".join(
+            character for character in normalized if not unicodedata.combining(character)
+        )
+        values = re.findall(r"[a-z0-9_]+", normalized)
+        return {
+            term[:7] if len(term) > 7 else term
+            for term in values
+            if len(term) >= 4
+            and term not in stop_words
+            and not (term.startswith("s") and term[1:].isdigit())
+        }
+
+    def inline_values(value: str) -> set[str]:
+        return {match.group(1).strip() for match in _INLINE_CODE.finditer(value)}
+
+    pieces = re.split(r"(```[^\n`]*\n.*?```)", answer, flags=re.DOTALL)
+    history: list[tuple[set[str], set[str], set[str]]] = []
+    rebuilt: list[str] = []
+    removed = 0
+    for piece in pieces:
+        if piece.startswith("```"):
+            rebuilt.append(piece)
+            continue
+        paragraphs = piece.split("\n\n")
+        kept: list[str] = []
+        for paragraph in paragraphs:
+            stripped = paragraph.strip()
+            paragraph_terms = terms(stripped)
+            paragraph_citations = citation_ids(stripped)
+            paragraph_inline = inline_values(stripped)
+            recent = history[-3:]
+            prior_terms = set().union(*(item[0] for item in recent)) if recent else set()
+            prior_citations = (
+                set().union(*(item[1] for item in recent)) if recent else set()
+            )
+            prior_inline = set().union(*(item[2] for item in recent)) if recent else set()
+            containment = (
+                len(paragraph_terms & prior_terms) / len(paragraph_terms)
+                if paragraph_terms
+                else 0.0
+            )
+            redundant = (
+                len(paragraph_terms) >= 8
+                and bool(paragraph_citations)
+                and paragraph_citations <= prior_citations
+                and paragraph_inline <= prior_inline
+                and containment >= 0.8
+            )
+            if redundant:
+                removed += 1
+                continue
+            kept.append(paragraph)
+            if paragraph_terms:
+                history.append(
+                    (paragraph_terms, set(paragraph_citations), paragraph_inline)
+                )
+        rebuilt.append("\n\n".join(kept))
+    return "".join(rebuilt).strip(), removed
 
 
 def _json_object(value: str) -> dict[str, object]:
@@ -660,6 +836,83 @@ def downgrade_unmatched_inline_identifiers(
             )
         findings.append(finding)
 
+    counts = {
+        verdict: sum(item.get("verdict") == verdict for item in findings)
+        for verdict in ("supported", "unsupported", "uncertain")
+    }
+    return {
+        **verification,
+        "algorithm": VERIFICATION_ALGORITHM,
+        "claims": findings,
+        "counts": counts,
+        "passed": bool(findings)
+        and counts["unsupported"] == 0
+        and counts["uncertain"] == 0,
+    }
+
+
+def downgrade_empty_callable_behavior_claims(
+    verification: dict[str, object],
+    *,
+    sources: list[dict[str, object]],
+) -> dict[str, object]:
+    """Reject behavior attributed solely to an empty callable definition."""
+
+    raw_findings = verification.get("claims")
+    if not isinstance(raw_findings, list):
+        return verification
+    source_by_id = {
+        str(source.get("source_id", "")): source
+        for source in sources
+        if str(source.get("source_id", ""))
+    }
+    findings: list[dict[str, object]] = []
+    for raw_finding in raw_findings:
+        if not isinstance(raw_finding, dict):
+            continue
+        finding = dict(raw_finding)
+        claim = str(finding.get("claim", ""))
+        if (
+            finding.get("verdict") != "supported"
+            or not _BEHAVIOR_ASSERTION.search(claim)
+        ):
+            findings.append(finding)
+            continue
+        inline_names = {
+            match.group(1).strip().removesuffix("()")
+            for match in _INLINE_CODE.finditer(claim)
+            if _SIMPLE_CODE_IDENTIFIER.fullmatch(
+                match.group(1).strip().removesuffix("()")
+            )
+        }
+        empty_matches: set[str] = set()
+        nonempty_support = False
+        for source_id in finding.get("source_ids", []):
+            source = source_by_id.get(str(source_id))
+            if source is None:
+                continue
+            text = str(source.get("text", ""))
+            title = str(source.get("title", "")).removesuffix("()")
+            empty_names = {
+                match.group("name") for match in _EMPTY_C_STYLE_CALLABLE.finditer(text)
+            }
+            relevant_names = {
+                name
+                for name in inline_names
+                if name == title
+                or name in empty_names
+                or name.rsplit("::", 1)[-1] == title.rsplit("::", 1)[-1]
+            }
+            empty_matches.update(relevant_names & empty_names)
+            if relevant_names and not (relevant_names & empty_names):
+                nonempty_support = True
+        if empty_matches and not nonempty_support:
+            finding["verdict"] = "uncertain"
+            finding["finding"] = (
+                "A afirmação atribui comportamento a uma função cujo corpo "
+                "citado está vazio: " + ", ".join(sorted(empty_matches)) + "."
+            )
+        findings.append(finding)
     counts = {
         verdict: sum(item.get("verdict") == verdict for item in findings)
         for verdict in ("supported", "unsupported", "uncertain")
